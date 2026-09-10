@@ -43,6 +43,7 @@ function subscription(overrides: Partial<SubscriptionRecord> = {}): Subscription
     currentPeriodEnd: '2026-09-10T00:00:00.000Z',
     nextBillingDate: '2026-09-10T00:00:00.000Z',
     gracePeriodEnd: null,
+    dryRunOverride: null,
     ...overrides,
   };
 }

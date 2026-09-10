@@ -198,9 +198,15 @@ function makeSubscriptionRepo(seed: SubscriptionRecord[]) {
         currentPeriodEnd: input.currentPeriodEnd,
         nextBillingDate: input.nextBillingDate,
         gracePeriodEnd: null,
+        dryRunOverride: null,
       };
       byId.set(record.id, record);
       return record;
+    },
+    async setDryRunOverride(id: string, override: boolean | null) {
+      const s = byId.get(id);
+      if (!s) throw new Error('not found');
+      s.dryRunOverride = override;
     },
   };
   return { repo, byId };

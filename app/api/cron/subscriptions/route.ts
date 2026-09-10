@@ -4,6 +4,14 @@
 // browser. Same sandbox caveats as the other route files: not
 // typechecked here, logic is tested independently
 // (tests/subscription-checker.test.ts).
+//
+// Does NOT force a dry-run value here — that was a bug: forcing
+// opts.dryRun from the env var on every call would have overridden any
+// per-subscription dryRunOverride (see src/lib/suspension/engine.ts),
+// defeating the whole point of that override for the automated path
+// specifically. Leaving opts.dryRun unset lets suspendCustomer resolve
+// per-subscription-override-then-global-env for each subscription
+// individually, exactly as intended.
 
 import { runSubscriptionChecker } from '../../../../src/lib/cron/subscription-checker';
 import { buildCronDeps, buildRailwayClient } from '../../../../src/lib/deps-factory';
@@ -14,8 +22,7 @@ export async function POST(request: Request): Promise<Response> {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
   }
 
-  const dryRun = process.env.SUSPENSION_DRY_RUN === 'true';
-  const result = await runSubscriptionChecker(buildCronDeps(), buildRailwayClient(), { dryRun });
+  const result = await runSubscriptionChecker(buildCronDeps(), buildRailwayClient());
 
   return new Response(JSON.stringify(result), {
     status: result.errors.length > 0 ? 207 : 200, // 207: partial success, check errors[]

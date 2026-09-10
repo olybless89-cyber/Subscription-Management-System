@@ -58,7 +58,12 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
       currentPeriodEnd: s.currentPeriodEnd.toISOString(),
       nextBillingDate: s.nextBillingDate.toISOString(),
       gracePeriodEnd: s.gracePeriodEnd ? s.gracePeriodEnd.toISOString() : null,
+      dryRunOverride: s.dryRunOverride,
     };
+  }
+
+  async setDryRunOverride(id: string, override: boolean | null): Promise<void> {
+    await this.prisma.subscription.update({ where: { id }, data: { dryRunOverride: override } });
   }
 
   async updateStatus(
@@ -128,6 +133,7 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
       currentPeriodEnd: s.currentPeriodEnd.toISOString(),
       nextBillingDate: s.nextBillingDate.toISOString(),
       gracePeriodEnd: s.gracePeriodEnd ? s.gracePeriodEnd.toISOString() : null,
+      dryRunOverride: s.dryRunOverride,
     };
   }
 
@@ -146,6 +152,7 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
       currentPeriodEnd: s.currentPeriodEnd.toISOString(),
       nextBillingDate: s.nextBillingDate.toISOString(),
       gracePeriodEnd: s.gracePeriodEnd ? s.gracePeriodEnd.toISOString() : null,
+      dryRunOverride: s.dryRunOverride,
     }));
   }
 }

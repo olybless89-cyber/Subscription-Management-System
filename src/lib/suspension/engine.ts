@@ -2,12 +2,14 @@ import { RailwayClient } from '../railway/client';
 import { stopDeployment } from '../railway/deployments';
 import { EngineDeps } from '../db/ports';
 import { assertStrategyAutomatable, ForbiddenSuspensionActionError } from './safety';
-import { RailwayResourceRecord, SuspensionResult } from '@/types/domain';
+import { RailwayResourceRecord, SuspensionResult, SubscriptionRecord } from '@/types/domain';
 
 export interface SuspendCustomerOptions {
   /** Who triggered this. Omit for the automated worker. */
   performedBy?: string | null;
-  /** Overrides SUSPENSION_DRY_RUN env for this call (used by tests / admin preview). */
+  /** Overrides both the per-subscription dryRunOverride AND the global
+   * SUSPENSION_DRY_RUN env for this call — used by tests / admin preview.
+   * Leave undefined to let the per-subscription/global resolution apply. */
   dryRun?: boolean;
   /** Set true for admin-initiated manual suspension (bypasses automaticSuspension flag). */
   manual?: boolean;
@@ -19,8 +21,19 @@ export interface SuspendCustomerResult {
   resourceResults: Array<{ resourceId: string; result: SuspensionResult; detail: string }>;
 }
 
-function isDryRun(opts?: SuspendCustomerOptions): boolean {
+/**
+ * Precedence, highest first:
+ *   1. opts.dryRun, if explicitly passed — tests/admin preview only.
+ *   2. subscription.dryRunOverride, if not null — lets one subscription
+ *      be tested for real (override: false) or force-protected
+ *      (override: true) independent of the global switch.
+ *   3. The global SUSPENSION_DRY_RUN env var.
+ */
+function isDryRun(opts: SuspendCustomerOptions | undefined, subscription: SubscriptionRecord): boolean {
   if (opts?.dryRun !== undefined) return opts.dryRun;
+  if (subscription.dryRunOverride !== null && subscription.dryRunOverride !== undefined) {
+    return subscription.dryRunOverride;
+  }
   return process.env.SUSPENSION_DRY_RUN === 'true';
 }
 
@@ -66,7 +79,7 @@ export async function suspendCustomer(
     };
   }
 
-  const dryRun = isDryRun(opts);
+  const dryRun = isDryRun(opts, subscription);
 
   // 6. Load Railway resources for this subscription.
   const resources = await deps.railwayResources.findBySubscriptionId(subscriptionId);

@@ -54,6 +54,9 @@ export interface SubscriptionRepository {
     currentPeriodEnd: string;
     nextBillingDate: string;
   }): Promise<SubscriptionRecord>;
+  /** Sets/clears the per-subscription dry-run override. Pass null to go
+   * back to inheriting the global SUSPENSION_DRY_RUN env var. */
+  setDryRunOverride(id: string, override: boolean | null): Promise<void>;
 }
 
 export interface PlanRepository {

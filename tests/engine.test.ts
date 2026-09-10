@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { suspendCustomer } from '@/lib/suspension/engine';
 import { restoreCustomer } from '@/lib/suspension/restoration';
 import { RailwayClient } from '@/lib/railway/client';
@@ -30,6 +30,7 @@ function baseSubscription(overrides: Partial<SubscriptionRecord> = {}): Subscrip
     currentPeriodEnd: '2026-09-01T00:00:00.000Z',
     nextBillingDate: '2026-09-01T00:00:00.000Z',
     gracePeriodEnd: '2026-09-03T00:00:00.000Z',
+    dryRunOverride: null,
     ...overrides,
   };
 }
@@ -135,6 +136,77 @@ describe('suspendCustomer — MULTI_TENANT / APP_LEVEL', () => {
     expect(result.outcome).toBe('SUSPENDED');
     expect(railway.request).not.toHaveBeenCalled();
     expect(deps.events[0].action).toBe('APP_SUSPENDED');
+  });
+});
+
+describe('suspendCustomer — per-subscription dryRunOverride precedence', () => {
+  const originalEnv = process.env.SUSPENSION_DRY_RUN;
+  afterEach(() => {
+    if (originalEnv === undefined) delete process.env.SUSPENSION_DRY_RUN;
+    else process.env.SUSPENSION_DRY_RUN = originalEnv;
+  });
+
+  it('subscription.dryRunOverride=false wins over a global env of true — suspension is REAL', async () => {
+    process.env.SUSPENSION_DRY_RUN = 'true';
+    const deps = makeFakeDeps({
+      customers: [baseCustomer()],
+      subscriptions: [baseSubscription({ dryRunOverride: false })],
+      railwayResources: [
+        dedicatedResource({ hostingMode: 'MULTI_TENANT', suspensionStrategy: 'APP_LEVEL' }),
+      ],
+    });
+    const railway: RailwayClient = { request: vi.fn() };
+
+    const result = await suspendCustomer(deps, railway, 'sub_1', 'TEST');
+
+    expect(result.outcome).toBe('SUSPENDED'); // not DRY_RUN
+    expect((await deps.subscriptions.findById('sub_1'))!.status).toBe('SUSPENDED');
+  });
+
+  it('subscription.dryRunOverride=true wins over a global env of false — stays dry-run', async () => {
+    process.env.SUSPENSION_DRY_RUN = 'false';
+    const deps = makeFakeDeps({
+      customers: [baseCustomer()],
+      subscriptions: [baseSubscription({ dryRunOverride: true })],
+      railwayResources: [dedicatedResource()],
+    });
+    const railway: RailwayClient = { request: vi.fn() };
+
+    const result = await suspendCustomer(deps, railway, 'sub_1', 'TEST');
+
+    expect(result.outcome).toBe('DRY_RUN');
+    expect(railway.request).not.toHaveBeenCalled();
+    expect((await deps.subscriptions.findById('sub_1'))!.status).not.toBe('SUSPENDED');
+  });
+
+  it('dryRunOverride=null inherits the global env exactly as before', async () => {
+    process.env.SUSPENSION_DRY_RUN = 'true';
+    const deps = makeFakeDeps({
+      customers: [baseCustomer()],
+      subscriptions: [baseSubscription({ dryRunOverride: null })],
+      railwayResources: [dedicatedResource()],
+    });
+    const railway: RailwayClient = { request: vi.fn() };
+
+    const result = await suspendCustomer(deps, railway, 'sub_1', 'TEST');
+
+    expect(result.outcome).toBe('DRY_RUN');
+  });
+
+  it('an explicit opts.dryRun still wins over both the subscription override and the global env', async () => {
+    process.env.SUSPENSION_DRY_RUN = 'false';
+    const deps = makeFakeDeps({
+      customers: [baseCustomer()],
+      subscriptions: [baseSubscription({ dryRunOverride: false })],
+      railwayResources: [
+        dedicatedResource({ hostingMode: 'MULTI_TENANT', suspensionStrategy: 'APP_LEVEL' }),
+      ],
+    });
+    const railway: RailwayClient = { request: vi.fn() };
+
+    const result = await suspendCustomer(deps, railway, 'sub_1', 'TEST', { dryRun: true });
+
+    expect(result.outcome).toBe('DRY_RUN');
   });
 });
 

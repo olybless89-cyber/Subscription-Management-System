@@ -43,6 +43,7 @@ describe('initiateCheckout — provider routing by customer group', () => {
       currentPeriodEnd: '2026-09-01T00:00:00.000Z',
       nextBillingDate: '2026-09-01T00:00:00.000Z',
       gracePeriodEnd: null,
+      dryRunOverride: null,
       ...overrides,
     };
   }

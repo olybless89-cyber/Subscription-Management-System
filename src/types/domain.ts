@@ -78,6 +78,8 @@ export interface SubscriptionRecord {
   currentPeriodEnd: string;
   nextBillingDate: string;
   gracePeriodEnd: string | null;
+  /** null = inherit global SUSPENSION_DRY_RUN. See prisma/schema.prisma. */
+  dryRunOverride: boolean | null;
 }
 
 export interface PlanRecord {

@@ -19,6 +19,7 @@ src/lib/suspension/
   engine.ts                       suspendCustomer() — spec section 14-16, 34, 35
   restoration.ts                   restoreCustomer() — spec section 20
   guard.ts                         subscriptionGuard() — spec section 17
+  dry-run-override.ts               setSubscriptionDryRunOverride() — per-subscription SUSPENSION_DRY_RUN override
 src/lib/payments/
   provider.ts                      PaymentProvider interface — spec section 10
   paystack.ts                       Paystack implementation (init, HMAC signature verify, server-side verify)
@@ -58,12 +59,13 @@ app/api/
   admin/plans/route.ts                     GET: list plans. POST: create one (spec section 9)
   admin/subscriptions/route.ts              POST: create a subscription for a customer (spec sections 8-9), scoped
   admin/subscriptions/[id]/railway-resource/route.ts  POST: map that subscription to Railway infra (spec section 12), scoped
+  admin/subscriptions/[id]/dry-run-override/route.ts   POST: per-subscription dry-run override, scoped
   admin/notifications/route.ts             The calling admin's own notification feed
   cron/subscriptions/route.ts           Hourly subscription checker (CRON_SECRET-protected)
   cron/railway-sync/route.ts             Railway sync (CRON_SECRET-protected)
   subscriptions/[id]/suspend/route.ts     Admin manual suspend — scoped to assignment
   subscriptions/[id]/restore/route.ts      Admin manual restore — scoped to assignment
-tests/                                119 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
+tests/                                129 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
 ```
 
 ## Scoped admin access — how it actually works
@@ -139,13 +141,46 @@ strategy — the exact combination spec section 16 requires, rejected
 before it can even be saved if someone tries to pair `MULTI_TENANT` with
 `STOP_DEPLOYMENT`.
 
+## Testing suspend/restore against real Railway without disarming production
+
+`SUSPENSION_DRY_RUN` is a single global env var — flipping it off to test
+one throwaway subscription would flip it off for every real customer
+subscription too, for however long the test takes. `Subscription.dryRunOverride`
+fixes that: a nullable per-subscription boolean that takes precedence
+over the global env var.
+
+```
+POST /api/admin/subscriptions/:id/dry-run-override
+Body: { "override": false }   → this ONE subscription suspends/restores for REAL,
+                                  regardless of the global SUSPENSION_DRY_RUN value
+Body: { "override": true }    → this ONE subscription NEVER really suspends,
+                                  even if the global var is off
+Body: { "override": null }    → back to inheriting the global default
+```
+
+Precedence inside `suspendCustomer`, highest first: an explicit
+`opts.dryRun` (tests/admin preview only) → `subscription.dryRunOverride`
+→ the global `SUSPENSION_DRY_RUN` env var. The cron route
+(`/api/cron/subscriptions`) deliberately does NOT force a value anymore —
+an earlier draft of that route always passed the global env var
+explicitly, which would have silently overridden every subscription's
+individual override and defeated the whole feature for the automated
+path specifically. Fixed.
+
+To actually test against a real Railway service: create a throwaway
+Railway service, map a test subscription to it
+(`POST /api/admin/subscriptions/:id/railway-resource`), set its
+`dryRunOverride` to `false`, then suspend/restore it and watch the
+Railway dashboard — all without touching the global switch that protects
+every real customer.
+
 ## Running it
 
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit — passes clean (prisma-repository.ts excluded, see below)
-npm test            # vitest — 119 tests, all green, no network/DB needed
-npm run build       # next build — verified working in this sandbox, produces all 18 routes
+npm test            # vitest — 129 tests, all green, no network/DB needed
+npm run build       # next build — verified working in this sandbox, produces all 19 routes
 ```
 
 ### One thing I still could NOT verify from this sandbox — be aware before you ship
@@ -228,6 +263,7 @@ themselves are thin, reviewed-by-eye wrappers around that logic.
 | Railway sync never assumes success OR failure | `syncRailwayResources` sets `UNKNOWN` (not `ERROR`, not silently unchanged) when Railway is unreachable — "we don't know" is a distinct, honest state from both extremes. |
 | MULTI_TENANT can never be mapped with an unsafe suspension strategy | `mapRailwayResource()` rejects `MULTI_TENANT` + anything other than `APP_LEVEL` at data-entry time — a bad pairing can't even get saved, rather than sitting in the database until a future suspension takes down every other customer sharing that service. |
 | Railway suspension verification uses the real, authoritative signal | `stopDeployment()` checks `Deployment.deploymentStopped: Boolean` (confirmed real via live introspection), not a guess from status text — see "Railway's GraphQL schema" above. |
+| Testing real suspension can't accidentally disarm production for every customer | `subscription.dryRunOverride` takes precedence over the global `SUSPENSION_DRY_RUN` env var per-subscription — see "Testing suspend/restore against real Railway" above. The cron route no longer force-overrides this (a real bug caught and fixed: it was passing the global value explicitly, which would have silently defeated every subscription's individual override for the automated path). |
 
 ## What's deliberately NOT done yet
 
