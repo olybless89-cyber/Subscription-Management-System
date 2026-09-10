@@ -21,7 +21,7 @@ import {
   PaymentRecord,
   DomainRecord,
 } from '@/types/domain';
-import { sendEmail, subjectForEvent } from '../notifications/email';
+import { sendEmail, subjectForEvent, renderBrandedEmailHtml } from '../notifications/email';
 
 /**
  * Real Prisma-backed implementations of every port the engines/webhook
@@ -479,10 +479,12 @@ export class PrismaAdminNotificationRepository implements AdminNotificationRepos
     const admin = await this.prisma.adminUser.findUnique({ where: { id: input.adminId } });
     if (!admin) return;
 
+    const subject = subjectForEvent(input.event);
     const result = await sendEmail({
       to: admin.email,
-      subject: subjectForEvent(input.event),
+      subject,
       text: input.message,
+      html: renderBrandedEmailHtml({ subject, bodyText: input.message }),
     });
 
     if (result.success) {
@@ -762,13 +764,15 @@ export class EmailNotificationSender implements NotificationSender {
     const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
     if (!customer) return; // FK integrity issue elsewhere — nothing to email.
 
+    const subject = subjectOverride ?? subjectForEvent(event);
     const result = await sendEmail({
       // notificationEmail (if the customer set one) takes priority over
       // their login email — the two can legitimately differ (e.g. a
       // shared login shared with a personal notification inbox).
       to: customer.notificationEmail ?? customer.email,
-      subject: subjectOverride ?? subjectForEvent(event),
+      subject,
       text: message,
+      html: renderBrandedEmailHtml({ subject, bodyText: message }),
     });
 
     if (result.success) {

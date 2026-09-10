@@ -77,7 +77,7 @@ app/api/
   cron/railway-sync/route.ts             Railway sync (CRON_SECRET-protected)
   subscriptions/[id]/suspend/route.ts     Admin manual suspend — scoped to assignment
   subscriptions/[id]/restore/route.ts      Admin manual restore — scoped to assignment
-tests/                                167 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
+tests/                                171 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
 app/
   globals.css                          Design tokens (forest green/paper/clay — matches the spec's own branding request)
   layout.tsx                            Root layout, wraps everything in AuthProvider
@@ -172,6 +172,25 @@ invariant at data-entry time rather than only at suspension time:
 strategy — the exact combination spec section 16 requires, rejected
 before it can even be saved if someone tries to pair `MULTI_TENANT` with
 `STOP_DEPLOYMENT`.
+
+## Branding: logo in emails, marketing homepage
+
+- **`public/dwo-logo.jpg`** — the real DWO logo, served statically by
+  Next.js. Every email (automated notifications, admin notifications,
+  the custom-email composer, birthday messages) now renders as branded
+  HTML via `renderBrandedEmailHtml()` (`src/lib/notifications/email.ts`),
+  with the logo in the header, referenced by URL
+  (`${APP_URL}/dwo-logo.jpg`) rather than embedded inline — standard
+  practice for email, since most clients block remote images until the
+  recipient trusts the sender, which this code can't change. **Requires
+  `APP_URL` to be set correctly in Railway** — without it, emails fall
+  back to a plain text "WEB ORACLE HOST" wordmark instead of a broken
+  image link. The `text` fallback (for clients that can't render HTML at
+  all) is still sent alongside the HTML on every email.
+- **`app/page.tsx`** — a real marketing homepage replacing the old
+  placeholder: hero with the logo, a features grid, and a closing CTA
+  into `/login`. Static, no client-side state, matches the same design
+  tokens as the dashboard (forest green / paper / clay accent).
 
 ## Admin visibility, customer profile fields, and custom messaging
 
@@ -274,7 +293,7 @@ every real customer.
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit — passes clean (prisma-repository.ts excluded, see below)
-npm test            # vitest — 167 tests, all green, no network/DB needed
+npm test            # vitest — 171 tests, all green, no network/DB needed
 npm run build       # next build — verified working in this sandbox, produces all 24 API routes + 11 UI pages
 ```
 
