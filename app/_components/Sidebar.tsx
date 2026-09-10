@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: '/dashboard/plans', label: 'Plans' },
   { href: '/dashboard/subscriptions', label: 'Subscriptions' },
   { href: '/dashboard/domains', label: 'Domains' },
+  { href: '/dashboard/admins', label: 'Admins' },
 ];
 
 export function Sidebar() {

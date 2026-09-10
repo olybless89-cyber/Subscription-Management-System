@@ -70,7 +70,7 @@ app/api/
   cron/railway-sync/route.ts             Railway sync (CRON_SECRET-protected)
   subscriptions/[id]/suspend/route.ts     Admin manual suspend — scoped to assignment
   subscriptions/[id]/restore/route.ts      Admin manual restore — scoped to assignment
-tests/                                147 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
+tests/                                150 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
 app/
   globals.css                          Design tokens (forest green/paper/clay — matches the spec's own branding request)
   layout.tsx                            Root layout, wraps everything in AuthProvider
@@ -84,6 +84,8 @@ app/
     subscriptions/page.tsx                     List + create subscription form (customer/plan dropdowns)
     subscriptions/[id]/page.tsx                 View/edit one subscription + suspend/restore buttons
     domains/page.tsx                             List + attach-domain form
+    admins/page.tsx                                List + create admin form (role/canManageAdmins fields only shown to SUPER_ADMIN)
+    admins/[id]/assignments/page.tsx                 Checkbox list of customers this admin can see
   _components/AuthProvider.tsx           Session context — token in localStorage, see caveat below
   _components/Sidebar.tsx                 Nav
   _lib/api.ts                              authFetch() helper, attaches Bearer token
@@ -228,8 +230,8 @@ every real customer.
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit — passes clean (prisma-repository.ts excluded, see below)
-npm test            # vitest — 147 tests, all green, no network/DB needed
-npm run build       # next build — verified working in this sandbox, produces all 21 API routes + 7 UI pages
+npm test            # vitest — 150 tests, all green, no network/DB needed
+npm run build       # next build — verified working in this sandbox, produces all 21 API routes + 9 UI pages
 ```
 
 ### One thing I still could NOT verify from this sandbox — be aware before you ship
@@ -316,6 +318,7 @@ themselves are thin, reviewed-by-eye wrappers around that logic.
 | Attaching a domain already claimed by a different customer fails cleanly, not with a crash | `domainName` is globally unique in the schema, not unique per-customer — a real bug caught before shipping: the original uniqueness check only looked at the target customer's own domains, so a cross-customer duplicate would have hit Prisma's constraint directly and thrown an unhandled error instead of a clean `ALREADY_EXISTS`. Fixed with a dedicated `findByDomainName()` lookup; tested directly. |
 | PATCH on a subscription can never set `status` | `updateSubscription()`'s input type has no `status` field at all — not filtered out, structurally absent — and the route explicitly rejects a `status` key in the request body with a message pointing at the right endpoint. Status only ever changes through suspendCustomer/restoreCustomer (verified against Railway) or the webhook (verified against the payment provider). |
 | A failed or unconfigured email dispatch can never block a payment, suspension, or restoration | `sendEmail()` never throws — a missing `RESEND_API_KEY`, a Resend outage, or a bad address always returns `{ success: false }`, checked and tested directly (`tests/email.test.ts`) for the network-error, error-status, and unconfigured cases. Every caller (webhook, suspension engine, cron) has already done the thing that matters — recorded the payment, stopped/restored the deployment — before attempting to notify anyone. |
+| A delegated admin-manager can't spread scope beyond their own | `setCustomerAssignments()` now checks that a non-SUPER_ADMIN requester only assigns customers they can already see themselves — a real gap caught before shipping: without this, a delegated `canManageAdmins` admin could have granted a sub-admin visibility into a customer the delegator never had access to. SUPER_ADMIN is exempt (no scope to exceed). Tested directly (`tests/admin-management.test.ts`). |
 | Subscription status can never be set directly, bypassing verification | `UpdateSubscriptionInput` (the PATCH type) has no `status` field at all — a compile-time guarantee, not just a runtime check (see the `@ts-expect-error` test in `domains-and-subscription-editing.test.ts`). The PATCH route additionally rejects any request body containing `status` with an explicit 400, pointing at the right endpoint instead. |
 
 ## What's deliberately NOT done yet

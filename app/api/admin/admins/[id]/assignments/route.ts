@@ -52,7 +52,7 @@ export async function POST(
   const httpStatus =
     result.outcome === 'UPDATED'
       ? 200
-      : result.outcome === 'FORBIDDEN'
+      : result.outcome === 'FORBIDDEN' || result.outcome === 'OUT_OF_SCOPE'
         ? 403
         : result.outcome === 'NOT_FOUND'
           ? 404

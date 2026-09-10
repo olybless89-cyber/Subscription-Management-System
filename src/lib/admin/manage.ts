@@ -86,7 +86,7 @@ export async function createAdmin(
   return { outcome: 'CREATED', message: 'Admin created', admin };
 }
 
-export type SetAssignmentsOutcome = 'UPDATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'INVALID_CUSTOMER_IDS';
+export type SetAssignmentsOutcome = 'UPDATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'INVALID_CUSTOMER_IDS' | 'OUT_OF_SCOPE';
 
 export interface SetAssignmentsResult {
   outcome: SetAssignmentsOutcome;
@@ -105,6 +105,15 @@ export interface SetAssignmentsResult {
  * canManageAdmins-delegated ADMIN can call this. Assigning customers to
  * a SUPER_ADMIN is a harmless no-op (they see everyone regardless) but
  * not blocked — no reason to special-case it.
+ *
+ * Second guard, caught and fixed rather than shipped: a delegated
+ * (non-SUPER_ADMIN) admin-manager can only hand out customers they
+ * themselves can already see. Without this, a delegated admin-manager
+ * could grant a sub-admin visibility into a customer the delegator
+ * can't even see — a privilege-escalation-adjacent gap, since the
+ * assignment mechanism would let scope spread to someone the granting
+ * admin never had authority over. SUPER_ADMIN is exempt from this check
+ * (they can already see everyone, so there's no scope to exceed).
  */
 export async function setCustomerAssignments(
   deps: AdminManagementDeps,
@@ -126,6 +135,7 @@ export async function setCustomerAssignments(
   }
 
   const uniqueIds = [...new Set(customerIds)];
+
   if (uniqueIds.length > 0) {
     const found = await deps.customers.findByIds(uniqueIds);
     if (found.length !== uniqueIds.length) {
@@ -135,6 +145,17 @@ export async function setCustomerAssignments(
         outcome: 'INVALID_CUSTOMER_IDS',
         message: `Unknown customer id(s): ${missing.join(', ')}`,
       };
+    }
+
+    if (requester.role !== 'SUPER_ADMIN') {
+      const requesterVisible = new Set(await deps.adminAssignments.listCustomerIdsForAdmin(requestingAdminId));
+      const outOfScope = uniqueIds.filter((id) => !requesterVisible.has(id));
+      if (outOfScope.length > 0) {
+        return {
+          outcome: 'OUT_OF_SCOPE',
+          message: `You can only assign customers you can see yourself. Not visible to you: ${outOfScope.join(', ')}`,
+        };
+      }
     }
   }
 

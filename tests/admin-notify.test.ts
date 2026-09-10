@@ -18,6 +18,7 @@ function customer(id: string): CustomerRecord {
 function admin(overrides: Partial<AdminRecord>): AdminRecord {
   return {
     id: 'a',
+    name: 'Test Admin',
     email: 'a@dwo.example',
     passwordHash: 'x',
     role: 'ADMIN',

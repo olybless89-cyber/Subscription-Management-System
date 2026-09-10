@@ -304,6 +304,7 @@ export class PrismaAdminRepository implements AdminRepository {
     if (!a) return null;
     return {
       id: a.id,
+      name: a.name,
       email: a.email,
       passwordHash: a.passwordHash,
       role: a.role,
@@ -316,6 +317,7 @@ export class PrismaAdminRepository implements AdminRepository {
     if (!a) return null;
     return {
       id: a.id,
+      name: a.name,
       email: a.email,
       passwordHash: a.passwordHash,
       role: a.role,
@@ -327,6 +329,19 @@ export class PrismaAdminRepository implements AdminRepository {
     const rows = await this.prisma.adminUser.findMany({ where: { role: 'SUPER_ADMIN' } });
     return rows.map((a: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
       id: a.id,
+      name: a.name,
+      email: a.email,
+      passwordHash: a.passwordHash,
+      role: a.role,
+      canManageAdmins: a.canManageAdmins,
+    }));
+  }
+
+  async listAll() {
+    const rows = await this.prisma.adminUser.findMany({ orderBy: { createdAt: 'asc' } });
+    return rows.map((a: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+      id: a.id,
+      name: a.name,
       email: a.email,
       passwordHash: a.passwordHash,
       role: a.role,
@@ -352,6 +367,7 @@ export class PrismaAdminRepository implements AdminRepository {
     });
     return {
       id: a.id,
+      name: a.name,
       email: a.email,
       passwordHash: a.passwordHash,
       role: a.role,

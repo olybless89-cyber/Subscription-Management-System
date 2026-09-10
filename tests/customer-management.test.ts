@@ -6,6 +6,7 @@ import { AdminRecord } from '@/types/domain';
 function superAdmin(overrides: Partial<AdminRecord> = {}): AdminRecord {
   return {
     id: 'super_1',
+    name: 'Test Admin',
     email: 'super@dwo.example',
     passwordHash: 'x',
     role: 'SUPER_ADMIN',
@@ -17,6 +18,7 @@ function superAdmin(overrides: Partial<AdminRecord> = {}): AdminRecord {
 function plainAdmin(overrides: Partial<AdminRecord> = {}): AdminRecord {
   return {
     id: 'admin_1',
+    name: 'Test Admin',
     email: 'admin@dwo.example',
     passwordHash: 'x',
     role: 'ADMIN',

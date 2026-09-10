@@ -69,6 +69,9 @@ function makeAdminRepo(seed: AdminRecord[]) {
     async listSuperAdmins() {
       return [...byId.values()].filter((a) => a.role === 'SUPER_ADMIN');
     },
+    async listAll() {
+      return [...byId.values()];
+    },
     async create(input: Omit<AdminRecord, 'id'>) {
       const record: AdminRecord = { id: `admin_${byId.size + 1}`, ...input };
       byId.set(record.id, record);

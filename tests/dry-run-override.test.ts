@@ -6,6 +6,7 @@ import { AdminRecord, CustomerRecord, PlanRecord } from '@/types/domain';
 function admin(overrides: Partial<AdminRecord> = {}): AdminRecord {
   return {
     id: 'admin_1',
+    name: 'Test Admin',
     email: 'admin@dwo.example',
     passwordHash: 'x',
     role: 'ADMIN',

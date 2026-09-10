@@ -73,6 +73,7 @@ describe('authenticateAdmin', () => {
   async function seedAdmin(overrides: Partial<AdminRecord> = {}): Promise<AdminRecord> {
     return {
       id: 'admin_1',
+      name: 'Test Admin',
       email: 'jeffrey@digitalweboracleict.com',
       passwordHash: await hashPassword('correct-password'),
       role: 'SUPER_ADMIN',

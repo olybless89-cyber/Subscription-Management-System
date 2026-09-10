@@ -129,6 +129,10 @@ export interface AdminRepository {
   /** Every SUPER_ADMIN — used to fan out admin notifications, since
    * super admins see every customer regardless of assignment. */
   listSuperAdmins(): Promise<AdminRecord[]>;
+  /** For the admin-management UI listing. Gated at the route layer to
+   * the same canManageOtherAdmins() check as createAdmin — listing every
+   * admin's email/role is sensitive in the same way creating one is. */
+  listAll(): Promise<AdminRecord[]>;
   create(input: {
     name: string;
     email: string;

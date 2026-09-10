@@ -46,6 +46,7 @@ export interface CustomerRecord {
 
 export interface AdminRecord {
   id: string;
+  name: string;
   email: string;
   passwordHash: string;
   role: AdminRole;
