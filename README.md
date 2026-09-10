@@ -32,12 +32,15 @@ src/lib/auth/
   authorize.ts                         authenticateFromHeader / hasAdminRole / canAccessCustomer / listVisibleCustomerIds / canManageOtherAdmins
 src/lib/admin/manage.ts              createAdmin() / setCustomerAssignments() — scoped-admin management
 src/lib/customers/manage.ts           createCustomer() — spec sections 5 & 39, auto-assigns scoped creators
+src/lib/billing/
+  cycle.ts                              addBillingCycle() / addDays()
+  manage.ts                              createPlan() / createSubscription() — spec sections 8-9, 39
+src/lib/railway/mapping.ts             mapRailwayResource() — spec section 12, enforces MULTI_TENANT+APP_LEVEL at entry
 src/lib/notifications/admin-notify.ts  notifyAdminsForCustomer() — routes payment events to the right admin(s)
 src/lib/cron/
   subscription-checker.ts             runSubscriptionChecker() — spec sections 21-22
   railway-sync.ts                      syncRailwayResources() / syncSingleRailwayResource() — spec section 13
 src/lib/audit/log.ts                 recordAuditLog() — spec section 33
-src/lib/billing/cycle.ts             addBillingCycle() / addDays()
 src/lib/db/
   ports.ts                           Repository interfaces everything above depends on (DB-agnostic)
   prisma-repository.ts                Real Prisma implementation of every port (see caveat below)
@@ -52,12 +55,15 @@ app/api/
   admin/admins/route.ts                  Create a new admin (SUPER_ADMIN or delegated)
   admin/admins/[id]/assignments/route.ts  Get/set which customers an admin can see
   admin/customers/route.ts                GET: scoped customer listing. POST: create a customer (spec section 5)
+  admin/plans/route.ts                     GET: list plans. POST: create one (spec section 9)
+  admin/subscriptions/route.ts              POST: create a subscription for a customer (spec sections 8-9), scoped
+  admin/subscriptions/[id]/railway-resource/route.ts  POST: map that subscription to Railway infra (spec section 12), scoped
   admin/notifications/route.ts             The calling admin's own notification feed
   cron/subscriptions/route.ts           Hourly subscription checker (CRON_SECRET-protected)
   cron/railway-sync/route.ts             Railway sync (CRON_SECRET-protected)
   subscriptions/[id]/suspend/route.ts     Admin manual suspend — scoped to assignment
   subscriptions/[id]/restore/route.ts      Admin manual restore — scoped to assignment
-tests/                                95 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
+tests/                                109 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
 ```
 
 ## Scoped admin access — how it actually works
@@ -106,13 +112,40 @@ payment providers. Concretely:
    to succeed. Implement `createFlutterwaveProvider()` matching
    `paystack.ts`'s shape when you're ready; nothing else needs to change.
 
+## The full flow, end to end
+
+With this round, the complete admin-driven setup path is real and
+callable:
+
+```
+POST /api/admin/customers                                   → create a customer (spec section 5)
+POST /api/admin/plans                                        → define a hosting plan (spec section 9)
+POST /api/admin/subscriptions                                  → tie customer + plan together (spec sections 8-9)
+POST /api/admin/subscriptions/:id/railway-resource               → map that subscription to real Railway infra (spec section 12)
+POST /api/payments                                               → customer/admin-initiated checkout (spec sections 10, 19)
+POST /api/webhooks/payment                                        → Paystack confirms payment → extends subscription, restores if suspended
+POST /api/subscriptions/:id/suspend  or  /restore                   → manual admin override, scoped to assignment
+POST /api/cron/subscriptions                                          → the automated version of suspend, on schedule
+```
+
+Each step is intentionally separate rather than one mega-endpoint — a
+customer can exist with no plan yet, a subscription can exist before
+infrastructure is provisioned, and a scoped admin's assignment gates the
+subscription and railway-resource steps the same way it gates
+suspend/restore. `mapRailwayResource()` also enforces one safety
+invariant at data-entry time rather than only at suspension time:
+`MULTI_TENANT` hosting mode can ONLY pair with `APP_LEVEL` suspension
+strategy — the exact combination spec section 16 requires, rejected
+before it can even be saved if someone tries to pair `MULTI_TENANT` with
+`STOP_DEPLOYMENT`.
+
 ## Running it
 
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit — passes clean (prisma-repository.ts excluded, see below)
 npm test            # vitest — 95 tests, all green, no network/DB needed
-npm run build       # next build — verified working in this sandbox, produces all 15 routes (unchanged count — 2 routes gained a POST handler, none added)
+npm run build       # next build — verified working in this sandbox, produces all 18 routes
 ```
 
 ### Two things I could NOT verify from this sandbox — be aware before you ship
@@ -160,6 +193,7 @@ themselves are thin, reviewed-by-eye wrappers around that logic.
 | Wrong payment provider never silently used | `resolvePaymentProvider()` throws a typed error for providers with no real adapter (FLUTTERWAVE today) instead of falling back to Paystack or faking success. |
 | Suspended-but-not-terminated customers can still log in | `authenticateCustomer` only blocks `TERMINATED`, specifically so a suspended customer can reach the billing portal and pay their way back. |
 | Railway sync never assumes success OR failure | `syncRailwayResources` sets `UNKNOWN` (not `ERROR`, not silently unchanged) when Railway is unreachable — "we don't know" is a distinct, honest state from both extremes. |
+| MULTI_TENANT can never be mapped with an unsafe suspension strategy | `mapRailwayResource()` rejects `MULTI_TENANT` + anything other than `APP_LEVEL` at data-entry time — a bad pairing can't even get saved, rather than sitting in the database until a future suspension takes down every other customer sharing that service. |
 
 ## What's deliberately NOT done yet
 
@@ -171,9 +205,12 @@ themselves are thin, reviewed-by-eye wrappers around that logic.
   them out as email/SMS yet.
 - No Flutterwave adapter — the routing/schema support is real (see
   above), the actual provider implementation isn't.
-- `POST /api/domains`, `/api/plans` (basic CRUD, spec section 39) aren't
-  built yet — customers now have a real creation route, domains/plans
-  don't.
+- `POST /api/admin/domains` (basic CRUD, spec section 39) isn't built —
+  customers, plans, subscriptions, and Railway resource mapping now all
+  have real creation routes; domains don't yet.
+- No `GET`/`PATCH` on subscriptions (spec section 39 lists these too) —
+  only creation and suspend/restore exist. No way to view or edit a
+  subscription's fields after creation without direct DB access.
 - Customer self-service password setup (invite/reset flow) isn't built —
   `Customer.passwordHash` exists and can be null, `authenticateCustomer`
   handles the null case, but nothing issues a reset link yet.

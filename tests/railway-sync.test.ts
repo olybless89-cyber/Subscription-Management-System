@@ -22,6 +22,21 @@ function makeFakeResourceRepo(seed: RailwayResourceRecord[]): RailwayResourceRep
       r.status = status;
       if (extra?.deploymentId !== undefined) r.deploymentId = extra.deploymentId ?? null;
     },
+    async create(input) {
+      const record: RailwayResourceRecord = {
+        id: `res_${rows.size + 1}`,
+        subscriptionId: input.subscriptionId,
+        projectId: input.projectId,
+        environmentId: input.environmentId,
+        serviceId: input.serviceId,
+        deploymentId: input.deploymentId ?? null,
+        hostingMode: input.hostingMode,
+        suspensionStrategy: input.suspensionStrategy,
+        status: 'UNKNOWN',
+      };
+      rows.set(record.id, record);
+      return record;
+    },
   };
 }
 

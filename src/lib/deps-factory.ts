@@ -12,7 +12,7 @@ import {
   PrismaAuditLogRepository,
   EmailNotificationSender,
 } from './db/prisma-repository';
-import { WebhookDeps, AuthDeps, CronDeps, AdminManagementDeps } from './db/ports';
+import { WebhookDeps, AuthDeps, CronDeps, AdminManagementDeps, BillingSetupDeps } from './db/ports';
 import { createRailwayClient } from './railway/client';
 import { createPaystackProvider } from './payments/paystack';
 
@@ -63,6 +63,18 @@ export function buildAdminManagementDeps(): AdminManagementDeps {
     admins: new PrismaAdminRepository(client),
     customers: new PrismaCustomerRepository(client),
     adminAssignments: new PrismaAdminAssignmentRepository(client),
+    auditLog: new PrismaAuditLogRepository(client),
+  };
+}
+
+export function buildBillingSetupDeps(): BillingSetupDeps {
+  const client = getPrisma();
+  return {
+    admins: new PrismaAdminRepository(client),
+    customers: new PrismaCustomerRepository(client),
+    plans: new PrismaPlanRepository(client),
+    subscriptions: new PrismaSubscriptionRepository(client),
+    railwayResources: new PrismaRailwayResourceRepository(client),
     auditLog: new PrismaAuditLogRepository(client),
   };
 }

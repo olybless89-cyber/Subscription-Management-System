@@ -82,6 +82,7 @@ export interface SubscriptionRecord {
 
 export interface PlanRecord {
   id: string;
+  name: string;
   amount: number; // minor units (kobo)
   currency: string;
   billingCycle: BillingCycle;

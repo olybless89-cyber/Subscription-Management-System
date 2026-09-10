@@ -1,4 +1,4 @@
-import { EngineDeps, WebhookDeps, AuthDeps, AdminManagementDeps } from '@/lib/db/ports';
+import { EngineDeps, WebhookDeps, AuthDeps, AdminManagementDeps, BillingSetupDeps } from '@/lib/db/ports';
 import {
   CustomerRecord,
   SubscriptionRecord,
@@ -121,6 +121,91 @@ function makeAdminNotificationRepo() {
   return { repo, log };
 }
 
+function makePlanRepo(seed: PlanRecord[]) {
+  const byId = new Map(seed.map((p) => [p.id, { ...p }]));
+  let counter = seed.length;
+  const repo = {
+    async findById(id: string) {
+      return byId.get(id) ?? null;
+    },
+    async listAll() {
+      return [...byId.values()];
+    },
+    async create(input: Omit<PlanRecord, 'id'>) {
+      counter += 1;
+      const record: PlanRecord = { id: `plan_${counter}`, ...input };
+      byId.set(record.id, record);
+      return record;
+    },
+  };
+  return { repo, byId };
+}
+
+function makeSubscriptionRepo(seed: SubscriptionRecord[]) {
+  const byId = new Map(seed.map((s) => [s.id, { ...s }]));
+  let counter = seed.length;
+  const repo = {
+    async findById(id: string) {
+      return byId.get(id) ?? null;
+    },
+    async updateStatus(id: string, status: SubscriptionRecord['status'], extra?: { suspendedAt?: string | null }) {
+      const s = byId.get(id);
+      if (!s) throw new Error('not found');
+      s.status = status;
+      if (extra?.suspendedAt !== undefined) s.suspendedAt = extra.suspendedAt;
+    },
+    async extendPeriod(
+      id: string,
+      period: { currentPeriodStart: string; currentPeriodEnd: string; nextBillingDate: string }
+    ) {
+      const s = byId.get(id);
+      if (!s) throw new Error('not found');
+      s.currentPeriodStart = period.currentPeriodStart;
+      s.currentPeriodEnd = period.currentPeriodEnd;
+      s.nextBillingDate = period.nextBillingDate;
+      s.gracePeriodEnd = null;
+    },
+    async startGracePeriod(id: string, gracePeriodEnd: string) {
+      const s = byId.get(id);
+      if (!s) throw new Error('not found');
+      s.status = 'GRACE_PERIOD';
+      s.gracePeriodEnd = gracePeriodEnd;
+    },
+    async findBillingCheckCandidates() {
+      return [...byId.values()].filter((s) =>
+        (['ACTIVE', 'PAYMENT_DUE', 'GRACE_PERIOD'] as const).includes(
+          s.status as 'ACTIVE' | 'PAYMENT_DUE' | 'GRACE_PERIOD'
+        )
+      );
+    },
+    async create(input: {
+      customerId: string;
+      planId: string;
+      status: SubscriptionRecord['status'];
+      currentPeriodStart: string;
+      currentPeriodEnd: string;
+      nextBillingDate: string;
+    }) {
+      counter += 1;
+      const record: SubscriptionRecord = {
+        id: `sub_${counter}`,
+        customerId: input.customerId,
+        planId: input.planId,
+        status: input.status,
+        suspensionEnabled: true,
+        suspendedAt: null,
+        currentPeriodStart: input.currentPeriodStart,
+        currentPeriodEnd: input.currentPeriodEnd,
+        nextBillingDate: input.nextBillingDate,
+        gracePeriodEnd: null,
+      };
+      byId.set(record.id, record);
+      return record;
+    },
+  };
+  return { repo, byId };
+}
+
 function makeAuditLogRepo() {
   const log: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }> = [];
   const repo = {
@@ -142,7 +227,7 @@ export function makeFakeDeps(seed: {
   notificationLog: Array<{ customerId: string; event: string; message: string }>;
 } {
   const { repo: customersRepo } = makeCustomerRepo(seed.customers);
-  const subscriptions = new Map(seed.subscriptions.map((s) => [s.id, { ...s }]));
+  const { repo: subscriptionsRepo } = makeSubscriptionRepo(seed.subscriptions);
   const resources = [...seed.railwayResources];
   const events: SuspensionEventInput[] = [];
   const notificationLog: Array<{ customerId: string; event: string; message: string }> = [];
@@ -150,38 +235,7 @@ export function makeFakeDeps(seed: {
   return {
     events,
     notificationLog,
-    subscriptions: {
-      async findById(id) {
-        return subscriptions.get(id) ?? null;
-      },
-      async updateStatus(id, status, extra) {
-        const s = subscriptions.get(id);
-        if (!s) throw new Error('not found');
-        s.status = status;
-        if (extra?.suspendedAt !== undefined) s.suspendedAt = extra.suspendedAt;
-      },
-      async extendPeriod(id, period) {
-        const s = subscriptions.get(id);
-        if (!s) throw new Error('not found');
-        s.currentPeriodStart = period.currentPeriodStart;
-        s.currentPeriodEnd = period.currentPeriodEnd;
-        s.nextBillingDate = period.nextBillingDate;
-        s.gracePeriodEnd = null;
-      },
-      async startGracePeriod(id, gracePeriodEnd) {
-        const s = subscriptions.get(id);
-        if (!s) throw new Error('not found');
-        s.status = 'GRACE_PERIOD';
-        s.gracePeriodEnd = gracePeriodEnd;
-      },
-      async findBillingCheckCandidates() {
-        return [...subscriptions.values()].filter((s) =>
-          (['ACTIVE', 'PAYMENT_DUE', 'GRACE_PERIOD'] as const).includes(
-            s.status as 'ACTIVE' | 'PAYMENT_DUE' | 'GRACE_PERIOD'
-          )
-        );
-      },
-    },
+    subscriptions: subscriptionsRepo,
     customers: customersRepo,
     railwayResources: {
       async findBySubscriptionId(subscriptionId) {
@@ -195,6 +249,21 @@ export function makeFakeDeps(seed: {
         if (!r) throw new Error('not found');
         r.status = status;
         if (extra?.deploymentId !== undefined) r.deploymentId = extra.deploymentId ?? null;
+      },
+      async create(input) {
+        const record: RailwayResourceRecord = {
+          id: `res_${resources.length + 1}`,
+          subscriptionId: input.subscriptionId,
+          projectId: input.projectId,
+          environmentId: input.environmentId,
+          serviceId: input.serviceId,
+          deploymentId: input.deploymentId ?? null,
+          hostingMode: input.hostingMode,
+          suspensionStrategy: input.suspensionStrategy,
+          status: 'UNKNOWN',
+        };
+        resources.push(record);
+        return record;
       },
     },
     suspensionEvents: {
@@ -225,7 +294,7 @@ export function makeFakeWebhookDeps(seed: {
   adminNotificationLog: Array<{ adminId: string; customerId: string; event: string; message: string }>;
 } {
   const base = makeFakeDeps(seed);
-  const plans = new Map(seed.plans.map((p) => [p.id, { ...p }]));
+  const { repo: plansRepo } = makePlanRepo(seed.plans);
   const paymentsByRef = new Map(seed.payments.map((p) => [p.reference, { ...p }]));
   const paymentsById = new Map(seed.payments.map((p) => [p.id, paymentsByRef.get(p.reference)!]));
   const { repo: adminsRepo } = makeAdminRepo(seed.admins ?? []);
@@ -239,11 +308,7 @@ export function makeFakeWebhookDeps(seed: {
     admins: adminsRepo,
     adminAssignments: assignmentsRepo,
     adminNotifications: adminNotificationsRepo,
-    plans: {
-      async findById(id) {
-        return plans.get(id) ?? null;
-      },
-    },
+    plans: plansRepo,
     payments: {
       async findByReference(reference) {
         return paymentsByRef.get(reference) ?? null;
@@ -300,5 +365,66 @@ export function makeFakeAdminManagementDeps(seed: {
     auditLog: auditLogRepo,
     auditLogEntries,
     assignmentStore: byAdmin,
+  };
+}
+
+export function makeFakeBillingSetupDeps(seed: {
+  admins: AdminRecord[];
+  customers: CustomerRecord[];
+  plans: PlanRecord[];
+  subscriptions: SubscriptionRecord[];
+  railwayResources: RailwayResourceRecord[];
+}): BillingSetupDeps & {
+  auditLogEntries: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }>;
+  planStore: Map<string, PlanRecord>;
+  subscriptionStore: Map<string, SubscriptionRecord>;
+  railwayResourceStore: RailwayResourceRecord[];
+} {
+  const { repo: adminsRepo } = makeAdminRepo(seed.admins);
+  const { repo: customersRepo } = makeCustomerRepo(seed.customers);
+  const { repo: plansRepo, byId: planStore } = makePlanRepo(seed.plans);
+  const { repo: subscriptionsRepo, byId: subscriptionStore } = makeSubscriptionRepo(seed.subscriptions);
+  const railwayResourceStore = [...seed.railwayResources];
+  const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
+
+  return {
+    admins: adminsRepo,
+    customers: customersRepo,
+    plans: plansRepo,
+    subscriptions: subscriptionsRepo,
+    railwayResources: {
+      async findBySubscriptionId(subscriptionId: string) {
+        return railwayResourceStore.filter((r) => r.subscriptionId === subscriptionId);
+      },
+      async findAll() {
+        return [...railwayResourceStore];
+      },
+      async updateStatus(id: string, status: RailwayResourceRecord['status'], extra) {
+        const r = railwayResourceStore.find((x) => x.id === id);
+        if (!r) throw new Error('not found');
+        r.status = status;
+        if (extra?.deploymentId !== undefined) r.deploymentId = extra.deploymentId ?? null;
+      },
+      async create(input) {
+        const record: RailwayResourceRecord = {
+          id: `res_${railwayResourceStore.length + 1}`,
+          subscriptionId: input.subscriptionId,
+          projectId: input.projectId,
+          environmentId: input.environmentId,
+          serviceId: input.serviceId,
+          deploymentId: input.deploymentId ?? null,
+          hostingMode: input.hostingMode,
+          suspensionStrategy: input.suspensionStrategy,
+          status: 'UNKNOWN',
+        };
+        railwayResourceStore.push(record);
+        return record;
+      },
+    },
+    auditLog: auditLogRepo,
+    auditLogEntries,
+    planStore,
+    subscriptionStore,
+    railwayResourceStore,
   };
 }

@@ -99,6 +99,38 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
     });
   }
 
+  async create(input: {
+    customerId: string;
+    planId: string;
+    status: SubscriptionRecord['status'];
+    currentPeriodStart: string;
+    currentPeriodEnd: string;
+    nextBillingDate: string;
+  }): Promise<SubscriptionRecord> {
+    const s = await this.prisma.subscription.create({
+      data: {
+        customerId: input.customerId,
+        planId: input.planId,
+        status: input.status as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        currentPeriodStart: new Date(input.currentPeriodStart),
+        currentPeriodEnd: new Date(input.currentPeriodEnd),
+        nextBillingDate: new Date(input.nextBillingDate),
+      },
+    });
+    return {
+      id: s.id,
+      customerId: s.customerId,
+      planId: s.planId,
+      status: s.status,
+      suspensionEnabled: s.suspensionEnabled,
+      suspendedAt: s.suspendedAt ? s.suspendedAt.toISOString() : null,
+      currentPeriodStart: s.currentPeriodStart.toISOString(),
+      currentPeriodEnd: s.currentPeriodEnd.toISOString(),
+      nextBillingDate: s.nextBillingDate.toISOString(),
+      gracePeriodEnd: s.gracePeriodEnd ? s.gracePeriodEnd.toISOString() : null,
+    };
+  }
+
   async findBillingCheckCandidates(): Promise<SubscriptionRecord[]> {
     const rows = await this.prisma.subscription.findMany({
       where: { status: { in: ['ACTIVE', 'PAYMENT_DUE', 'GRACE_PERIOD'] } },
@@ -427,6 +459,40 @@ export class PrismaRailwayResourceRepository implements RailwayResourceRepositor
       },
     });
   }
+
+  async create(input: {
+    subscriptionId: string;
+    projectId: string;
+    environmentId: string;
+    serviceId: string;
+    deploymentId?: string | null;
+    hostingMode: RailwayResourceRecord['hostingMode'];
+    suspensionStrategy: RailwayResourceRecord['suspensionStrategy'];
+  }): Promise<RailwayResourceRecord> {
+    const r = await this.prisma.railwayResource.create({
+      data: {
+        subscriptionId: input.subscriptionId,
+        projectId: input.projectId,
+        environmentId: input.environmentId,
+        serviceId: input.serviceId,
+        deploymentId: input.deploymentId ?? undefined,
+        hostingMode: input.hostingMode as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        suspensionStrategy: input.suspensionStrategy as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        status: 'UNKNOWN', // honest starting state — nothing has synced against Railway yet
+      },
+    });
+    return {
+      id: r.id,
+      subscriptionId: r.subscriptionId,
+      projectId: r.projectId,
+      environmentId: r.environmentId,
+      serviceId: r.serviceId,
+      deploymentId: r.deploymentId,
+      hostingMode: r.hostingMode,
+      suspensionStrategy: r.suspensionStrategy,
+      status: r.status,
+    };
+  }
 }
 
 export class PrismaSuspensionEventRepository implements SuspensionEventRepository {
@@ -468,6 +534,45 @@ export class PrismaPlanRepository implements PlanRepository {
     if (!p) return null;
     return {
       id: p.id,
+      name: p.name,
+      amount: p.amount,
+      currency: p.currency,
+      billingCycle: p.billingCycle,
+      gracePeriodDays: p.gracePeriodDays,
+    };
+  }
+
+  async listAll(): Promise<PlanRecord[]> {
+    const rows = await this.prisma.plan.findMany();
+    return rows.map((p: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+      id: p.id,
+      name: p.name,
+      amount: p.amount,
+      currency: p.currency,
+      billingCycle: p.billingCycle,
+      gracePeriodDays: p.gracePeriodDays,
+    }));
+  }
+
+  async create(input: {
+    name: string;
+    amount: number;
+    currency: string;
+    billingCycle: PlanRecord['billingCycle'];
+    gracePeriodDays: number;
+  }): Promise<PlanRecord> {
+    const p = await this.prisma.plan.create({
+      data: {
+        name: input.name,
+        amount: input.amount,
+        currency: input.currency,
+        billingCycle: input.billingCycle as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        gracePeriodDays: input.gracePeriodDays,
+      },
+    });
+    return {
+      id: p.id,
+      name: p.name,
       amount: p.amount,
       currency: p.currency,
       billingCycle: p.billingCycle,

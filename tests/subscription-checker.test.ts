@@ -22,6 +22,7 @@ function customer(overrides: Partial<CustomerRecord> = {}): CustomerRecord {
 function plan(overrides: Partial<PlanRecord> = {}): PlanRecord {
   return {
     id: 'plan_1',
+    name: 'Standard Hosting',
     amount: 2_500_000,
     currency: 'NGN',
     billingCycle: 'MONTHLY',

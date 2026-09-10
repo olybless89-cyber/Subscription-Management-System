@@ -37,6 +37,7 @@ function baseSubscription(overrides: Partial<SubscriptionRecord> = {}): Subscrip
 function basePlan(overrides: Partial<PlanRecord> = {}): PlanRecord {
   return {
     id: 'plan_1',
+    name: 'Standard Hosting',
     amount: 2_500_000, // ₦25,000 in kobo
     currency: 'NGN',
     billingCycle: 'MONTHLY',

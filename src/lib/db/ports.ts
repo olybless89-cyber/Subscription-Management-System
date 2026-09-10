@@ -46,10 +46,26 @@ export interface SubscriptionRepository {
    * record's actual dates against `now` — this just narrows what's worth
    * loading, it is not the source of truth for "is this one due". */
   findBillingCheckCandidates(): Promise<SubscriptionRecord[]>;
+  create(input: {
+    customerId: string;
+    planId: string;
+    status: SubscriptionStatus;
+    currentPeriodStart: string;
+    currentPeriodEnd: string;
+    nextBillingDate: string;
+  }): Promise<SubscriptionRecord>;
 }
 
 export interface PlanRepository {
   findById(id: string): Promise<PlanRecord | null>;
+  listAll(): Promise<PlanRecord[]>;
+  create(input: {
+    name: string;
+    amount: number;
+    currency: string;
+    billingCycle: PlanRecord['billingCycle'];
+    gracePeriodDays: number;
+  }): Promise<PlanRecord>;
 }
 
 export interface PaymentRepository {
@@ -143,6 +159,20 @@ export interface RailwayResourceRepository {
     status: RailwayResourceStatus,
     extra?: { deploymentId?: string | null; lastError?: string | null }
   ): Promise<void>;
+  /** Maps a subscription to real Railway infrastructure — spec section
+   * 12. Deliberately a separate step from subscription creation (spec
+   * sections 8-9): a subscription can exist before infrastructure is
+   * provisioned, and conflating the two would make one route respond
+   * for both concerns. */
+  create(input: {
+    subscriptionId: string;
+    projectId: string;
+    environmentId: string;
+    serviceId: string;
+    deploymentId?: string | null;
+    hostingMode: RailwayResourceRecord['hostingMode'];
+    suspensionStrategy: RailwayResourceRecord['suspensionStrategy'];
+  }): Promise<RailwayResourceRecord>;
 }
 
 export interface SuspensionEventRepository {
@@ -204,5 +234,17 @@ export interface AdminManagementDeps {
   admins: AdminRepository;
   customers: CustomerRepository;
   adminAssignments: AdminAssignmentRepository;
+  auditLog: AuditLogRepository;
+}
+
+/** Dependencies for creating plans, subscriptions, and mapping
+ * subscriptions to Railway infrastructure — three deliberately separate
+ * business-logic functions sharing one dependency bag. */
+export interface BillingSetupDeps {
+  admins: AdminRepository;
+  customers: CustomerRepository;
+  plans: PlanRepository;
+  subscriptions: SubscriptionRepository;
+  railwayResources: RailwayResourceRepository;
   auditLog: AuditLogRepository;
 }
