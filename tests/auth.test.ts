@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { hashPassword, verifyPassword } from '@/lib/auth/password';
 import { createSessionToken, verifySessionToken } from '@/lib/auth/tokens';
 import { authenticateAdmin, authenticateCustomer } from '@/lib/auth/authenticate';
-import { authenticateFromHeader, hasAdminRole, canAccessCustomerResource } from '@/lib/auth/authorize';
+import { authenticateFromHeader, hasAdminRole, canAccessCustomer, listVisibleCustomerIds, canManageOtherAdmins } from '@/lib/auth/authorize';
 import { makeFakeAuthDeps } from './fakes';
 import { AdminRecord, CustomerRecord } from '@/types/domain';
 
@@ -129,6 +129,7 @@ describe('authenticateCustomer', () => {
       passwordHash: await hashPassword('client-password'),
       status: 'ACTIVE',
       automaticSuspension: true,
+      paymentProvider: 'PAYSTACK',
       ...overrides,
     };
   }
@@ -190,13 +191,47 @@ describe('authorization helpers', () => {
     expect(hasAdminRole(customerSession, ['ADMIN', 'SUPER_ADMIN'])).toBe(false);
   });
 
-  it('canAccessCustomerResource: admins can access anything, customers only their own', () => {
-    const adminSession = { sub: 'a1', type: 'admin' as const, role: 'ADMIN' as const, iat: 0, exp: 9999999999 };
+  it('canAccessCustomer: SUPER_ADMIN sees everyone, ADMIN only sees assigned customers, customers only see themselves', async () => {
+    const superAdminSession = { sub: 'a1', type: 'admin' as const, role: 'SUPER_ADMIN' as const, iat: 0, exp: 9999999999 };
+    const scopedAdminSession = { sub: 'a2', type: 'admin' as const, role: 'ADMIN' as const, iat: 0, exp: 9999999999 };
     const ownerSession = { sub: 'cust_1', type: 'customer' as const, iat: 0, exp: 9999999999 };
-    const otherSession = { sub: 'cust_2', type: 'customer' as const, iat: 0, exp: 9999999999 };
+    const otherCustomerSession = { sub: 'cust_2', type: 'customer' as const, iat: 0, exp: 9999999999 };
 
-    expect(canAccessCustomerResource(adminSession, 'cust_1')).toBe(true);
-    expect(canAccessCustomerResource(ownerSession, 'cust_1')).toBe(true);
-    expect(canAccessCustomerResource(otherSession, 'cust_1')).toBe(false);
+    const assignments = {
+      async isAssigned(adminId: string, customerId: string) {
+        return adminId === 'a2' && customerId === 'cust_1';
+      },
+    };
+
+    expect(await canAccessCustomer(superAdminSession, 'cust_1', assignments)).toBe(true);
+    expect(await canAccessCustomer(superAdminSession, 'cust_999_never_assigned', assignments)).toBe(true);
+
+    expect(await canAccessCustomer(scopedAdminSession, 'cust_1', assignments)).toBe(true);
+    expect(await canAccessCustomer(scopedAdminSession, 'cust_2', assignments)).toBe(false);
+
+    expect(await canAccessCustomer(ownerSession, 'cust_1', assignments)).toBe(true);
+    expect(await canAccessCustomer(otherCustomerSession, 'cust_1', assignments)).toBe(false);
+  });
+
+  it('listVisibleCustomerIds: SUPER_ADMIN gets the ALL sentinel, ADMIN gets their concrete assigned list', async () => {
+    const superAdminSession = { sub: 'a1', type: 'admin' as const, role: 'SUPER_ADMIN' as const, iat: 0, exp: 9999999999 };
+    const scopedAdminSession = { sub: 'a2', type: 'admin' as const, role: 'ADMIN' as const, iat: 0, exp: 9999999999 };
+    const customerSession = { sub: 'cust_1', type: 'customer' as const, iat: 0, exp: 9999999999 };
+
+    const assignments = {
+      async listCustomerIdsForAdmin(adminId: string) {
+        return adminId === 'a2' ? ['cust_1', 'cust_2'] : [];
+      },
+    };
+
+    expect(await listVisibleCustomerIds(superAdminSession, assignments)).toBe('ALL');
+    expect(await listVisibleCustomerIds(scopedAdminSession, assignments)).toEqual(['cust_1', 'cust_2']);
+    expect(await listVisibleCustomerIds(customerSession, assignments)).toEqual([]);
+  });
+
+  it('canManageOtherAdmins: true for SUPER_ADMIN or a delegated ADMIN, false otherwise', () => {
+    expect(canManageOtherAdmins({ role: 'SUPER_ADMIN', canManageAdmins: false })).toBe(true);
+    expect(canManageOtherAdmins({ role: 'ADMIN', canManageAdmins: true })).toBe(true);
+    expect(canManageOtherAdmins({ role: 'ADMIN', canManageAdmins: false })).toBe(false);
   });
 });

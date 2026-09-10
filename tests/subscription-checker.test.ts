@@ -12,6 +12,7 @@ function customer(overrides: Partial<CustomerRecord> = {}): CustomerRecord {
     customerCode: 'WOH-000001',
     email: 'c@example.com',
     passwordHash: null,
+    paymentProvider: 'PAYSTACK',
     status: 'ACTIVE',
     automaticSuspension: true,
     ...overrides,

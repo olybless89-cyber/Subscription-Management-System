@@ -14,6 +14,7 @@ function baseCustomer(overrides: Partial<CustomerRecord> = {}): CustomerRecord {
     customerCode: 'WOH-000001',
     email: 'customer@example.com',
     passwordHash: null,
+    paymentProvider: 'PAYSTACK',
     status: 'ACTIVE',
     automaticSuspension: true,
     ...overrides,
@@ -74,10 +75,10 @@ describe('initiateCheckout — happy path', () => {
     });
     const provider = fakeProvider();
 
-    const result = await initiateCheckout(deps, provider, {
+    const result = await initiateCheckout(deps, {
       subscriptionId: 'sub_1',
       callbackUrl: 'https://portal.digitalweboracleict.com/billing/callback',
-    });
+    }, () => provider);
 
     expect(result.outcome).toBe('INITIATED');
     expect(result.authorizationUrl).toBe('https://checkout.paystack.com/abc123');
@@ -103,14 +104,14 @@ describe('initiateCheckout — happy path', () => {
     const provider = fakeProvider();
     const initSpy = provider.initializePayment as ReturnType<typeof vi.fn>;
 
-    await initiateCheckout(deps, provider, {
+    await initiateCheckout(deps, {
       subscriptionId: 'sub_1',
       callbackUrl: 'https://portal.example.com/callback',
-    });
-    await initiateCheckout(deps, provider, {
+    }, () => provider);
+    await initiateCheckout(deps, {
       subscriptionId: 'sub_1',
       callbackUrl: 'https://portal.example.com/callback',
-    });
+    }, () => provider);
 
     const firstRef = initSpy.mock.calls[0][0].reference as string;
     const secondRef = initSpy.mock.calls[1][0].reference as string;
@@ -132,10 +133,10 @@ describe('initiateCheckout — happy path', () => {
     const provider = fakeProvider();
     const initSpy = provider.initializePayment as ReturnType<typeof vi.fn>;
 
-    await initiateCheckout(deps, provider, {
+    await initiateCheckout(deps, {
       subscriptionId: 'sub_1',
       callbackUrl: 'https://portal.example.com/callback',
-    });
+    }, () => provider);
 
     expect(initSpy).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -159,10 +160,10 @@ describe('initiateCheckout — guards', () => {
     });
     const provider = fakeProvider();
 
-    const result = await initiateCheckout(deps, provider, {
+    const result = await initiateCheckout(deps, {
       subscriptionId: 'sub_1',
       callbackUrl: 'http://portal.example.com/callback', // not https
-    });
+    }, () => provider);
 
     expect(result.outcome).toBe('ERROR');
     expect(provider.initializePayment).not.toHaveBeenCalled();
@@ -179,10 +180,10 @@ describe('initiateCheckout — guards', () => {
     });
     const provider = fakeProvider();
 
-    const result = await initiateCheckout(deps, provider, {
+    const result = await initiateCheckout(deps, {
       subscriptionId: 'sub_1',
       callbackUrl: 'https://portal.example.com/callback',
-    });
+    }, () => provider);
 
     expect(result.outcome).toBe('BLOCKED');
     expect(provider.initializePayment).not.toHaveBeenCalled();
@@ -198,10 +199,10 @@ describe('initiateCheckout — guards', () => {
     });
     const provider = fakeProvider();
 
-    const result = await initiateCheckout(deps, provider, {
+    const result = await initiateCheckout(deps, {
       subscriptionId: 'sub_1',
       callbackUrl: 'https://portal.example.com/callback',
-    });
+    }, () => provider);
 
     expect(result.outcome).toBe('BLOCKED');
   });
@@ -216,10 +217,10 @@ describe('initiateCheckout — guards', () => {
     });
     const provider = fakeProvider();
 
-    const result = await initiateCheckout(deps, provider, {
+    const result = await initiateCheckout(deps, {
       subscriptionId: 'sub_1',
       callbackUrl: 'https://portal.example.com/callback',
-    });
+    }, () => provider);
 
     expect(result.outcome).toBe('INITIATED');
   });
@@ -234,10 +235,10 @@ describe('initiateCheckout — guards', () => {
     });
     const provider = fakeProvider();
 
-    const result = await initiateCheckout(deps, provider, {
+    const result = await initiateCheckout(deps, {
       subscriptionId: 'sub_missing',
       callbackUrl: 'https://portal.example.com/callback',
-    });
+    }, () => provider);
 
     expect(result.outcome).toBe('NOT_FOUND');
   });
@@ -258,10 +259,10 @@ describe('initiateCheckout — provider failure', () => {
       }),
     });
 
-    const result = await initiateCheckout(deps, provider, {
+    const result = await initiateCheckout(deps, {
       subscriptionId: 'sub_1',
       callbackUrl: 'https://portal.example.com/callback',
-    });
+    }, () => provider);
 
     expect(result.outcome).toBe('ERROR');
     expect(result.message).toMatch(/invalid key/);

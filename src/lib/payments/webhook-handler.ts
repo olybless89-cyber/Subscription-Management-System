@@ -3,6 +3,7 @@ import { WebhookDeps } from '../db/ports';
 import { PaymentProvider } from './provider';
 import { addBillingCycle } from '../billing/cycle';
 import { restoreCustomer } from '../suspension/restoration';
+import { notifyAdminsForCustomer } from '../notifications/admin-notify';
 
 export type WebhookOutcome =
   | 'PROCESSED'
@@ -165,6 +166,19 @@ export async function handlePaymentWebhook(
     subscription.customerId,
     'PAYMENT_RECEIVED',
     'Payment received. Your service is being restored.'
+  );
+
+  // Route the same event to whichever admin(s) should know: every
+  // SUPER_ADMIN plus any ADMIN specifically assigned to this customer.
+  // Failure to notify admins must never block the payment itself from
+  // being recorded/extended — that already happened above — so this is
+  // best-effort and doesn't affect the webhook's own outcome/httpStatus.
+  const customer = await deps.customers.findById(subscription.customerId);
+  await notifyAdminsForCustomer(
+    deps,
+    subscription.customerId,
+    'PAYMENT_RECEIVED',
+    `Payment received from ${customer?.customerCode ?? subscription.customerId} — ${(verified.amountMinor / 100).toLocaleString()} ${verified.currency}.`
   );
 
   if (subscription.status === 'SUSPENDED') {

@@ -4,12 +4,17 @@
 // (spec section 19). Same caveats as app/api/webhooks/payment/route.ts:
 // not included in this sandbox's typecheck/test run (needs `next` +
 // generated Prisma client). All real logic lives in initiateCheckout and
-// authenticateFromHeader/canAccessCustomerResource, which ARE tested —
-// see tests/checkout.test.ts and tests/auth.test.ts.
+// authenticateFromHeader/canAccessCustomer, which ARE tested — see
+// tests/checkout.test.ts, tests/auth.test.ts, and
+// tests/payment-routing.test.ts.
+//
+// initiateCheckout no longer takes a provider argument — it resolves the
+// right one (Paystack, or whatever this customer is grouped onto) from
+// customer.paymentProvider itself. See src/lib/payments/registry.ts.
 
 import { initiateCheckout } from '../../../src/lib/payments/checkout';
-import { buildWebhookDeps, buildPaystackProvider } from '../../../src/lib/deps-factory';
-import { authenticateFromHeader, canAccessCustomerResource } from '../../../src/lib/auth/authorize';
+import { buildWebhookDeps } from '../../../src/lib/deps-factory';
+import { authenticateFromHeader, canAccessCustomer } from '../../../src/lib/auth/authorize';
 
 export async function POST(request: Request): Promise<Response> {
   let body: { subscriptionId?: string; callbackUrl?: string };
@@ -34,11 +39,11 @@ export async function POST(request: Request): Promise<Response> {
   if (!subscription) {
     return jsonResponse(404, { error: 'Subscription not found' });
   }
-  if (!canAccessCustomerResource(auth.session, subscription.customerId)) {
+  if (!(await canAccessCustomer(auth.session, subscription.customerId, deps.adminAssignments))) {
     return jsonResponse(403, { error: 'Not authorized for this subscription' });
   }
 
-  const result = await initiateCheckout(deps, buildPaystackProvider(), {
+  const result = await initiateCheckout(deps, {
     subscriptionId: body.subscriptionId,
     callbackUrl: body.callbackUrl,
   });

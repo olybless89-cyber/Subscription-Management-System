@@ -32,6 +32,8 @@ export type BillingCycle = 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'CUSTOM';
 
 export type AdminRole = 'SUPER_ADMIN' | 'ADMIN';
 
+export type PaymentProviderName = 'PAYSTACK' | 'FLUTTERWAVE';
+
 export interface CustomerRecord {
   id: string;
   customerCode: string;
@@ -39,6 +41,7 @@ export interface CustomerRecord {
   passwordHash: string | null;
   status: CustomerStatus;
   automaticSuspension: boolean;
+  paymentProvider: PaymentProviderName;
 }
 
 export interface AdminRecord {
@@ -47,6 +50,21 @@ export interface AdminRecord {
   passwordHash: string;
   role: AdminRole;
   canManageAdmins: boolean;
+}
+
+export interface AdminAssignmentRecord {
+  id: string;
+  adminId: string;
+  customerId: string;
+}
+
+export interface AdminNotificationRecord {
+  id: string;
+  adminId: string;
+  customerId: string;
+  event: string;
+  message: string;
+  createdAt: string;
 }
 
 export interface SubscriptionRecord {

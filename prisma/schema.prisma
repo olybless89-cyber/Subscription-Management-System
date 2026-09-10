@@ -88,6 +88,11 @@ enum AdminRole {
   ADMIN
 }
 
+enum PaymentProviderName {
+  PAYSTACK
+  FLUTTERWAVE // routing/schema support exists; provider adapter not yet implemented — see src/lib/payments/registry.ts
+}
+
 // ---------- MODELS ----------
 
 model Customer {
@@ -100,12 +105,15 @@ model Customer {
   status              CustomerStatus      @default(ACTIVE)
   automaticSuspension Boolean             @default(true)
   automaticSuspensionOffReason String?
+  paymentProvider     PaymentProviderName @default(PAYSTACK) // which provider this customer's checkouts/webhooks route through
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 
   subscriptions       Subscription[]
   domains             Domain[]
   notifications       Notification[]
+  adminAssignments    AdminCustomerAssignment[]
+  adminNotifications  AdminNotification[]
 
   @@index([status])
 }
@@ -243,6 +251,45 @@ model AdminUser {
   canManageAdmins Boolean @default(false)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+
+  assignments       AdminCustomerAssignment[]
+  adminNotifications AdminNotification[]
+}
+
+// spec extension: scoped admin visibility. A row here means the given
+// admin can see/monitor the given customer. SUPER_ADMIN role bypasses
+// this table entirely (sees everyone) — see canAdminAccessCustomer() in
+// src/lib/auth/authorize.ts. Plain ADMIN role sees ONLY customers with a
+// row here.
+model AdminCustomerAssignment {
+  id         String    @id @default(cuid())
+  adminId    String
+  admin      AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+
+  @@unique([adminId, customerId])
+  @@index([customerId])
+}
+
+// Per-admin copy of customer-facing notifications, routed by assignment
+// (spec extension). SUPER_ADMINs get a row for every customer
+// notification regardless of assignment; plain ADMINs only get rows for
+// customers assigned to them. See notifyAdminsForCustomer() in
+// src/lib/notifications/admin-notify.ts.
+model AdminNotification {
+  id         String    @id @default(cuid())
+  adminId    String
+  admin      AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  event      String
+  message    String
+  createdAt  DateTime  @default(now())
+
+  @@index([adminId])
+  @@index([customerId])
 }
 
 model SystemSetting {

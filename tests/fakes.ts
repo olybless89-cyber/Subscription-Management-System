@@ -1,4 +1,4 @@
-import { EngineDeps, WebhookDeps, AuthDeps } from '@/lib/db/ports';
+import { EngineDeps, WebhookDeps, AuthDeps, AdminManagementDeps } from '@/lib/db/ports';
 import {
   CustomerRecord,
   SubscriptionRecord,
@@ -9,6 +9,105 @@ import {
   AdminRecord,
 } from '@/types/domain';
 
+// ---------- shared primitive stores, reused across the various fake-deps builders ----------
+
+function makeCustomerRepo(seed: CustomerRecord[]) {
+  const byId = new Map(seed.map((c) => [c.id, { ...c }]));
+  const repo = {
+    async findById(id: string) {
+      return byId.get(id) ?? null;
+    },
+    async findByEmail(email: string) {
+      return [...byId.values()].find((c) => c.email === email) ?? null;
+    },
+    async findByIds(ids: string[]) {
+      return ids.map((id) => byId.get(id)).filter((c): c is CustomerRecord => !!c);
+    },
+    async listAll() {
+      return [...byId.values()];
+    },
+    async updateStatus(id: string, status: CustomerRecord['status']) {
+      const c = byId.get(id);
+      if (!c) throw new Error('not found');
+      c.status = status;
+    },
+  };
+  return { repo, byId };
+}
+
+function makeAdminRepo(seed: AdminRecord[]) {
+  const byId = new Map(seed.map((a) => [a.id, { ...a }]));
+  const repo = {
+    async findById(id: string) {
+      return byId.get(id) ?? null;
+    },
+    async findByEmail(email: string) {
+      return [...byId.values()].find((a) => a.email === email) ?? null;
+    },
+    async listSuperAdmins() {
+      return [...byId.values()].filter((a) => a.role === 'SUPER_ADMIN');
+    },
+    async create(input: Omit<AdminRecord, 'id'>) {
+      const record: AdminRecord = { id: `admin_${byId.size + 1}`, ...input };
+      byId.set(record.id, record);
+      return record;
+    },
+  };
+  return { repo, byId };
+}
+
+function makeAssignmentRepo(seed: Array<{ adminId: string; customerId: string }> = []) {
+  const byAdmin = new Map<string, Set<string>>();
+  for (const { adminId, customerId } of seed) {
+    if (!byAdmin.has(adminId)) byAdmin.set(adminId, new Set());
+    byAdmin.get(adminId)!.add(customerId);
+  }
+  const repo = {
+    async listCustomerIdsForAdmin(adminId: string) {
+      return [...(byAdmin.get(adminId) ?? [])];
+    },
+    async listAdminIdsForCustomer(customerId: string) {
+      return [...byAdmin.entries()].filter(([, ids]) => ids.has(customerId)).map(([adminId]) => adminId);
+    },
+    async isAssigned(adminId: string, customerId: string) {
+      return byAdmin.get(adminId)?.has(customerId) ?? false;
+    },
+    async setAssignments(adminId: string, customerIds: string[]) {
+      byAdmin.set(adminId, new Set(customerIds));
+    },
+  };
+  return { repo, byAdmin };
+}
+
+function makeAdminNotificationRepo() {
+  const log: Array<{ id: string; adminId: string; customerId: string; event: string; message: string; createdAt: string }> = [];
+  const repo = {
+    async create(input: { adminId: string; customerId: string; event: string; message: string }) {
+      log.push({ id: `an_${log.length + 1}`, createdAt: new Date().toISOString(), ...input });
+    },
+    async listForAdmin(adminId: string, limit = 50) {
+      return log
+        .filter((n) => n.adminId === adminId)
+        .slice()
+        .reverse()
+        .slice(0, limit);
+    },
+  };
+  return { repo, log };
+}
+
+function makeAuditLogRepo() {
+  const log: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }> = [];
+  const repo = {
+    async create(entry: { actor: string; action: string; target?: string; metadata?: unknown; result: 'SUCCESS' | 'FAILED' }) {
+      log.push(entry);
+    },
+  };
+  return { repo, log };
+}
+
+// ---------- composed fake-deps builders used by the test suites ----------
+
 export function makeFakeDeps(seed: {
   customers: CustomerRecord[];
   subscriptions: SubscriptionRecord[];
@@ -17,7 +116,7 @@ export function makeFakeDeps(seed: {
   events: SuspensionEventInput[];
   notificationLog: Array<{ customerId: string; event: string; message: string }>;
 } {
-  const customers = new Map(seed.customers.map((c) => [c.id, { ...c }]));
+  const { repo: customersRepo } = makeCustomerRepo(seed.customers);
   const subscriptions = new Map(seed.subscriptions.map((s) => [s.id, { ...s }]));
   const resources = [...seed.railwayResources];
   const events: SuspensionEventInput[] = [];
@@ -58,19 +157,7 @@ export function makeFakeDeps(seed: {
         );
       },
     },
-    customers: {
-      async findById(id) {
-        return customers.get(id) ?? null;
-      },
-      async findByEmail(email) {
-        return [...customers.values()].find((c) => c.email === email) ?? null;
-      },
-      async updateStatus(id, status) {
-        const c = customers.get(id);
-        if (!c) throw new Error('not found');
-        c.status = status;
-      },
-    },
+    customers: customersRepo,
     railwayResources: {
       async findBySubscriptionId(subscriptionId) {
         return resources.filter((r) => r.subscriptionId === subscriptionId);
@@ -104,19 +191,29 @@ export function makeFakeWebhookDeps(seed: {
   railwayResources: RailwayResourceRecord[];
   plans: PlanRecord[];
   payments: PaymentRecord[];
+  admins?: AdminRecord[];
+  assignments?: Array<{ adminId: string; customerId: string }>;
 }): WebhookDeps & {
   events: SuspensionEventInput[];
   notificationLog: Array<{ customerId: string; event: string; message: string }>;
   paymentRows: Map<string, PaymentRecord>;
+  adminNotificationLog: Array<{ adminId: string; customerId: string; event: string; message: string }>;
 } {
   const base = makeFakeDeps(seed);
   const plans = new Map(seed.plans.map((p) => [p.id, { ...p }]));
   const paymentsByRef = new Map(seed.payments.map((p) => [p.reference, { ...p }]));
   const paymentsById = new Map(seed.payments.map((p) => [p.id, paymentsByRef.get(p.reference)!]));
+  const { repo: adminsRepo } = makeAdminRepo(seed.admins ?? []);
+  const { repo: assignmentsRepo } = makeAssignmentRepo(seed.assignments ?? []);
+  const { repo: adminNotificationsRepo, log: adminNotificationLog } = makeAdminNotificationRepo();
 
   return {
     ...base,
     paymentRows: paymentsById,
+    adminNotificationLog,
+    admins: adminsRepo,
+    adminAssignments: assignmentsRepo,
+    adminNotifications: adminNotificationsRepo,
     plans: {
       async findById(id) {
         return plans.get(id) ?? null;
@@ -153,27 +250,30 @@ export function makeFakeAuthDeps(seed: {
   admins: AdminRecord[];
   customers: CustomerRecord[];
 }): AuthDeps {
-  const admins = new Map(seed.admins.map((a) => [a.email, { ...a }]));
-  const customers = new Map(seed.customers.map((c) => [c.email, { ...c }]));
+  const { repo: adminsRepo } = makeAdminRepo(seed.admins);
+  const { repo: customersRepo } = makeCustomerRepo(seed.customers);
+  return { admins: adminsRepo, customers: customersRepo };
+}
+
+export function makeFakeAdminManagementDeps(seed: {
+  admins: AdminRecord[];
+  customers: CustomerRecord[];
+  assignments?: Array<{ adminId: string; customerId: string }>;
+}): AdminManagementDeps & {
+  auditLogEntries: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }>;
+  assignmentStore: Map<string, Set<string>>;
+} {
+  const { repo: adminsRepo } = makeAdminRepo(seed.admins);
+  const { repo: customersRepo } = makeCustomerRepo(seed.customers);
+  const { repo: assignmentsRepo, byAdmin } = makeAssignmentRepo(seed.assignments ?? []);
+  const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
 
   return {
-    admins: {
-      async findByEmail(email) {
-        return admins.get(email) ?? null;
-      },
-    },
-    customers: {
-      async findById(id) {
-        return [...customers.values()].find((c) => c.id === id) ?? null;
-      },
-      async findByEmail(email) {
-        return customers.get(email) ?? null;
-      },
-      async updateStatus(id, status) {
-        const c = [...customers.values()].find((x) => x.id === id);
-        if (!c) throw new Error('not found');
-        c.status = status;
-      },
-    },
+    admins: adminsRepo,
+    customers: customersRepo,
+    adminAssignments: assignmentsRepo,
+    auditLog: auditLogRepo,
+    auditLogEntries,
+    assignmentStore: byAdmin,
   };
 }

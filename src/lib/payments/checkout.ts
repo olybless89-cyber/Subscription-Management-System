@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import { WebhookDeps } from '../db/ports';
+import { resolvePaymentProvider, UnsupportedPaymentProviderError } from './registry';
 import { PaymentProvider } from './provider';
+import { PaymentProviderName } from '@/types/domain';
 
 export interface InitiateCheckoutInput {
   subscriptionId: string;
@@ -21,13 +23,20 @@ export interface InitiateCheckoutResult {
 const SUBSCRIPTION_STATUSES_BLOCKED_FROM_CHECKOUT = ['CANCELLED', 'TERMINATED'] as const;
 
 /**
- * initiateCheckout — spec sections 10 and 19. This is what backs the
- * "PAY NOW" / "Renew" button in the customer billing portal (and the
- * initial subscription payment). It creates a PENDING payment row up
- * front — before ever calling out to Paystack — so that
+ * initiateCheckout — spec sections 10 and 19, extended for
+ * multi-provider routing. This is what backs the "PAY NOW" / "Renew"
+ * button in the customer billing portal. It creates a PENDING payment
+ * row up front — before ever calling out to the provider — so that
  * handlePaymentWebhook always has something to reconcile the webhook
  * against, and so an abandoned checkout (customer never completes
  * payment) leaves an auditable PENDING record rather than nothing.
+ *
+ * Which provider gets called is NOT a caller-supplied argument — it's
+ * resolved from `customer.paymentProvider`, so the same call site
+ * automatically does the right thing whether that customer is grouped
+ * onto Paystack or (once implemented) something else. Pass
+ * `resolveProvider` only from tests, to inject a fake without hitting
+ * the real registry.
  *
  * Deliberately does NOT touch subscription/customer status or Railway —
  * this only ever produces a payment intent. Everything downstream of a
@@ -36,8 +45,8 @@ const SUBSCRIPTION_STATUSES_BLOCKED_FROM_CHECKOUT = ['CANCELLED', 'TERMINATED'] 
  */
 export async function initiateCheckout(
   deps: WebhookDeps,
-  provider: PaymentProvider,
-  input: InitiateCheckoutInput
+  input: InitiateCheckoutInput,
+  resolveProvider: (name: PaymentProviderName) => PaymentProvider = resolvePaymentProvider
 ): Promise<InitiateCheckoutResult> {
   const subscription = await deps.subscriptions.findById(input.subscriptionId);
   if (!subscription) {
@@ -73,6 +82,16 @@ export async function initiateCheckout(
       outcome: 'ERROR',
       message: `callbackUrl must be https:// (got: ${input.callbackUrl})`,
     };
+  }
+
+  let provider: PaymentProvider;
+  try {
+    provider = resolveProvider(customer.paymentProvider);
+  } catch (err) {
+    if (err instanceof UnsupportedPaymentProviderError) {
+      return { outcome: 'ERROR', message: err.message };
+    }
+    throw err;
   }
 
   const reference = generateReference(customer.customerCode);

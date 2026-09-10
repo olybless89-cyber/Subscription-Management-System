@@ -10,6 +10,7 @@ import {
   PaymentRecord,
   PaymentStatus,
   AdminRecord,
+  AdminNotificationRecord,
 } from '@/types/domain';
 
 /**
@@ -73,11 +74,49 @@ export interface PaymentRepository {
 export interface CustomerRepository {
   findById(id: string): Promise<CustomerRecord | null>;
   findByEmail(email: string): Promise<CustomerRecord | null>;
+  findByIds(ids: string[]): Promise<CustomerRecord[]>;
+  listAll(): Promise<CustomerRecord[]>;
   updateStatus(id: string, status: CustomerStatus): Promise<void>;
 }
 
 export interface AdminRepository {
+  findById(id: string): Promise<AdminRecord | null>;
   findByEmail(email: string): Promise<AdminRecord | null>;
+  /** Every SUPER_ADMIN — used to fan out admin notifications, since
+   * super admins see every customer regardless of assignment. */
+  listSuperAdmins(): Promise<AdminRecord[]>;
+  create(input: {
+    name: string;
+    email: string;
+    passwordHash: string;
+    role: 'SUPER_ADMIN' | 'ADMIN';
+    canManageAdmins: boolean;
+  }): Promise<AdminRecord>;
+}
+
+/** spec extension: which customers a given (non-super) admin is scoped
+ * to see. SUPER_ADMIN bypasses this table entirely — see
+ * canAdminAccessCustomer() in lib/auth/authorize.ts. */
+export interface AdminAssignmentRepository {
+  listCustomerIdsForAdmin(adminId: string): Promise<string[]>;
+  listAdminIdsForCustomer(customerId: string): Promise<string[]>;
+  isAssigned(adminId: string, customerId: string): Promise<boolean>;
+  /** Replaces the admin's entire assigned-customer set with exactly this
+   * list — simpler and less error-prone for callers than incremental
+   * add/remove, and matches how an admin-management UI would naturally
+   * submit "here's who this admin can see now". */
+  setAssignments(adminId: string, customerIds: string[]): Promise<void>;
+}
+
+export interface AdminNotificationRepository {
+  create(input: {
+    adminId: string;
+    customerId: string;
+    event: string;
+    message: string;
+  }): Promise<void>;
+  /** Most-recent-first, for an admin's own notification feed. */
+  listForAdmin(adminId: string, limit?: number): Promise<AdminNotificationRecord[]>;
 }
 
 export interface RailwayResourceRepository {
@@ -122,10 +161,14 @@ export interface EngineDeps {
 
 /** Superset of EngineDeps used by the payment webhook handler, which also
  * needs to read plans (to compute the next billing period) and read/write
- * payment records (for verification + idempotency). */
+ * payment records (for verification + idempotency), plus everything
+ * needed to route the payment notification to the right admin(s). */
 export interface WebhookDeps extends EngineDeps {
   plans: PlanRepository;
   payments: PaymentRepository;
+  admins: AdminRepository;
+  adminAssignments: AdminAssignmentRepository;
+  adminNotifications: AdminNotificationRepository;
 }
 
 /** Dependencies for authenticating admins and customers. Kept separate
@@ -138,3 +181,13 @@ export interface AuthDeps {
 
 /** Dependencies for the cron subscription-checker (spec sections 21-22). */
 export interface CronDeps extends WebhookDeps {}
+
+/** Dependencies for admin-management operations: creating admins and
+ * assigning them customers. SUPER_ADMIN-gated at the call site, not here
+ * — these ports don't know about authorization, callers do. */
+export interface AdminManagementDeps {
+  admins: AdminRepository;
+  customers: CustomerRepository;
+  adminAssignments: AdminAssignmentRepository;
+  auditLog: AuditLogRepository;
+}

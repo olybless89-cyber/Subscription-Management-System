@@ -7,6 +7,9 @@ import {
   NotificationSender,
   PlanRepository,
   PaymentRepository,
+  AdminRepository,
+  AdminAssignmentRepository,
+  AdminNotificationRepository,
 } from './ports';
 import {
   SubscriptionRecord,
@@ -128,6 +131,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
       passwordHash: c.passwordHash,
       status: c.status,
       automaticSuspension: c.automaticSuspension,
+      paymentProvider: c.paymentProvider,
     };
   }
 
@@ -141,7 +145,35 @@ export class PrismaCustomerRepository implements CustomerRepository {
       passwordHash: c.passwordHash,
       status: c.status,
       automaticSuspension: c.automaticSuspension,
+      paymentProvider: c.paymentProvider,
     };
+  }
+
+  async findByIds(ids: string[]): Promise<CustomerRecord[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.prisma.customer.findMany({ where: { id: { in: ids } } });
+    return rows.map((c: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+      id: c.id,
+      customerCode: c.customerCode,
+      email: c.email,
+      passwordHash: c.passwordHash,
+      status: c.status,
+      automaticSuspension: c.automaticSuspension,
+      paymentProvider: c.paymentProvider,
+    }));
+  }
+
+  async listAll(): Promise<CustomerRecord[]> {
+    const rows = await this.prisma.customer.findMany();
+    return rows.map((c: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+      id: c.id,
+      customerCode: c.customerCode,
+      email: c.email,
+      passwordHash: c.passwordHash,
+      status: c.status,
+      automaticSuspension: c.automaticSuspension,
+      paymentProvider: c.paymentProvider,
+    }));
   }
 
   async updateStatus(id: string, status: CustomerRecord['status']): Promise<void> {
@@ -149,8 +181,20 @@ export class PrismaCustomerRepository implements CustomerRepository {
   }
 }
 
-export class PrismaAdminRepository {
+export class PrismaAdminRepository implements AdminRepository {
   constructor(private prisma: PrismaClient) {}
+
+  async findById(id: string) {
+    const a = await this.prisma.adminUser.findUnique({ where: { id } });
+    if (!a) return null;
+    return {
+      id: a.id,
+      email: a.email,
+      passwordHash: a.passwordHash,
+      role: a.role,
+      canManageAdmins: a.canManageAdmins,
+    };
+  }
 
   async findByEmail(email: string) {
     const a = await this.prisma.adminUser.findUnique({ where: { email } });
@@ -162,6 +206,120 @@ export class PrismaAdminRepository {
       role: a.role,
       canManageAdmins: a.canManageAdmins,
     };
+  }
+
+  async listSuperAdmins() {
+    const rows = await this.prisma.adminUser.findMany({ where: { role: 'SUPER_ADMIN' } });
+    return rows.map((a: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+      id: a.id,
+      email: a.email,
+      passwordHash: a.passwordHash,
+      role: a.role,
+      canManageAdmins: a.canManageAdmins,
+    }));
+  }
+
+  async create(input: {
+    name: string;
+    email: string;
+    passwordHash: string;
+    role: 'SUPER_ADMIN' | 'ADMIN';
+    canManageAdmins: boolean;
+  }) {
+    const a = await this.prisma.adminUser.create({
+      data: {
+        name: input.name,
+        email: input.email,
+        passwordHash: input.passwordHash,
+        role: input.role as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        canManageAdmins: input.canManageAdmins,
+      },
+    });
+    return {
+      id: a.id,
+      email: a.email,
+      passwordHash: a.passwordHash,
+      role: a.role,
+      canManageAdmins: a.canManageAdmins,
+    };
+  }
+}
+
+export class PrismaAdminAssignmentRepository implements AdminAssignmentRepository {
+  constructor(private prisma: PrismaClient) {}
+
+  async listCustomerIdsForAdmin(adminId: string): Promise<string[]> {
+    const rows = await this.prisma.adminCustomerAssignment.findMany({
+      where: { adminId },
+      select: { customerId: true },
+    });
+    return rows.map((r: any) => r.customerId); // eslint-disable-line @typescript-eslint/no-explicit-any
+  }
+
+  async listAdminIdsForCustomer(customerId: string): Promise<string[]> {
+    const rows = await this.prisma.adminCustomerAssignment.findMany({
+      where: { customerId },
+      select: { adminId: true },
+    });
+    return rows.map((r: any) => r.adminId); // eslint-disable-line @typescript-eslint/no-explicit-any
+  }
+
+  async isAssigned(adminId: string, customerId: string): Promise<boolean> {
+    const row = await this.prisma.adminCustomerAssignment.findUnique({
+      where: { adminId_customerId: { adminId, customerId } },
+    });
+    return row !== null;
+  }
+
+  async setAssignments(adminId: string, customerIds: string[]): Promise<void> {
+    // Replace-the-whole-set semantics, done as one transaction so a
+    // caller never observes a half-updated assignment list.
+    await this.prisma.$transaction([
+      this.prisma.adminCustomerAssignment.deleteMany({ where: { adminId } }),
+      ...(customerIds.length > 0
+        ? [
+            this.prisma.adminCustomerAssignment.createMany({
+              data: customerIds.map((customerId) => ({ adminId, customerId })),
+            }),
+          ]
+        : []),
+    ]);
+  }
+}
+
+export class PrismaAdminNotificationRepository implements AdminNotificationRepository {
+  constructor(private prisma: PrismaClient) {}
+
+  async create(input: {
+    adminId: string;
+    customerId: string;
+    event: string;
+    message: string;
+  }): Promise<void> {
+    await this.prisma.adminNotification.create({
+      data: {
+        adminId: input.adminId,
+        customerId: input.customerId,
+        event: input.event,
+        message: input.message,
+      },
+    });
+  }
+
+  async listForAdmin(adminId: string, limit = 50) {
+    const rows = await this.prisma.adminNotification.findMany({
+      where: { adminId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+    return rows.map((r: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+      id: r.id,
+      adminId: r.adminId,
+      customerId: r.customerId,
+      event: r.event,
+      message: r.message,
+      createdAt: r.createdAt.toISOString(),
+    }));
   }
 }
 
