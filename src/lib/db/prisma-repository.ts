@@ -20,6 +20,7 @@ import {
   PaymentRecord,
   DomainRecord,
 } from '@/types/domain';
+import { sendEmail, subjectForEvent } from '../notifications/email';
 
 /**
  * Real Prisma-backed implementations of every port the engines/webhook
@@ -420,7 +421,12 @@ export class PrismaAdminNotificationRepository implements AdminNotificationRepos
     event: string;
     message: string;
   }): Promise<void> {
-    await this.prisma.adminNotification.create({
+    // Same pattern as EmailNotificationSender: the row is the audit
+    // trail of record, written unconditionally; the real email is a
+    // best-effort layer on top that never affects the caller
+    // (notifyAdminsForCustomer, which is itself best-effort from the
+    // webhook's perspective — see webhook-handler.ts).
+    const notification = await this.prisma.adminNotification.create({
       data: {
         adminId: input.adminId,
         customerId: input.customerId,
@@ -428,6 +434,22 @@ export class PrismaAdminNotificationRepository implements AdminNotificationRepos
         message: input.message,
       },
     });
+
+    const admin = await this.prisma.adminUser.findUnique({ where: { id: input.adminId } });
+    if (!admin) return;
+
+    const result = await sendEmail({
+      to: admin.email,
+      subject: subjectForEvent(input.event),
+      text: input.message,
+    });
+
+    if (result.success) {
+      await this.prisma.adminNotification.update({
+        where: { id: notification.id },
+        data: { sentAt: new Date() },
+      });
+    }
   }
 
   async listForAdmin(adminId: string, limit = 50) {
@@ -442,6 +464,7 @@ export class PrismaAdminNotificationRepository implements AdminNotificationRepos
       customerId: r.customerId,
       event: r.event,
       message: r.message,
+      sentAt: r.sentAt ? r.sentAt.toISOString() : null,
       createdAt: r.createdAt.toISOString(),
     }));
   }
@@ -686,12 +709,33 @@ export class EmailNotificationSender implements NotificationSender {
   constructor(private prisma: PrismaClient) {}
 
   async send(customerId: string, event: string, message: string): Promise<void> {
-    // Records the notification; actual email/WhatsApp/SMS dispatch is a
-    // separate adapter (lib/notifications/*) not yet built — this keeps
-    // the in-app/audit trail correct even before that's wired up.
-    await this.prisma.notification.create({
+    // Always record the Notification row first — this is the audit
+    // trail of record. Whether the real email actually goes out is a
+    // best-effort add-on layered on top: if Resend is unconfigured or
+    // down, the row still exists and the caller (payment webhook,
+    // suspension engine, cron) is never affected either way.
+    const notification = await this.prisma.notification.create({
       data: { customerId, channel: 'EMAIL', event, message },
     });
+
+    const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
+    if (!customer) return; // FK integrity issue elsewhere — nothing to email.
+
+    const result = await sendEmail({
+      to: customer.email,
+      subject: subjectForEvent(event),
+      text: message,
+    });
+
+    if (result.success) {
+      await this.prisma.notification.update({
+        where: { id: notification.id },
+        data: { sentAt: new Date() },
+      });
+    }
+    // On failure, sentAt stays null — that's the visible signal (via
+    // the notification row itself) that dispatch didn't happen, without
+    // needing a separate error column.
   }
 }
 

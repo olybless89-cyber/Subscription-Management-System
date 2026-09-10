@@ -106,10 +106,13 @@ function makeAssignmentRepo(seed: Array<{ adminId: string; customerId: string }>
 }
 
 function makeAdminNotificationRepo() {
-  const log: Array<{ id: string; adminId: string; customerId: string; event: string; message: string; createdAt: string }> = [];
+  const log: Array<{ id: string; adminId: string; customerId: string; event: string; message: string; sentAt: string | null; createdAt: string }> = [];
   const repo = {
     async create(input: { adminId: string; customerId: string; event: string; message: string }) {
-      log.push({ id: `an_${log.length + 1}`, createdAt: new Date().toISOString(), ...input });
+      // Fake never actually sends email (no network in tests) — sentAt
+      // stays null, matching the honest "not sent" signal the real
+      // repository uses when Resend is unconfigured or fails.
+      log.push({ id: `an_${log.length + 1}`, sentAt: null, createdAt: new Date().toISOString(), ...input });
     },
     async listForAdmin(adminId: string, limit = 50) {
       return log

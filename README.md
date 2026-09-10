@@ -38,7 +38,9 @@ src/lib/billing/
   manage.ts                              createPlan() / createSubscription() / updateSubscription() — spec sections 8-9, 39
 src/lib/domains/manage.ts              createDomain() — spec section 43
 src/lib/railway/mapping.ts             mapRailwayResource() — spec section 12, enforces MULTI_TENANT+APP_LEVEL at entry
-src/lib/notifications/admin-notify.ts  notifyAdminsForCustomer() — routes payment events to the right admin(s)
+src/lib/notifications/
+  admin-notify.ts                        notifyAdminsForCustomer() — routes payment events to the right admin(s)
+  email.ts                                sendEmail() / subjectForEvent() — real dispatch via Resend, never throws
 src/lib/cron/
   subscription-checker.ts             runSubscriptionChecker() — spec sections 21-22
   railway-sync.ts                      syncRailwayResources() / syncSingleRailwayResource() — spec section 13
@@ -68,7 +70,7 @@ app/api/
   cron/railway-sync/route.ts             Railway sync (CRON_SECRET-protected)
   subscriptions/[id]/suspend/route.ts     Admin manual suspend — scoped to assignment
   subscriptions/[id]/restore/route.ts      Admin manual restore — scoped to assignment
-tests/                                141 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
+tests/                                147 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
 app/
   globals.css                          Design tokens (forest green/paper/clay — matches the spec's own branding request)
   layout.tsx                            Root layout, wraps everything in AuthProvider
@@ -160,6 +162,34 @@ strategy — the exact combination spec section 16 requires, rejected
 before it can even be saved if someone tries to pair `MULTI_TENANT` with
 `STOP_DEPLOYMENT`.
 
+## Email notification dispatch (Resend)
+
+Both customer notifications (`Notification` rows, sent via
+`EmailNotificationSender`) and admin notifications (`AdminNotification`
+rows, sent via `notifyAdminsForCustomer`) now attempt a real email
+through Resend's HTTP API — no SDK, one `fetch` call
+(`src/lib/notifications/email.ts`), same "no dependency for one API
+call" approach as `paystack.ts`.
+
+**Set `RESEND_API_KEY` and `EMAIL_FROM` in Railway's Variables tab.**
+`EMAIL_FROM` must be an address on a domain you've verified in Resend's
+dashboard (Resend rejects sends from unverified domains) — a subdomain
+like `notifications@mail.digitalweboracleict.com` with the DNS records
+Resend gives you is the usual pattern, so you don't have to touch your
+main domain's mail setup.
+
+**The row is always written first, the email is best-effort on top.**
+If Resend is unconfigured, down, or rejects the address, the
+`Notification`/`AdminNotification` row still exists with `sentAt: null`
+— that's the visible signal dispatch didn't happen. Nothing about the
+payment, suspension, or restoration flow is affected either way; see the
+safety table below for exactly how that's enforced and tested.
+
+**Still not built:** WhatsApp and SMS channels (named in spec section 30
+and the `Notification.channel` field, but only `EMAIL` has an adapter),
+and there's no retry/backoff if a Resend send fails — it's fire-once,
+log the outcome.
+
 ## Testing suspend/restore against real Railway without disarming production
 
 `SUSPENSION_DRY_RUN` is a single global env var — flipping it off to test
@@ -198,7 +228,7 @@ every real customer.
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit — passes clean (prisma-repository.ts excluded, see below)
-npm test            # vitest — 141 tests, all green, no network/DB needed
+npm test            # vitest — 147 tests, all green, no network/DB needed
 npm run build       # next build — verified working in this sandbox, produces all 21 API routes + 7 UI pages
 ```
 
@@ -285,6 +315,7 @@ themselves are thin, reviewed-by-eye wrappers around that logic.
 | Testing real suspension can't accidentally disarm production for every customer | `subscription.dryRunOverride` takes precedence over the global `SUSPENSION_DRY_RUN` env var per-subscription — see "Testing suspend/restore against real Railway" above. The cron route no longer force-overrides this (a real bug caught and fixed: it was passing the global value explicitly, which would have silently defeated every subscription's individual override for the automated path). |
 | Attaching a domain already claimed by a different customer fails cleanly, not with a crash | `domainName` is globally unique in the schema, not unique per-customer — a real bug caught before shipping: the original uniqueness check only looked at the target customer's own domains, so a cross-customer duplicate would have hit Prisma's constraint directly and thrown an unhandled error instead of a clean `ALREADY_EXISTS`. Fixed with a dedicated `findByDomainName()` lookup; tested directly. |
 | PATCH on a subscription can never set `status` | `updateSubscription()`'s input type has no `status` field at all — not filtered out, structurally absent — and the route explicitly rejects a `status` key in the request body with a message pointing at the right endpoint. Status only ever changes through suspendCustomer/restoreCustomer (verified against Railway) or the webhook (verified against the payment provider). |
+| A failed or unconfigured email dispatch can never block a payment, suspension, or restoration | `sendEmail()` never throws — a missing `RESEND_API_KEY`, a Resend outage, or a bad address always returns `{ success: false }`, checked and tested directly (`tests/email.test.ts`) for the network-error, error-status, and unconfigured cases. Every caller (webhook, suspension engine, cron) has already done the thing that matters — recorded the payment, stopped/restored the deployment — before attempting to notify anyone. |
 | Subscription status can never be set directly, bypassing verification | `UpdateSubscriptionInput` (the PATCH type) has no `status` field at all — a compile-time guarantee, not just a runtime check (see the `@ts-expect-error` test in `domains-and-subscription-editing.test.ts`). The PATCH route additionally rejects any request body containing `status` with an explicit 400, pointing at the right endpoint instead. |
 
 ## What's deliberately NOT done yet
@@ -297,11 +328,9 @@ themselves are thin, reviewed-by-eye wrappers around that logic.
   (still curl/API-only for those). Session token lives in `localStorage`
   — the standard XSS exposure of any non-httpOnly-cookie token; fine for
   a small trusted admin team, worth revisiting before wider exposure.
-- No real email/WhatsApp/SMS notification dispatch — `EmailNotificationSender`
-  currently just writes a `Notification` row (audit trail is correct;
-  actual sending is a separate, unbuilt adapter). Same for admin
-  notifications — `AdminNotification` rows are written, nothing pushes
-  them out as email/SMS yet.
+- No WhatsApp/SMS notification dispatch — email (via Resend) is real
+  now, see below; WhatsApp/SMS channels named in the schema/spec
+  (section 30) still have no adapter.
 - No Flutterwave adapter — the routing/schema support is real (see
   above), the actual provider implementation isn't.
 - Customer self-service password setup (invite/reset flow) isn't built —

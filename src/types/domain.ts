@@ -73,6 +73,7 @@ export interface AdminNotificationRecord {
   customerId: string;
   event: string;
   message: string;
+  sentAt: string | null;
   createdAt: string;
 }
 

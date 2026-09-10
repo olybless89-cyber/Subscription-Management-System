@@ -294,6 +294,7 @@ model AdminNotification {
   customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
   event      String
   message    String
+  sentAt     DateTime?
   createdAt  DateTime  @default(now())
 
   @@index([adminId])
