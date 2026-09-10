@@ -5,19 +5,28 @@
   "description": "Web Oracle Host - Railway suspension/restoration engine module",
   "type": "module",
   "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "postinstall": "prisma generate",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src tests --ext .ts"
   },
   "dependencies": {
-    "@prisma/client": "^5.20.0"
+    "@prisma/client": "^5.20.0",
+    "next": "^14.2.15",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "typescript": "^5.6.2",
     "vitest": "^2.1.1",
     "prisma": "^5.20.0",
     "@types/node": "^20.14.0",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
     "eslint": "^8.57.0",
     "@typescript-eslint/parser": "^7.16.0",
     "@typescript-eslint/eslint-plugin": "^7.16.0"

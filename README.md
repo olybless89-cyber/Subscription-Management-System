@@ -57,7 +57,15 @@ tests/                                65 passing tests (fakes.ts = in-memory rep
 npm install
 npm run typecheck   # tsc --noEmit — passes clean (prisma-repository.ts excluded, see below)
 npm test            # vitest — 65 tests, all green, no network/DB needed
+npm run build       # next build — verified working in this sandbox, produces all 11 routes
 ```
+
+This is a real, deployable Next.js app now — `package.json` has `next`/`react`/`react-dom`,
+`next.config.mjs`, `app/layout.tsx`, and `app/page.tsx` exist, and `npm run build` was run and
+verified successful in this sandbox (11 routes: the placeholder home page plus all 10 API
+routes). `postinstall` runs `prisma generate` automatically — this sandbox can't verify that
+step (see caveat below) but it needs open network access Railway's build environment has and
+this sandbox doesn't, so it should run cleanly there.
 
 ### Two things I could NOT verify from this sandbox — be aware before you ship
 
