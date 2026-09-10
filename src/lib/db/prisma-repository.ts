@@ -10,6 +10,7 @@ import {
   AdminRepository,
   AdminAssignmentRepository,
   AdminNotificationRepository,
+  DomainRepository,
 } from './ports';
 import {
   SubscriptionRecord,
@@ -17,6 +18,7 @@ import {
   RailwayResourceRecord,
   PlanRecord,
   PaymentRecord,
+  DomainRecord,
 } from '@/types/domain';
 
 /**
@@ -64,6 +66,33 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
 
   async setDryRunOverride(id: string, override: boolean | null): Promise<void> {
     await this.prisma.subscription.update({ where: { id }, data: { dryRunOverride: override } });
+  }
+
+  async listAll(): Promise<SubscriptionRecord[]> {
+    const rows = await this.prisma.subscription.findMany({ orderBy: { createdAt: 'desc' } });
+    return rows.map((s: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+      id: s.id,
+      customerId: s.customerId,
+      planId: s.planId,
+      status: s.status,
+      suspensionEnabled: s.suspensionEnabled,
+      suspendedAt: s.suspendedAt ? s.suspendedAt.toISOString() : null,
+      currentPeriodStart: s.currentPeriodStart.toISOString(),
+      currentPeriodEnd: s.currentPeriodEnd.toISOString(),
+      nextBillingDate: s.nextBillingDate.toISOString(),
+      gracePeriodEnd: s.gracePeriodEnd ? s.gracePeriodEnd.toISOString() : null,
+      dryRunOverride: s.dryRunOverride,
+    }));
+  }
+
+  async update(id: string, patch: { planId?: string; suspensionEnabled?: boolean }): Promise<void> {
+    await this.prisma.subscription.update({
+      where: { id },
+      data: {
+        ...(patch.planId !== undefined ? { planId: patch.planId } : {}),
+        ...(patch.suspensionEnabled !== undefined ? { suspensionEnabled: patch.suspensionEnabled } : {}),
+      },
+    });
   }
 
   async updateStatus(
@@ -687,5 +716,73 @@ export class PrismaAuditLogRepository {
         result: entry.result,
       },
     });
+  }
+}
+
+export class PrismaDomainRepository implements DomainRepository {
+  constructor(private prisma: PrismaClient) {}
+
+  async findById(id: string): Promise<DomainRecord | null> {
+    const d = await this.prisma.domain.findUnique({ where: { id } });
+    if (!d) return null;
+    return {
+      id: d.id,
+      customerId: d.customerId,
+      domainName: d.domainName,
+      isPrimary: d.isPrimary,
+      railwayStatus: d.railwayStatus,
+      createdAt: d.createdAt.toISOString(),
+    };
+  }
+
+  async findByCustomerId(customerId: string): Promise<DomainRecord[]> {
+    const rows = await this.prisma.domain.findMany({ where: { customerId } });
+    return rows.map((d: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+      id: d.id,
+      customerId: d.customerId,
+      domainName: d.domainName,
+      isPrimary: d.isPrimary,
+      railwayStatus: d.railwayStatus,
+      createdAt: d.createdAt.toISOString(),
+    }));
+  }
+
+  async findByDomainName(domainName: string): Promise<DomainRecord | null> {
+    const d = await this.prisma.domain.findUnique({ where: { domainName } });
+    if (!d) return null;
+    return {
+      id: d.id,
+      customerId: d.customerId,
+      domainName: d.domainName,
+      isPrimary: d.isPrimary,
+      railwayStatus: d.railwayStatus,
+      createdAt: d.createdAt.toISOString(),
+    };
+  }
+
+  async listAll(): Promise<DomainRecord[]> {
+    const rows = await this.prisma.domain.findMany({ orderBy: { createdAt: 'desc' } });
+    return rows.map((d: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+      id: d.id,
+      customerId: d.customerId,
+      domainName: d.domainName,
+      isPrimary: d.isPrimary,
+      railwayStatus: d.railwayStatus,
+      createdAt: d.createdAt.toISOString(),
+    }));
+  }
+
+  async create(input: { customerId: string; domainName: string; isPrimary: boolean }): Promise<DomainRecord> {
+    const d = await this.prisma.domain.create({
+      data: { customerId: input.customerId, domainName: input.domainName, isPrimary: input.isPrimary },
+    });
+    return {
+      id: d.id,
+      customerId: d.customerId,
+      domainName: d.domainName,
+      isPrimary: d.isPrimary,
+      railwayStatus: d.railwayStatus,
+      createdAt: d.createdAt.toISOString(),
+    };
   }
 }

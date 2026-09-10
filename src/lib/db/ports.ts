@@ -12,6 +12,7 @@ import {
   AdminRecord,
   AdminNotificationRecord,
   PaymentProviderName,
+  DomainRecord,
 } from '@/types/domain';
 
 /**
@@ -57,6 +58,19 @@ export interface SubscriptionRepository {
   /** Sets/clears the per-subscription dry-run override. Pass null to go
    * back to inheriting the global SUSPENSION_DRY_RUN env var. */
   setDryRunOverride(id: string, override: boolean | null): Promise<void>;
+  /** For admin dashboard listing — combined with listVisibleCustomerIds
+   * at the route layer for scoping, same pattern as CustomerRepository. */
+  listAll(): Promise<SubscriptionRecord[]>;
+  /**
+   * Edits a subscription's plan assignment or suspensionEnabled flag —
+   * the two fields safe to change without going through a verified
+   * engine. Deliberately does NOT accept `status`: status transitions
+   * must go through suspendCustomer/restoreCustomer (which verify
+   * against Railway before changing it) or the cron state machine —
+   * never a raw field write that could desync the database from what's
+   * actually running.
+   */
+  update(id: string, patch: { planId?: string; suspensionEnabled?: boolean }): Promise<void>;
 }
 
 export interface PlanRepository {
@@ -153,6 +167,18 @@ export interface AdminNotificationRepository {
   listForAdmin(adminId: string, limit?: number): Promise<AdminNotificationRecord[]>;
 }
 
+export interface DomainRepository {
+  findById(id: string): Promise<DomainRecord | null>;
+  findByCustomerId(customerId: string): Promise<DomainRecord[]>;
+  /** domainName is globally unique (spec/schema) — not just unique per
+   * customer. Used to catch a duplicate before hitting the DB
+   * constraint, so createDomain can return a clean ALREADY_EXISTS
+   * result instead of an unhandled Prisma error. */
+  findByDomainName(domainName: string): Promise<DomainRecord | null>;
+  listAll(): Promise<DomainRecord[]>;
+  create(input: { customerId: string; domainName: string; isPrimary: boolean }): Promise<DomainRecord>;
+}
+
 export interface RailwayResourceRepository {
   findBySubscriptionId(subscriptionId: string): Promise<RailwayResourceRecord[]>;
   /** All resources, for the periodic Railway sync worker (spec section 13). */
@@ -242,12 +268,15 @@ export interface AdminManagementDeps {
 
 /** Dependencies for creating plans, subscriptions, and mapping
  * subscriptions to Railway infrastructure — three deliberately separate
- * business-logic functions sharing one dependency bag. */
+ * business-logic functions sharing one dependency bag. Also covers
+ * domain attachment, which follows the same "admin creates a resource
+ * tied to a customer" shape. */
 export interface BillingSetupDeps {
   admins: AdminRepository;
   customers: CustomerRepository;
   plans: PlanRepository;
   subscriptions: SubscriptionRepository;
   railwayResources: RailwayResourceRepository;
+  domains: DomainRepository;
   auditLog: AuditLogRepository;
 }

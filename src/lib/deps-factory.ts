@@ -10,6 +10,7 @@ import {
   PrismaAdminAssignmentRepository,
   PrismaAdminNotificationRepository,
   PrismaAuditLogRepository,
+  PrismaDomainRepository,
   EmailNotificationSender,
 } from './db/prisma-repository';
 import { WebhookDeps, AuthDeps, CronDeps, AdminManagementDeps, BillingSetupDeps } from './db/ports';
@@ -75,6 +76,7 @@ export function buildBillingSetupDeps(): BillingSetupDeps {
     plans: new PrismaPlanRepository(client),
     subscriptions: new PrismaSubscriptionRepository(client),
     railwayResources: new PrismaRailwayResourceRepository(client),
+    domains: new PrismaDomainRepository(client),
     auditLog: new PrismaAuditLogRepository(client),
   };
 }

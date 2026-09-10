@@ -9,9 +9,8 @@ import { setSubscriptionDryRunOverride } from '../../../../../../src/lib/suspens
 
 export async function POST(
   request: Request,
-  context: { params: Promise<{ id: string }> }
+  context: { params: { id: string } }
 ): Promise<Response> {
-  const { id } = await context.params;
   const auth = authenticateFromHeader(request.headers.get('authorization'));
   if (!auth.authenticated || !hasAdminRole(auth.session, ['ADMIN', 'SUPER_ADMIN'])) {
     return json(403, { error: 'Admin access required' });
@@ -28,7 +27,7 @@ export async function POST(
   }
 
   const scopeDeps = buildWebhookDeps();
-  const subscription = await scopeDeps.subscriptions.findById(id);
+  const subscription = await scopeDeps.subscriptions.findById(context.params.id);
   if (!subscription) {
     return json(404, { error: 'Subscription not found' });
   }
@@ -39,7 +38,7 @@ export async function POST(
   const result = await setSubscriptionDryRunOverride(
     buildBillingSetupDeps(),
     auth.session.sub,
-    id,
+    context.params.id,
     body.override
   );
 

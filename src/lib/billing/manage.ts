@@ -157,3 +157,76 @@ export async function createSubscription(
 
   return { outcome: 'CREATED', message: 'Subscription created', subscription };
 }
+
+// ---------- updateSubscription ----------
+
+export interface UpdateSubscriptionInput {
+  planId?: string;
+  suspensionEnabled?: boolean;
+}
+
+export type UpdateSubscriptionOutcome = 'UPDATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'INVALID_INPUT' | 'NO_CHANGES';
+
+export interface UpdateSubscriptionResult {
+  outcome: UpdateSubscriptionOutcome;
+  message: string;
+  subscription?: SubscriptionRecord;
+}
+
+/**
+ * updateSubscription — spec section 39 (PATCH /api/subscriptions/:id),
+ * deliberately narrow. Only `planId` (change which plan this
+ * subscription bills against) and `suspensionEnabled` (the per-
+ * subscription automatic-suspension toggle) are editable here.
+ *
+ * `status` is NOT part of this input type, on purpose — status
+ * transitions only ever happen through suspendCustomer/restoreCustomer
+ * (which verify against Railway before changing it) or the cron state
+ * machine. A generic PATCH that could set `status` directly would let
+ * someone write SUSPENDED into the database without ever actually
+ * stopping the Railway deployment, or ACTIVE without ever restoring
+ * it — exactly the "never report success without verification"
+ * invariant the rest of this codebase is built around. If you need to
+ * force a status, use the suspend/restore routes (manual: true) or the
+ * dry-run-override route, not this one.
+ */
+export async function updateSubscription(
+  deps: BillingSetupDeps,
+  requestingAdminId: string,
+  subscriptionId: string,
+  patch: UpdateSubscriptionInput
+): Promise<UpdateSubscriptionResult> {
+  const requester = await deps.admins.findById(requestingAdminId);
+  if (!requester) {
+    return { outcome: 'FORBIDDEN', message: 'Requesting admin not found' };
+  }
+
+  const subscription = await deps.subscriptions.findById(subscriptionId);
+  if (!subscription) {
+    return { outcome: 'NOT_FOUND', message: 'Subscription not found' };
+  }
+
+  if (patch.planId === undefined && patch.suspensionEnabled === undefined) {
+    return { outcome: 'NO_CHANGES', message: 'Nothing to update — provide planId and/or suspensionEnabled' };
+  }
+
+  if (patch.planId !== undefined) {
+    const plan = await deps.plans.findById(patch.planId);
+    if (!plan) {
+      return { outcome: 'NOT_FOUND', message: 'Plan not found' };
+    }
+  }
+
+  await deps.subscriptions.update(subscriptionId, patch);
+
+  await deps.auditLog.create({
+    actor: requestingAdminId,
+    action: 'SUBSCRIPTION_UPDATED',
+    target: subscriptionId,
+    metadata: { ...patch },
+    result: 'SUCCESS',
+  });
+
+  const updated = await deps.subscriptions.findById(subscriptionId);
+  return { outcome: 'UPDATED', message: 'Subscription updated', subscription: updated ?? undefined };
+}

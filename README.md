@@ -35,7 +35,8 @@ src/lib/admin/manage.ts              createAdmin() / setCustomerAssignments() �
 src/lib/customers/manage.ts           createCustomer() — spec sections 5 & 39, auto-assigns scoped creators
 src/lib/billing/
   cycle.ts                              addBillingCycle() / addDays()
-  manage.ts                              createPlan() / createSubscription() — spec sections 8-9, 39
+  manage.ts                              createPlan() / createSubscription() / updateSubscription() — spec sections 8-9, 39
+src/lib/domains/manage.ts              createDomain() — spec section 43
 src/lib/railway/mapping.ts             mapRailwayResource() — spec section 12, enforces MULTI_TENANT+APP_LEVEL at entry
 src/lib/notifications/admin-notify.ts  notifyAdminsForCustomer() — routes payment events to the right admin(s)
 src/lib/cron/
@@ -59,13 +60,31 @@ app/api/
   admin/plans/route.ts                     GET: list plans. POST: create one (spec section 9)
   admin/subscriptions/route.ts              POST: create a subscription for a customer (spec sections 8-9), scoped
   admin/subscriptions/[id]/railway-resource/route.ts  POST: map that subscription to Railway infra (spec section 12), scoped
+  admin/subscriptions/[id]/route.ts                     GET: view one subscription. PATCH: edit planId/suspensionEnabled ONLY (status excluded on purpose)
+  admin/domains/route.ts                                 GET: scoped listing. POST: attach a domain to a customer
   admin/subscriptions/[id]/dry-run-override/route.ts   POST: per-subscription dry-run override, scoped
   admin/notifications/route.ts             The calling admin's own notification feed
   cron/subscriptions/route.ts           Hourly subscription checker (CRON_SECRET-protected)
   cron/railway-sync/route.ts             Railway sync (CRON_SECRET-protected)
   subscriptions/[id]/suspend/route.ts     Admin manual suspend — scoped to assignment
   subscriptions/[id]/restore/route.ts      Admin manual restore — scoped to assignment
-tests/                                129 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
+tests/                                141 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
+app/
+  globals.css                          Design tokens (forest green/paper/clay — matches the spec's own branding request)
+  layout.tsx                            Root layout, wraps everything in AuthProvider
+  page.tsx                               Placeholder home page with a link into /login
+  login/page.tsx                          Admin login form
+  dashboard/
+    layout.tsx                             Sidebar + auth guard (redirects to /login if not signed in)
+    page.tsx                                 Overview
+    customers/page.tsx                        List + create customer form
+    plans/page.tsx                            List + create plan form
+    subscriptions/page.tsx                     List + create subscription form (customer/plan dropdowns)
+    subscriptions/[id]/page.tsx                 View/edit one subscription + suspend/restore buttons
+    domains/page.tsx                             List + attach-domain form
+  _components/AuthProvider.tsx           Session context — token in localStorage, see caveat below
+  _components/Sidebar.tsx                 Nav
+  _lib/api.ts                              authFetch() helper, attaches Bearer token
 ```
 
 ## Scoped admin access — how it actually works
@@ -179,8 +198,8 @@ every real customer.
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit — passes clean (prisma-repository.ts excluded, see below)
-npm test            # vitest — 129 tests, all green, no network/DB needed
-npm run build       # next build — verified working in this sandbox, produces all 19 routes
+npm test            # vitest — 141 tests, all green, no network/DB needed
+npm run build       # next build — verified working in this sandbox, produces all 21 API routes + 7 UI pages
 ```
 
 ### One thing I still could NOT verify from this sandbox — be aware before you ship
@@ -264,10 +283,20 @@ themselves are thin, reviewed-by-eye wrappers around that logic.
 | MULTI_TENANT can never be mapped with an unsafe suspension strategy | `mapRailwayResource()` rejects `MULTI_TENANT` + anything other than `APP_LEVEL` at data-entry time — a bad pairing can't even get saved, rather than sitting in the database until a future suspension takes down every other customer sharing that service. |
 | Railway suspension verification uses the real, authoritative signal | `stopDeployment()` checks `Deployment.deploymentStopped: Boolean` (confirmed real via live introspection), not a guess from status text — see "Railway's GraphQL schema" above. |
 | Testing real suspension can't accidentally disarm production for every customer | `subscription.dryRunOverride` takes precedence over the global `SUSPENSION_DRY_RUN` env var per-subscription — see "Testing suspend/restore against real Railway" above. The cron route no longer force-overrides this (a real bug caught and fixed: it was passing the global value explicitly, which would have silently defeated every subscription's individual override for the automated path). |
+| Attaching a domain already claimed by a different customer fails cleanly, not with a crash | `domainName` is globally unique in the schema, not unique per-customer — a real bug caught before shipping: the original uniqueness check only looked at the target customer's own domains, so a cross-customer duplicate would have hit Prisma's constraint directly and thrown an unhandled error instead of a clean `ALREADY_EXISTS`. Fixed with a dedicated `findByDomainName()` lookup; tested directly. |
+| PATCH on a subscription can never set `status` | `updateSubscription()`'s input type has no `status` field at all — not filtered out, structurally absent — and the route explicitly rejects a `status` key in the request body with a message pointing at the right endpoint. Status only ever changes through suspendCustomer/restoreCustomer (verified against Railway) or the webhook (verified against the payment provider). |
+| Subscription status can never be set directly, bypassing verification | `UpdateSubscriptionInput` (the PATCH type) has no `status` field at all — a compile-time guarantee, not just a runtime check (see the `@ts-expect-error` test in `domains-and-subscription-editing.test.ts`). The PATCH route additionally rejects any request body containing `status` with an explicit 400, pointing at the right endpoint instead. |
 
 ## What's deliberately NOT done yet
 
-- No Next.js admin/customer UI — only API routes exist.
+- Basic admin UI exists now: `/login`, `/dashboard`, `/dashboard/customers`,
+  `/dashboard/plans`, `/dashboard/subscriptions` — login, list, and create
+  forms for customers/plans/subscriptions. No customer-facing portal, no
+  domain management UI, no way to edit anything after creation (see the
+  subscription-editing gap below), no suspend/restore buttons in the UI
+  (still curl/API-only for those). Session token lives in `localStorage`
+  — the standard XSS exposure of any non-httpOnly-cookie token; fine for
+  a small trusted admin team, worth revisiting before wider exposure.
 - No real email/WhatsApp/SMS notification dispatch — `EmailNotificationSender`
   currently just writes a `Notification` row (audit trail is correct;
   actual sending is a separate, unbuilt adapter). Same for admin
@@ -275,12 +304,6 @@ themselves are thin, reviewed-by-eye wrappers around that logic.
   them out as email/SMS yet.
 - No Flutterwave adapter — the routing/schema support is real (see
   above), the actual provider implementation isn't.
-- `POST /api/admin/domains` (basic CRUD, spec section 39) isn't built —
-  customers, plans, subscriptions, and Railway resource mapping now all
-  have real creation routes; domains don't yet.
-- No `GET`/`PATCH` on subscriptions (spec section 39 lists these too) —
-  only creation and suspend/restore exist. No way to view or edit a
-  subscription's fields after creation without direct DB access.
 - Customer self-service password setup (invite/reset flow) isn't built —
   `Customer.passwordHash` exists and can be null, `authenticateCustomer`
   handles the null case, but nothing issues a reset link yet.

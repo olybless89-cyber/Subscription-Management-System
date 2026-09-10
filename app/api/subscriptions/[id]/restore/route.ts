@@ -13,9 +13,8 @@ import { recordAuditLog } from '../../../../../src/lib/audit/log';
 
 export async function POST(
   request: Request,
-  context: { params: Promise<{ id: string }> }
+  context: { params: { id: string } }
 ): Promise<Response> {
-  const { id } = await context.params;
   const auth = authenticateFromHeader(request.headers.get('authorization'));
   if (!auth.authenticated || !hasAdminRole(auth.session, ['ADMIN', 'SUPER_ADMIN'])) {
     return json(403, { error: 'Admin access required' });
@@ -23,7 +22,7 @@ export async function POST(
 
   const deps = buildWebhookDeps();
 
-  const subscription = await deps.subscriptions.findById(id);
+  const subscription = await deps.subscriptions.findById(context.params.id);
   if (!subscription) {
     return json(404, { error: 'Subscription not found' });
   }
@@ -31,7 +30,7 @@ export async function POST(
     return json(403, { error: 'This subscription is not assigned to you' });
   }
 
-  const result = await restoreCustomer(deps, buildRailwayClient(), id, {
+  const result = await restoreCustomer(deps, buildRailwayClient(), context.params.id, {
     manual: true,
     paymentVerified: true,
     performedBy: auth.session.sub,
@@ -40,7 +39,7 @@ export async function POST(
   await recordAuditLog(buildAuditLogRepository(), {
     actor: auth.session.sub,
     action: 'CUSTOMER_RESTORED',
-    target: id,
+    target: context.params.id,
     metadata: { outcome: result.outcome },
     result: result.outcome === 'RESTORED' ? 'SUCCESS' : 'FAILED',
   });

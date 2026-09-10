@@ -7,6 +7,7 @@ import {
   PlanRecord,
   PaymentRecord,
   AdminRecord,
+  DomainRecord,
 } from '@/types/domain';
 
 // ---------- shared primitive stores, reused across the various fake-deps builders ----------
@@ -208,6 +209,15 @@ function makeSubscriptionRepo(seed: SubscriptionRecord[]) {
       if (!s) throw new Error('not found');
       s.dryRunOverride = override;
     },
+    async listAll() {
+      return [...byId.values()];
+    },
+    async update(id: string, patch: { planId?: string; suspensionEnabled?: boolean }) {
+      const s = byId.get(id);
+      if (!s) throw new Error('not found');
+      if (patch.planId !== undefined) s.planId = patch.planId;
+      if (patch.suspensionEnabled !== undefined) s.suspensionEnabled = patch.suspensionEnabled;
+    },
   };
   return { repo, byId };
 }
@@ -220,6 +230,39 @@ function makeAuditLogRepo() {
     },
   };
   return { repo, log };
+}
+
+function makeDomainRepo(seed: DomainRecord[] = []) {
+  const byId = new Map(seed.map((d) => [d.id, { ...d }]));
+  let counter = seed.length;
+  const repo = {
+    async findById(id: string) {
+      return byId.get(id) ?? null;
+    },
+    async findByCustomerId(customerId: string) {
+      return [...byId.values()].filter((d) => d.customerId === customerId);
+    },
+    async findByDomainName(domainName: string) {
+      return [...byId.values()].find((d) => d.domainName === domainName) ?? null;
+    },
+    async listAll() {
+      return [...byId.values()];
+    },
+    async create(input: { customerId: string; domainName: string; isPrimary: boolean }) {
+      counter += 1;
+      const record: DomainRecord = {
+        id: `dom_${counter}`,
+        customerId: input.customerId,
+        domainName: input.domainName,
+        isPrimary: input.isPrimary,
+        railwayStatus: null,
+        createdAt: new Date().toISOString(),
+      };
+      byId.set(record.id, record);
+      return record;
+    },
+  };
+  return { repo, byId };
 }
 
 // ---------- composed fake-deps builders used by the test suites ----------
@@ -380,17 +423,20 @@ export function makeFakeBillingSetupDeps(seed: {
   plans: PlanRecord[];
   subscriptions: SubscriptionRecord[];
   railwayResources: RailwayResourceRecord[];
+  domains?: DomainRecord[];
 }): BillingSetupDeps & {
   auditLogEntries: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }>;
   planStore: Map<string, PlanRecord>;
   subscriptionStore: Map<string, SubscriptionRecord>;
   railwayResourceStore: RailwayResourceRecord[];
+  domainStore: Map<string, DomainRecord>;
 } {
   const { repo: adminsRepo } = makeAdminRepo(seed.admins);
   const { repo: customersRepo } = makeCustomerRepo(seed.customers);
   const { repo: plansRepo, byId: planStore } = makePlanRepo(seed.plans);
   const { repo: subscriptionsRepo, byId: subscriptionStore } = makeSubscriptionRepo(seed.subscriptions);
   const railwayResourceStore = [...seed.railwayResources];
+  const { repo: domainsRepo, byId: domainStore } = makeDomainRepo(seed.domains ?? []);
   const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
 
   return {
@@ -398,6 +444,7 @@ export function makeFakeBillingSetupDeps(seed: {
     customers: customersRepo,
     plans: plansRepo,
     subscriptions: subscriptionsRepo,
+    domains: domainsRepo,
     railwayResources: {
       async findBySubscriptionId(subscriptionId: string) {
         return railwayResourceStore.filter((r) => r.subscriptionId === subscriptionId);
@@ -432,5 +479,6 @@ export function makeFakeBillingSetupDeps(seed: {
     planStore,
     subscriptionStore,
     railwayResourceStore,
+    domainStore,
   };
 }

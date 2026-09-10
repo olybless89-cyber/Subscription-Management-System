@@ -58,6 +58,15 @@ export interface AdminAssignmentRecord {
   customerId: string;
 }
 
+export interface DomainRecord {
+  id: string;
+  customerId: string;
+  domainName: string;
+  isPrimary: boolean;
+  railwayStatus: string | null;
+  createdAt: string;
+}
+
 export interface AdminNotificationRecord {
   id: string;
   adminId: string;
@@ -65,6 +74,14 @@ export interface AdminNotificationRecord {
   event: string;
   message: string;
   createdAt: string;
+}
+
+export interface DomainRecord {
+  id: string;
+  customerId: string;
+  domainName: string;
+  isPrimary: boolean;
+  railwayStatus: string | null;
 }
 
 export interface SubscriptionRecord {
