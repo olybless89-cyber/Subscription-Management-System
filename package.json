@@ -10,7 +10,7 @@
     "start": "next start",
     "postinstall": "prisma generate",
     "seed:admin": "node scripts/seed-admin.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "rm -rf .next/types && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src tests --ext .ts"
