@@ -1,14 +1,15 @@
 // Web Oracle Host - Prisma schema
-// NOTE: provider is sqlite for local scaffolding/typecheck in this sandbox.
-// In production, switch to:
-//   datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
+// Targets PostgreSQL (Railway's DATABASE_URL). This sandbox can't run
+// `prisma generate`/`prisma validate` against it (no network access to
+// binaries.prisma.sh) — verified instead by Railway's own build, since
+// its environment has open network access this sandbox doesn't.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
