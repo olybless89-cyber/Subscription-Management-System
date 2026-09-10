@@ -1,0 +1,266 @@
+// Web Oracle Host - Prisma schema
+// NOTE: provider is sqlite for local scaffolding/typecheck in this sandbox.
+// In production, switch to:
+//   datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- ENUMS ----------
+
+enum CustomerStatus {
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+  TERMINATED
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAYMENT_DUE
+  GRACE_PERIOD
+  SUSPENDED
+  CANCELLED
+  TERMINATED
+}
+
+enum BillingCycle {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+  CUSTOM
+}
+
+enum HostingMode {
+  DEDICATED
+  SHARED_SERVICE
+  MULTI_TENANT
+}
+
+enum SuspensionStrategy {
+  STOP_DEPLOYMENT
+  APP_LEVEL
+  REDIRECT
+  MANUAL
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+enum RailwayResourceStatus {
+  ACTIVE
+  STOPPED
+  UNKNOWN
+  ERROR
+}
+
+enum SuspensionAction {
+  WARNING
+  GRACE_STARTED
+  SERVICE_STOPPED
+  APP_SUSPENDED
+  RESTORED
+  MANUAL_SUSPENSION
+  MANUAL_RESTORATION
+}
+
+enum SuspensionResult {
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
+}
+
+// ---------- MODELS ----------
+
+model Customer {
+  id                  String              @id @default(cuid())
+  customerCode        String              @unique // WOH-000001
+  name                String
+  email               String              @unique
+  passwordHash        String?             // customer portal login; null until they set one (e.g. invite flow)
+  phone               String?
+  status              CustomerStatus      @default(ACTIVE)
+  automaticSuspension Boolean             @default(true)
+  automaticSuspensionOffReason String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  subscriptions       Subscription[]
+  domains             Domain[]
+  notifications       Notification[]
+
+  @@index([status])
+}
+
+model Plan {
+  id            String         @id @default(cuid())
+  name          String
+  amount        Int // stored in minor units (kobo)
+  currency      String         @default("NGN")
+  billingCycle  BillingCycle
+  gracePeriodDays Int          @default(2)
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id                  String              @id @default(cuid())
+  customerId          String
+  customer            Customer            @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  planId              String
+  plan                Plan                @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  status              SubscriptionStatus  @default(TRIAL)
+  startDate           DateTime            @default(now())
+  currentPeriodStart  DateTime            @default(now())
+  currentPeriodEnd    DateTime
+  nextBillingDate     DateTime
+  gracePeriodEnd      DateTime?
+  autoRenew           Boolean             @default(true)
+  suspensionEnabled   Boolean             @default(true)
+  suspendedAt         DateTime?
+
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  payments            Payment[]
+  railwayResources     RailwayResource[]
+  suspensionEvents     SuspensionEvent[]
+
+  @@index([status])
+  @@index([nextBillingDate])
+}
+
+model Payment {
+  id              String        @id @default(cuid())
+  subscriptionId  String
+  subscription    Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  reference       String        @unique // provider transaction reference, enforces webhook idempotency
+  provider        String        @default("paystack")
+  amount          Int
+  currency        String        @default("NGN")
+  status          PaymentStatus @default(PENDING)
+  rawPayload      String? // JSON blob of provider payload for audit
+  processedAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([status])
+}
+
+model Domain {
+  id            String    @id @default(cuid())
+  customerId    String
+  customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  domainName    String    @unique
+  isPrimary     Boolean   @default(true)
+  railwayStatus String? // synced status string from Railway domain query
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model RailwayResource {
+  id                 String                 @id @default(cuid())
+  subscriptionId     String
+  subscription       Subscription           @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+
+  projectId          String
+  environmentId      String
+  serviceId          String
+  deploymentId       String?
+
+  hostingMode        HostingMode
+  suspensionStrategy SuspensionStrategy
+
+  status             RailwayResourceStatus  @default(UNKNOWN)
+  lastSyncedAt       DateTime?
+  lastError          String?
+
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  @@index([hostingMode])
+  @@index([status])
+}
+
+model SuspensionEvent {
+  id             String            @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription      @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+
+  action         SuspensionAction
+  reason         String
+  strategy       SuspensionStrategy
+  result         SuspensionResult
+  errorMessage   String?
+  performedBy    String? // AdminUser id, or null for automated worker
+  dryRun         Boolean           @default(false)
+
+  createdAt      DateTime          @default(now())
+
+  @@index([subscriptionId])
+  @@index([result])
+}
+
+model Notification {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  channel    String // EMAIL | WHATSAPP | SMS | IN_APP
+  event      String // PAYMENT_DUE | GRACE_PERIOD | SUSPENDED | ...
+  message    String
+  sentAt     DateTime?
+  createdAt  DateTime @default(now())
+}
+
+model AdminUser {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         AdminRole @default(ADMIN)
+  canManageAdmins Boolean @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actor     String // AdminUser id or "SYSTEM"
+  action    String
+  target    String?
+  ip        String?
+  metadata  String? // JSON
+  result    String // SUCCESS | FAILED
+  createdAt DateTime @default(now())
+
+  @@index([action])
+  @@index([createdAt])
+}
