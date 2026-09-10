@@ -99,9 +99,13 @@ model Customer {
   id                  String              @id @default(cuid())
   customerCode        String              @unique // WOH-000001
   name                String
-  email               String              @unique
+  email               String              @unique // login/account email
+  notificationEmail   String?             // where notifications actually go, if different from the login email — falls back to `email` when null
   passwordHash        String?             // customer portal login; null until they set one (e.g. invite flow)
   phone               String?
+  dateOfBirth         DateTime?           // used by the daily birthday-message cron — only month/day matter, year is stored but not checked
+  serviceStartDate     DateTime?           // manual contract/service dates — independent of subscription billing periods
+  serviceEndDate       DateTime?
   status              CustomerStatus      @default(ACTIVE)
   automaticSuspension Boolean             @default(true)
   automaticSuspensionOffReason String?

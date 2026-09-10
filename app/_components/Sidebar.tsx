@@ -13,10 +13,14 @@ const NAV_ITEMS = [
   { href: '/dashboard/admins', label: 'Admins' },
 ];
 
+const SUPER_ADMIN_ONLY_NAV_ITEMS = [{ href: '/dashboard/activity', label: 'Activity' }];
+
 export function Sidebar() {
   const pathname = usePathname();
   const { session, logout } = useAuth();
   const router = useRouter();
+
+  const navItems = session?.role === 'SUPER_ADMIN' ? [...NAV_ITEMS, ...SUPER_ADMIN_ONLY_NAV_ITEMS] : NAV_ITEMS;
 
   function handleLogout() {
     logout();
@@ -43,7 +47,7 @@ export function Sidebar() {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3em', flex: 1 }}>
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const active = pathname === item.href;
           return (
             <Link

@@ -32,7 +32,10 @@ src/lib/auth/
   authenticate.ts                     authenticateAdmin() / authenticateCustomer()
   authorize.ts                         authenticateFromHeader / hasAdminRole / canAccessCustomer / listVisibleCustomerIds / canManageOtherAdmins
 src/lib/admin/manage.ts              createAdmin() / setCustomerAssignments() — scoped-admin management
-src/lib/customers/manage.ts           createCustomer() — spec sections 5 & 39, auto-assigns scoped creators
+src/lib/customers/
+  manage.ts                              createCustomer() / updateCustomer() — spec sections 5 & 39, auto-assigns scoped creators
+  birthday.ts                              runBirthdayMessages() — daily cron logic, month/day match, year ignored
+src/lib/notifications/custom-email.ts   sendCustomEmail() — admin-composed message through the same Resend pipeline
 src/lib/billing/
   cycle.ts                              addBillingCycle() / addDays()
   manage.ts                              createPlan() / createSubscription() / updateSubscription() — spec sections 8-9, 39
@@ -66,11 +69,15 @@ app/api/
   admin/domains/route.ts                                 GET: scoped listing. POST: attach a domain to a customer
   admin/subscriptions/[id]/dry-run-override/route.ts   POST: per-subscription dry-run override, scoped
   admin/notifications/route.ts             The calling admin's own notification feed
+  admin/customers/[id]/route.ts             GET: view one customer. PATCH: edit fields (no status/email/customerCode)
+  admin/customers/[id]/send-email/route.ts   POST: admin-composed custom email to this customer
+  admin/audit-logs/route.ts                   GET: system-wide activity feed — SUPER_ADMIN only, not delegated admins
+  cron/birthdays/route.ts                      POST: daily birthday-message check (CRON_SECRET-protected)
   cron/subscriptions/route.ts           Hourly subscription checker (CRON_SECRET-protected)
   cron/railway-sync/route.ts             Railway sync (CRON_SECRET-protected)
   subscriptions/[id]/suspend/route.ts     Admin manual suspend — scoped to assignment
   subscriptions/[id]/restore/route.ts      Admin manual restore — scoped to assignment
-tests/                                150 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
+tests/                                167 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
 app/
   globals.css                          Design tokens (forest green/paper/clay — matches the spec's own branding request)
   layout.tsx                            Root layout, wraps everything in AuthProvider
@@ -86,6 +93,8 @@ app/
     domains/page.tsx                             List + attach-domain form
     admins/page.tsx                                List + create admin form (role/canManageAdmins fields only shown to SUPER_ADMIN)
     admins/[id]/assignments/page.tsx                 Checkbox list of customers this admin can see
+    customers/[id]/page.tsx                            View/edit a customer + send-custom-email composer
+    activity/page.tsx                                    System-wide audit log — SUPER_ADMIN only, hidden from nav for everyone else
   _components/AuthProvider.tsx           Session context — token in localStorage, see caveat below
   _components/Sidebar.tsx                 Nav
   _lib/api.ts                              authFetch() helper, attaches Bearer token
@@ -164,6 +173,41 @@ strategy — the exact combination spec section 16 requires, rejected
 before it can even be saved if someone tries to pair `MULTI_TENANT` with
 `STOP_DEPLOYMENT`.
 
+## Admin visibility, customer profile fields, and custom messaging
+
+This is largely the same scoped-admin model from before, extended with
+fields and views that were requested directly:
+
+- **Any admin creates and manages customers independently**; your
+  SUPER_ADMIN account sees every customer and subscription regardless of
+  who created it — this was already true, not new this round.
+- **`GET /api/admin/audit-logs`** is new — a system-wide activity feed,
+  gated to `SUPER_ADMIN` specifically (not the usual `canManageAdmins`
+  delegation used elsewhere), since "all activities... seen by the super
+  admin" was explicit in the request. A delegated admin-manager does not
+  get this view.
+- **Customer records gained**: `notificationEmail` (falls back to the
+  login `email` when unset — every notification path, including the
+  custom-email composer, resolves this the same way),  `phone` (already
+  existed, now actually exposed/editable), `dateOfBirth`,
+  `serviceStartDate`, `serviceEndDate`. The last two are **manual fields
+  independent of subscription billing periods** — per your answer, not
+  tied to `Subscription.currentPeriodStart/End`.
+- **`POST /api/admin/customers/:id/send-email`** — the custom-email
+  composer. An admin writes their own subject/body and it goes out
+  through the exact same `NotificationSender` pipeline as every
+  automated notification (Notification-row-first, best-effort dispatch,
+  same address resolution), recorded as event `'CUSTOM'` so it's
+  distinguishable from automated notifications in the customer's history.
+- **`POST /api/cron/birthdays`** — checks every customer's
+  `dateOfBirth` against today's month/day (year is stored but never
+  checked) and sends a birthday email to any match. **The 7am timing
+  itself is not enforced in code** — this route doesn't know or care
+  what time it is; you need to add a Railway cron schedule (or GitHub
+  Actions, or any external scheduler) that calls this route once daily
+  at 7am. There's also no "already sent today" tracking — schedule it
+  once a day, not the function guarding against being called twice.
+
 ## Email notification dispatch (Resend)
 
 Both customer notifications (`Notification` rows, sent via
@@ -230,8 +274,8 @@ every real customer.
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit — passes clean (prisma-repository.ts excluded, see below)
-npm test            # vitest — 150 tests, all green, no network/DB needed
-npm run build       # next build — verified working in this sandbox, produces all 21 API routes + 9 UI pages
+npm test            # vitest — 167 tests, all green, no network/DB needed
+npm run build       # next build — verified working in this sandbox, produces all 24 API routes + 11 UI pages
 ```
 
 ### One thing I still could NOT verify from this sandbox — be aware before you ship
@@ -331,9 +375,14 @@ themselves are thin, reviewed-by-eye wrappers around that logic.
   (still curl/API-only for those). Session token lives in `localStorage`
   — the standard XSS exposure of any non-httpOnly-cookie token; fine for
   a small trusted admin team, worth revisiting before wider exposure.
-- No WhatsApp/SMS notification dispatch — email (via Resend) is real
-  now, see below; WhatsApp/SMS channels named in the schema/spec
-  (section 30) still have no adapter.
+- **WhatsApp (Meta Cloud API) integration — not started.** This was
+  explicitly deferred to last, per your own sequencing. No adapter, no
+  schema for a WhatsApp channel's delivery status, nothing wired.
+- **Bulk/segmented "campaign" sending — not started.** Everything built
+  this round (custom email, birthday messages) is one-recipient-at-a-time.
+  A real campaign feature (pick a segment of customers, send one message
+  to all of them, track delivery per recipient) needs its own data model
+  and hasn't been designed yet, let alone built.
 - No Flutterwave adapter — the routing/schema support is real (see
   above), the actual provider implementation isn't.
 - Customer self-service password setup (invite/reset flow) isn't built —

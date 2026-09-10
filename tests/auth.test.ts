@@ -126,7 +126,13 @@ describe('authenticateCustomer', () => {
     return {
       id: 'cust_1',
       customerCode: 'WOH-000001',
+      name: 'Test Customer',
       email: 'client@example.com',
+      notificationEmail: null,
+      phone: null,
+      dateOfBirth: null,
+      serviceStartDate: null,
+      serviceEndDate: null,
       passwordHash: await hashPassword('client-password'),
       status: 'ACTIVE',
       automaticSuspension: true,

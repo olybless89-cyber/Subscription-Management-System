@@ -37,7 +37,13 @@ export type PaymentProviderName = 'PAYSTACK' | 'FLUTTERWAVE';
 export interface CustomerRecord {
   id: string;
   customerCode: string;
+  name: string;
   email: string;
+  notificationEmail: string | null;
+  phone: string | null;
+  dateOfBirth: string | null;
+  serviceStartDate: string | null;
+  serviceEndDate: string | null;
   passwordHash: string | null;
   status: CustomerStatus;
   automaticSuspension: boolean;
@@ -57,6 +63,17 @@ export interface AdminAssignmentRecord {
   id: string;
   adminId: string;
   customerId: string;
+}
+
+export interface AuditLogRecord {
+  id: string;
+  actor: string;
+  action: string;
+  target: string | null;
+  ip: string | null;
+  metadata: string | null;
+  result: string;
+  createdAt: string;
 }
 
 export interface DomainRecord {

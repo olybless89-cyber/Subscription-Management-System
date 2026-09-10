@@ -7,7 +7,13 @@ function customer(id: string): CustomerRecord {
   return {
     id,
     customerCode: `WOH-${id}`,
+    name: 'Test Customer',
     email: `${id}@example.com`,
+    notificationEmail: null,
+    phone: null,
+    dateOfBirth: null,
+    serviceStartDate: null,
+    serviceEndDate: null,
     passwordHash: null,
     status: 'ACTIVE',
     automaticSuspension: true,

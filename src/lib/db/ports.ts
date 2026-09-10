@@ -13,6 +13,7 @@ import {
   AdminNotificationRecord,
   PaymentProviderName,
   DomainRecord,
+  AuditLogRecord,
 } from '@/types/domain';
 
 /**
@@ -117,10 +118,35 @@ export interface CustomerRepository {
   create(input: {
     name: string;
     email: string;
+    notificationEmail?: string | null;
     phone?: string | null;
+    dateOfBirth?: string | null;
+    serviceStartDate?: string | null;
+    serviceEndDate?: string | null;
     paymentProvider: PaymentProviderName;
     automaticSuspension: boolean;
   }): Promise<CustomerRecord>;
+  /** Admin edit of a customer's own fields — deliberately excludes
+   * `status` and `customerCode`, same reasoning as
+   * SubscriptionRepository.update(): status only ever changes through a
+   * verified engine, and customerCode is immutable by spec section 5. */
+  update(
+    id: string,
+    patch: {
+      name?: string;
+      notificationEmail?: string | null;
+      phone?: string | null;
+      dateOfBirth?: string | null;
+      serviceStartDate?: string | null;
+      serviceEndDate?: string | null;
+      paymentProvider?: PaymentProviderName;
+      automaticSuspension?: boolean;
+    }
+  ): Promise<CustomerRecord>;
+  /** All customers with a non-null dateOfBirth — for the daily birthday
+   * cron. The worker itself matches month/day against `now`; this just
+   * narrows to customers where there's anything to check. */
+  findWithBirthday(): Promise<CustomerRecord[]>;
 }
 
 export interface AdminRepository {
@@ -213,7 +239,11 @@ export interface SuspensionEventRepository {
 }
 
 export interface NotificationSender {
-  send(customerId: string, event: string, message: string): Promise<void>;
+  /** subjectOverride lets a caller (the custom-email composer) supply
+   * its own subject instead of the automatic one derived from `event`
+   * via subjectForEvent(). Omit it for every automated notification —
+   * only the admin-composed custom-email path passes one. */
+  send(customerId: string, event: string, message: string, subjectOverride?: string): Promise<void>;
 }
 
 export interface AuditLogEntry {
@@ -227,6 +257,8 @@ export interface AuditLogEntry {
 
 export interface AuditLogRepository {
   create(entry: AuditLogEntry): Promise<void>;
+  /** Most-recent-first, for the SUPER_ADMIN activity-log view. */
+  listRecent(limit?: number): Promise<AuditLogRecord[]>;
 }
 
 export interface EngineDeps {
@@ -282,5 +314,15 @@ export interface BillingSetupDeps {
   subscriptions: SubscriptionRepository;
   railwayResources: RailwayResourceRepository;
   domains: DomainRepository;
+  auditLog: AuditLogRepository;
+}
+
+/** Dependencies for the admin-composed custom-email feature and the
+ * daily birthday cron — both just need to read customers and dispatch
+ * through the same notification pipeline everything else uses. */
+export interface CustomEmailDeps {
+  admins: AdminRepository;
+  customers: CustomerRepository;
+  notifications: NotificationSender;
   auditLog: AuditLogRepository;
 }

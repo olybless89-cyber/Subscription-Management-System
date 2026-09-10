@@ -1,4 +1,4 @@
-import { EngineDeps, WebhookDeps, AuthDeps, AdminManagementDeps, BillingSetupDeps } from '@/lib/db/ports';
+import { EngineDeps, WebhookDeps, AuthDeps, AdminManagementDeps, BillingSetupDeps, CustomEmailDeps } from '@/lib/db/ports';
 import {
   CustomerRecord,
   SubscriptionRecord,
@@ -36,7 +36,11 @@ function makeCustomerRepo(seed: CustomerRecord[]) {
     async create(input: {
       name: string;
       email: string;
+      notificationEmail?: string | null;
       phone?: string | null;
+      dateOfBirth?: string | null;
+      serviceStartDate?: string | null;
+      serviceEndDate?: string | null;
       paymentProvider: CustomerRecord['paymentProvider'];
       automaticSuspension: boolean;
     }) {
@@ -44,7 +48,13 @@ function makeCustomerRepo(seed: CustomerRecord[]) {
       const record: CustomerRecord = {
         id: `cust_${codeCounter}`,
         customerCode: `WOH-${String(codeCounter).padStart(6, '0')}`,
+        name: input.name,
         email: input.email,
+        notificationEmail: input.notificationEmail ?? null,
+        phone: input.phone ?? null,
+        dateOfBirth: input.dateOfBirth ?? null,
+        serviceStartDate: input.serviceStartDate ?? null,
+        serviceEndDate: input.serviceEndDate ?? null,
         passwordHash: null,
         status: 'ACTIVE',
         automaticSuspension: input.automaticSuspension,
@@ -52,6 +62,34 @@ function makeCustomerRepo(seed: CustomerRecord[]) {
       };
       byId.set(record.id, record);
       return record;
+    },
+    async update(
+      id: string,
+      patch: {
+        name?: string;
+        notificationEmail?: string | null;
+        phone?: string | null;
+        dateOfBirth?: string | null;
+        serviceStartDate?: string | null;
+        serviceEndDate?: string | null;
+        paymentProvider?: CustomerRecord['paymentProvider'];
+        automaticSuspension?: boolean;
+      }
+    ) {
+      const c = byId.get(id);
+      if (!c) throw new Error('not found');
+      if (patch.name !== undefined) c.name = patch.name;
+      if (patch.notificationEmail !== undefined) c.notificationEmail = patch.notificationEmail;
+      if (patch.phone !== undefined) c.phone = patch.phone;
+      if (patch.dateOfBirth !== undefined) c.dateOfBirth = patch.dateOfBirth;
+      if (patch.serviceStartDate !== undefined) c.serviceStartDate = patch.serviceStartDate;
+      if (patch.serviceEndDate !== undefined) c.serviceEndDate = patch.serviceEndDate;
+      if (patch.paymentProvider !== undefined) c.paymentProvider = patch.paymentProvider;
+      if (patch.automaticSuspension !== undefined) c.automaticSuspension = patch.automaticSuspension;
+      return { ...c };
+    },
+    async findWithBirthday() {
+      return [...byId.values()].filter((c) => c.dateOfBirth !== null);
     },
   };
   return { repo, byId };
@@ -229,10 +267,26 @@ function makeSubscriptionRepo(seed: SubscriptionRecord[]) {
 }
 
 function makeAuditLogRepo() {
-  const log: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }> = [];
+  const log: Array<{ id: string; actor: string; action: string; target?: string; metadata?: unknown; result: string; createdAt: string }> = [];
   const repo = {
     async create(entry: { actor: string; action: string; target?: string; metadata?: unknown; result: 'SUCCESS' | 'FAILED' }) {
-      log.push(entry);
+      log.push({ id: `audit_${log.length + 1}`, createdAt: new Date().toISOString(), ...entry });
+    },
+    async listRecent(limit = 50) {
+      return log
+        .slice()
+        .reverse()
+        .slice(0, limit)
+        .map((e) => ({
+          id: e.id,
+          actor: e.actor,
+          action: e.action,
+          target: e.target ?? null,
+          ip: null,
+          metadata: e.metadata ? JSON.stringify(e.metadata) : null,
+          result: e.result,
+          createdAt: e.createdAt,
+        }));
     },
   };
   return { repo, log };
@@ -279,13 +333,13 @@ export function makeFakeDeps(seed: {
   railwayResources: RailwayResourceRecord[];
 }): EngineDeps & {
   events: SuspensionEventInput[];
-  notificationLog: Array<{ customerId: string; event: string; message: string }>;
+  notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }>;
 } {
   const { repo: customersRepo } = makeCustomerRepo(seed.customers);
   const { repo: subscriptionsRepo } = makeSubscriptionRepo(seed.subscriptions);
   const resources = [...seed.railwayResources];
   const events: SuspensionEventInput[] = [];
-  const notificationLog: Array<{ customerId: string; event: string; message: string }> = [];
+  const notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }> = [];
 
   return {
     events,
@@ -327,8 +381,8 @@ export function makeFakeDeps(seed: {
       },
     },
     notifications: {
-      async send(customerId, event, message) {
-        notificationLog.push({ customerId, event, message });
+      async send(customerId, event, message, subject) {
+        notificationLog.push({ customerId, event, message, subject });
       },
     },
   };
@@ -344,7 +398,7 @@ export function makeFakeWebhookDeps(seed: {
   assignments?: Array<{ adminId: string; customerId: string }>;
 }): WebhookDeps & {
   events: SuspensionEventInput[];
-  notificationLog: Array<{ customerId: string; event: string; message: string }>;
+  notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }>;
   paymentRows: Map<string, PaymentRecord>;
   adminNotificationLog: Array<{ adminId: string; customerId: string; event: string; message: string }>;
 } {
@@ -486,5 +540,31 @@ export function makeFakeBillingSetupDeps(seed: {
     subscriptionStore,
     railwayResourceStore,
     domainStore,
+  };
+}
+
+export function makeFakeCustomEmailDeps(seed: {
+  admins: AdminRecord[];
+  customers: CustomerRecord[];
+}): CustomEmailDeps & {
+  auditLogEntries: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }>;
+  notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }>;
+} {
+  const { repo: adminsRepo } = makeAdminRepo(seed.admins);
+  const { repo: customersRepo } = makeCustomerRepo(seed.customers);
+  const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
+  const notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }> = [];
+
+  return {
+    admins: adminsRepo,
+    customers: customersRepo,
+    auditLog: auditLogRepo,
+    auditLogEntries,
+    notificationLog,
+    notifications: {
+      async send(customerId, event, message, subject) {
+        notificationLog.push({ customerId, event, message, subject });
+      },
+    },
   };
 }

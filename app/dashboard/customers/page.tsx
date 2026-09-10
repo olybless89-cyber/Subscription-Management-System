@@ -7,6 +7,7 @@ import { authFetch, ApiError } from '../../_lib/api';
 interface Customer {
   id: string;
   customerCode: string;
+  name: string;
   email: string;
   status: string;
   automaticSuspension: boolean;
@@ -27,7 +28,11 @@ export default function CustomersPage() {
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [notificationEmail, setNotificationEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [dateOfBirth, setDateOfBirth] = useState('');
+  const [serviceStartDate, setServiceStartDate] = useState('');
+  const [serviceEndDate, setServiceEndDate] = useState('');
   const [paymentProvider, setPaymentProvider] = useState<'PAYSTACK' | 'FLUTTERWAVE'>('PAYSTACK');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -57,12 +62,28 @@ export default function CustomersPage() {
       const result = await authFetch<{ outcome: string; customer?: Customer }>(
         session.token,
         '/api/admin/customers',
-        { method: 'POST', body: JSON.stringify({ name, email, phone: phone || undefined, paymentProvider }) }
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            name,
+            email,
+            notificationEmail: notificationEmail || undefined,
+            phone: phone || undefined,
+            dateOfBirth: dateOfBirth || undefined,
+            serviceStartDate: serviceStartDate || undefined,
+            serviceEndDate: serviceEndDate || undefined,
+            paymentProvider,
+          }),
+        }
       );
       setFormNotice(`Created ${result.customer?.customerCode}`);
       setName('');
       setEmail('');
+      setNotificationEmail('');
       setPhone('');
+      setDateOfBirth('');
+      setServiceStartDate('');
+      setServiceEndDate('');
       setPaymentProvider('PAYSTACK');
       await load();
     } catch (err) {
@@ -88,6 +109,7 @@ export default function CustomersPage() {
               <thead>
                 <tr>
                   <th>Code</th>
+                  <th>Name</th>
                   <th>Email</th>
                   <th>Status</th>
                   <th>Provider</th>
@@ -96,7 +118,12 @@ export default function CustomersPage() {
               <tbody>
                 {customers.map((c) => (
                   <tr key={c.id}>
-                    <td className="mono">{c.customerCode}</td>
+                    <td className="mono">
+                      <a href={`/dashboard/customers/${c.id}`} style={{ color: 'var(--forest-bright)', textDecoration: 'none' }}>
+                        {c.customerCode}
+                      </a>
+                    </td>
+                    <td>{c.name}</td>
                     <td>{c.email}</td>
                     <td>
                       <span
@@ -121,12 +148,34 @@ export default function CustomersPage() {
               <input id="name" required value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             <div className="field">
-              <label htmlFor="cust-email">Email</label>
+              <label htmlFor="cust-email">Login email</label>
               <input id="cust-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="notification-email">Notification email (optional)</label>
+              <input
+                id="notification-email"
+                type="email"
+                value={notificationEmail}
+                onChange={(e) => setNotificationEmail(e.target.value)}
+                placeholder="Defaults to login email if blank"
+              />
             </div>
             <div className="field">
               <label htmlFor="phone">Phone (optional)</label>
               <input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="dob">Birthday (optional)</label>
+              <input id="dob" type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="service-start">Service start date (optional)</label>
+              <input id="service-start" type="date" value={serviceStartDate} onChange={(e) => setServiceStartDate(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="service-end">Service end date (optional)</label>
+              <input id="service-end" type="date" value={serviceEndDate} onChange={(e) => setServiceEndDate(e.target.value)} />
             </div>
             <div className="field">
               <label htmlFor="provider">Payment provider</label>

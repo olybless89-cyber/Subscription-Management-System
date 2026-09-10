@@ -11,6 +11,7 @@ import {
   AdminAssignmentRepository,
   AdminNotificationRepository,
   DomainRepository,
+  AuditLogRepository,
 } from './ports';
 import {
   SubscriptionRecord,
@@ -190,13 +191,17 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
 export class PrismaCustomerRepository implements CustomerRepository {
   constructor(private prisma: PrismaClient) {}
 
-  async findById(id: string): Promise<CustomerRecord | null> {
-    const c = await this.prisma.customer.findUnique({ where: { id } });
-    if (!c) return null;
+  private map(c: any): CustomerRecord { // eslint-disable-line @typescript-eslint/no-explicit-any
     return {
       id: c.id,
       customerCode: c.customerCode,
+      name: c.name,
       email: c.email,
+      notificationEmail: c.notificationEmail,
+      phone: c.phone,
+      dateOfBirth: c.dateOfBirth ? c.dateOfBirth.toISOString() : null,
+      serviceStartDate: c.serviceStartDate ? c.serviceStartDate.toISOString() : null,
+      serviceEndDate: c.serviceEndDate ? c.serviceEndDate.toISOString() : null,
       passwordHash: c.passwordHash,
       status: c.status,
       automaticSuspension: c.automaticSuspension,
@@ -204,45 +209,30 @@ export class PrismaCustomerRepository implements CustomerRepository {
     };
   }
 
+  async findById(id: string): Promise<CustomerRecord | null> {
+    const c = await this.prisma.customer.findUnique({ where: { id } });
+    return c ? this.map(c) : null;
+  }
+
   async findByEmail(email: string): Promise<CustomerRecord | null> {
     const c = await this.prisma.customer.findUnique({ where: { email } });
-    if (!c) return null;
-    return {
-      id: c.id,
-      customerCode: c.customerCode,
-      email: c.email,
-      passwordHash: c.passwordHash,
-      status: c.status,
-      automaticSuspension: c.automaticSuspension,
-      paymentProvider: c.paymentProvider,
-    };
+    return c ? this.map(c) : null;
   }
 
   async findByIds(ids: string[]): Promise<CustomerRecord[]> {
     if (ids.length === 0) return [];
     const rows = await this.prisma.customer.findMany({ where: { id: { in: ids } } });
-    return rows.map((c: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-      id: c.id,
-      customerCode: c.customerCode,
-      email: c.email,
-      passwordHash: c.passwordHash,
-      status: c.status,
-      automaticSuspension: c.automaticSuspension,
-      paymentProvider: c.paymentProvider,
-    }));
+    return rows.map((c: any) => this.map(c)); // eslint-disable-line @typescript-eslint/no-explicit-any
   }
 
   async listAll(): Promise<CustomerRecord[]> {
     const rows = await this.prisma.customer.findMany();
-    return rows.map((c: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-      id: c.id,
-      customerCode: c.customerCode,
-      email: c.email,
-      passwordHash: c.passwordHash,
-      status: c.status,
-      automaticSuspension: c.automaticSuspension,
-      paymentProvider: c.paymentProvider,
-    }));
+    return rows.map((c: any) => this.map(c)); // eslint-disable-line @typescript-eslint/no-explicit-any
+  }
+
+  async findWithBirthday(): Promise<CustomerRecord[]> {
+    const rows = await this.prisma.customer.findMany({ where: { dateOfBirth: { not: null } } });
+    return rows.map((c: any) => this.map(c)); // eslint-disable-line @typescript-eslint/no-explicit-any
   }
 
   async updateStatus(id: string, status: CustomerRecord['status']): Promise<void> {
@@ -252,7 +242,11 @@ export class PrismaCustomerRepository implements CustomerRepository {
   async create(input: {
     name: string;
     email: string;
+    notificationEmail?: string | null;
     phone?: string | null;
+    dateOfBirth?: string | null;
+    serviceStartDate?: string | null;
+    serviceEndDate?: string | null;
     paymentProvider: CustomerRecord['paymentProvider'];
     automaticSuspension: boolean;
   }): Promise<CustomerRecord> {
@@ -262,20 +256,51 @@ export class PrismaCustomerRepository implements CustomerRepository {
         customerCode,
         name: input.name,
         email: input.email,
+        notificationEmail: input.notificationEmail ?? undefined,
         phone: input.phone ?? undefined,
+        dateOfBirth: input.dateOfBirth ? new Date(input.dateOfBirth) : undefined,
+        serviceStartDate: input.serviceStartDate ? new Date(input.serviceStartDate) : undefined,
+        serviceEndDate: input.serviceEndDate ? new Date(input.serviceEndDate) : undefined,
         paymentProvider: input.paymentProvider as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         automaticSuspension: input.automaticSuspension,
       },
     });
-    return {
-      id: c.id,
-      customerCode: c.customerCode,
-      email: c.email,
-      passwordHash: c.passwordHash,
-      status: c.status,
-      automaticSuspension: c.automaticSuspension,
-      paymentProvider: c.paymentProvider,
-    };
+    return this.map(c);
+  }
+
+  async update(
+    id: string,
+    patch: {
+      name?: string;
+      notificationEmail?: string | null;
+      phone?: string | null;
+      dateOfBirth?: string | null;
+      serviceStartDate?: string | null;
+      serviceEndDate?: string | null;
+      paymentProvider?: CustomerRecord['paymentProvider'];
+      automaticSuspension?: boolean;
+    }
+  ): Promise<CustomerRecord> {
+    const c = await this.prisma.customer.update({
+      where: { id },
+      data: {
+        ...(patch.name !== undefined ? { name: patch.name } : {}),
+        ...(patch.notificationEmail !== undefined ? { notificationEmail: patch.notificationEmail } : {}),
+        ...(patch.phone !== undefined ? { phone: patch.phone } : {}),
+        ...(patch.dateOfBirth !== undefined
+          ? { dateOfBirth: patch.dateOfBirth ? new Date(patch.dateOfBirth) : null }
+          : {}),
+        ...(patch.serviceStartDate !== undefined
+          ? { serviceStartDate: patch.serviceStartDate ? new Date(patch.serviceStartDate) : null }
+          : {}),
+        ...(patch.serviceEndDate !== undefined
+          ? { serviceEndDate: patch.serviceEndDate ? new Date(patch.serviceEndDate) : null }
+          : {}),
+        ...(patch.paymentProvider !== undefined ? { paymentProvider: patch.paymentProvider as any } : {}), // eslint-disable-line @typescript-eslint/no-explicit-any
+        ...(patch.automaticSuspension !== undefined ? { automaticSuspension: patch.automaticSuspension } : {}),
+      },
+    });
+    return this.map(c);
   }
 
   /** spec section 5: WOH-000001, WOH-000002, ... — atomic increment on a
@@ -724,7 +749,7 @@ export class PrismaPaymentRepository implements PaymentRepository {
 export class EmailNotificationSender implements NotificationSender {
   constructor(private prisma: PrismaClient) {}
 
-  async send(customerId: string, event: string, message: string): Promise<void> {
+  async send(customerId: string, event: string, message: string, subjectOverride?: string): Promise<void> {
     // Always record the Notification row first — this is the audit
     // trail of record. Whether the real email actually goes out is a
     // best-effort add-on layered on top: if Resend is unconfigured or
@@ -738,8 +763,11 @@ export class EmailNotificationSender implements NotificationSender {
     if (!customer) return; // FK integrity issue elsewhere — nothing to email.
 
     const result = await sendEmail({
-      to: customer.email,
-      subject: subjectForEvent(event),
+      // notificationEmail (if the customer set one) takes priority over
+      // their login email — the two can legitimately differ (e.g. a
+      // shared login shared with a personal notification inbox).
+      to: customer.notificationEmail ?? customer.email,
+      subject: subjectOverride ?? subjectForEvent(event),
       text: message,
     });
 
@@ -755,7 +783,7 @@ export class EmailNotificationSender implements NotificationSender {
   }
 }
 
-export class PrismaAuditLogRepository {
+export class PrismaAuditLogRepository implements AuditLogRepository {
   constructor(private prisma: PrismaClient) {}
 
   async create(entry: {
@@ -776,6 +804,23 @@ export class PrismaAuditLogRepository {
         result: entry.result,
       },
     });
+  }
+
+  async listRecent(limit = 50) {
+    const rows = await this.prisma.auditLog.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+    return rows.map((r: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+      id: r.id,
+      actor: r.actor,
+      action: r.action,
+      target: r.target,
+      ip: r.ip,
+      metadata: r.metadata,
+      result: r.result,
+      createdAt: r.createdAt.toISOString(),
+    }));
   }
 }
 
