@@ -9,6 +9,7 @@
     "build": "next build",
     "start": "next start",
     "postinstall": "prisma generate",
+    "seed:admin": "node scripts/seed-admin.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
