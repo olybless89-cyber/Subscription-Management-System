@@ -179,6 +179,52 @@ export class PrismaCustomerRepository implements CustomerRepository {
   async updateStatus(id: string, status: CustomerRecord['status']): Promise<void> {
     await this.prisma.customer.update({ where: { id }, data: { status } });
   }
+
+  async create(input: {
+    name: string;
+    email: string;
+    phone?: string | null;
+    paymentProvider: CustomerRecord['paymentProvider'];
+    automaticSuspension: boolean;
+  }): Promise<CustomerRecord> {
+    const customerCode = await this.nextCustomerCode();
+    const c = await this.prisma.customer.create({
+      data: {
+        customerCode,
+        name: input.name,
+        email: input.email,
+        phone: input.phone ?? undefined,
+        paymentProvider: input.paymentProvider as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        automaticSuspension: input.automaticSuspension,
+      },
+    });
+    return {
+      id: c.id,
+      customerCode: c.customerCode,
+      email: c.email,
+      passwordHash: c.passwordHash,
+      status: c.status,
+      automaticSuspension: c.automaticSuspension,
+      paymentProvider: c.paymentProvider,
+    };
+  }
+
+  /** spec section 5: WOH-000001, WOH-000002, ... — atomic increment on a
+   * singleton counter row, never derived from COUNT(*) so the sequence
+   * survives permanent-deletion (spec section 44) without ever reusing a
+   * code. The increment itself (`value: { increment: 1 }`) compiles to a
+   * single atomic UPDATE in Postgres; the very first-ever call (creating
+   * the counter row) has a theoretical, extremely low-odds race if two
+   * customers are created in the same instant before the row exists —
+   * acceptable for this volume, but noted rather than hidden. */
+  private async nextCustomerCode(): Promise<string> {
+    const row = await this.prisma.customerCodeCounter.upsert({
+      where: { id: 1 },
+      create: { id: 1, value: 1 },
+      update: { value: { increment: 1 } },
+    });
+    return `WOH-${String(row.value).padStart(6, '0')}`;
+  }
 }
 
 export class PrismaAdminRepository implements AdminRepository {
@@ -284,6 +330,16 @@ export class PrismaAdminAssignmentRepository implements AdminAssignmentRepositor
           ]
         : []),
     ]);
+  }
+
+  async addAssignment(adminId: string, customerId: string): Promise<void> {
+    // Idempotent: creating an assignment that already exists (e.g. this
+    // admin created the same customer twice, or a retry) must not error.
+    await this.prisma.adminCustomerAssignment.upsert({
+      where: { adminId_customerId: { adminId, customerId } },
+      create: { adminId, customerId },
+      update: {},
+    });
   }
 }
 

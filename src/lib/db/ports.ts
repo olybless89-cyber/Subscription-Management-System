@@ -11,6 +11,7 @@ import {
   PaymentStatus,
   AdminRecord,
   AdminNotificationRecord,
+  PaymentProviderName,
 } from '@/types/domain';
 
 /**
@@ -77,6 +78,16 @@ export interface CustomerRepository {
   findByIds(ids: string[]): Promise<CustomerRecord[]>;
   listAll(): Promise<CustomerRecord[]>;
   updateStatus(id: string, status: CustomerStatus): Promise<void>;
+  /** spec section 5: generates and assigns the next immutable customer
+   * code (WOH-000001, ...) as part of creation — never a separate step
+   * a caller could skip or race. */
+  create(input: {
+    name: string;
+    email: string;
+    phone?: string | null;
+    paymentProvider: PaymentProviderName;
+    automaticSuspension: boolean;
+  }): Promise<CustomerRecord>;
 }
 
 export interface AdminRepository {
@@ -106,6 +117,10 @@ export interface AdminAssignmentRepository {
    * add/remove, and matches how an admin-management UI would naturally
    * submit "here's who this admin can see now". */
   setAssignments(adminId: string, customerIds: string[]): Promise<void>;
+  /** Adds one customer to an admin's existing set without disturbing the
+   * rest — used to auto-assign a scoped admin to a customer they just
+   * created, so they aren't immediately unable to see their own work. */
+  addAssignment(adminId: string, customerId: string): Promise<void>;
 }
 
 export interface AdminNotificationRepository {

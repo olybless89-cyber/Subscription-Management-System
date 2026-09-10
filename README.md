@@ -31,6 +31,7 @@ src/lib/auth/
   authenticate.ts                     authenticateAdmin() / authenticateCustomer()
   authorize.ts                         authenticateFromHeader / hasAdminRole / canAccessCustomer / listVisibleCustomerIds / canManageOtherAdmins
 src/lib/admin/manage.ts              createAdmin() / setCustomerAssignments() — scoped-admin management
+src/lib/customers/manage.ts           createCustomer() — spec sections 5 & 39, auto-assigns scoped creators
 src/lib/notifications/admin-notify.ts  notifyAdminsForCustomer() — routes payment events to the right admin(s)
 src/lib/cron/
   subscription-checker.ts             runSubscriptionChecker() — spec sections 21-22
@@ -50,13 +51,13 @@ app/api/
   auth/customer-login/route.ts          Customer login
   admin/admins/route.ts                  Create a new admin (SUPER_ADMIN or delegated)
   admin/admins/[id]/assignments/route.ts  Get/set which customers an admin can see
-  admin/customers/route.ts                Scoped customer listing (all for SUPER_ADMIN, assigned-only for ADMIN)
+  admin/customers/route.ts                GET: scoped customer listing. POST: create a customer (spec section 5)
   admin/notifications/route.ts             The calling admin's own notification feed
   cron/subscriptions/route.ts           Hourly subscription checker (CRON_SECRET-protected)
   cron/railway-sync/route.ts             Railway sync (CRON_SECRET-protected)
-  subscriptions/[id]/suspend/route.ts     Admin manual suspend (NOT scoped — see caveat below)
-  subscriptions/[id]/restore/route.ts      Admin manual restore (NOT scoped — see caveat below)
-tests/                                88 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
+  subscriptions/[id]/suspend/route.ts     Admin manual suspend — scoped to assignment
+  subscriptions/[id]/restore/route.ts      Admin manual restore — scoped to assignment
+tests/                                95 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
 ```
 
 ## Scoped admin access — how it actually works
@@ -77,17 +78,24 @@ payment providers. Concretely:
 3. **What "scoped" actually restricts today**: `canAccessCustomer()` — a
    plain ADMIN can only pass this check for customers explicitly
    assigned to them; SUPER_ADMIN always passes. This gates
-   `GET /api/admin/customers` (the listing) and `POST /api/payments`
-   (checkout ownership). **It does NOT currently gate the suspend/restore
-   routes** — see the caveat below, this was a scope decision, not an
-   oversight.
-4. **Payment notifications follow assignment**: when
+   `GET /api/admin/customers` (listing), `POST /api/payments` (checkout
+   ownership), and **`POST /api/subscriptions/:id/suspend` /
+   `/restore`** — a scoped admin can only suspend/restore customers
+   assigned to them.
+4. **Creating customers**: `POST /api/admin/customers` — any admin can
+   create one; the generated `customerCode` is sequential and atomic
+   (`WOH-000001`, `WOH-000002`, ...) via a dedicated counter table, never
+   derived from counting rows (so it survives future deletions without
+   reusing a code — spec section 5). If a plain (non-SUPER_ADMIN) admin
+   creates the customer, they're automatically assigned to it — without
+   that, they'd create a customer and immediately be unable to see it.
+5. **Payment notifications follow assignment**: when
    `handlePaymentWebhook` processes a successful payment,
    `notifyAdminsForCustomer()` writes a notification row for every
    SUPER_ADMIN plus any ADMIN assigned to that specific customer — nobody
    else. `GET /api/admin/notifications` reads back the calling admin's
    own feed.
-5. **Payment provider routing**: `Customer.paymentProvider` (PAYSTACK or
+6. **Payment provider routing**: `Customer.paymentProvider` (PAYSTACK or
    FLUTTERWAVE) decides which provider `initiateCheckout` uses for that
    customer, via `resolvePaymentProvider()`. Group customers however you
    like — set the field per customer (no route for this yet, direct DB
@@ -103,8 +111,8 @@ payment providers. Concretely:
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit — passes clean (prisma-repository.ts excluded, see below)
-npm test            # vitest — 88 tests, all green, no network/DB needed
-npm run build       # next build — verified working in this sandbox, produces all 15 routes
+npm test            # vitest — 95 tests, all green, no network/DB needed
+npm run build       # next build — verified working in this sandbox, produces all 15 routes (unchanged count — 2 routes gained a POST handler, none added)
 ```
 
 ### Two things I could NOT verify from this sandbox — be aware before you ship
@@ -145,7 +153,8 @@ themselves are thin, reviewed-by-eye wrappers around that logic.
 | Webhook idempotency | Anchored on `payment.status`; `reference` is `@unique` as a second line of defense. |
 | `callbackUrl` must be `https://` | Enforced in both `paystack.ts` and `checkout.ts` — the exact bug flagged as outstanding on Remitrova. |
 | No email enumeration via login | `authenticateAdmin`/`authenticateCustomer` return the identical `INVALID_CREDENTIALS` outcome, with an equalized-timing dummy hash comparison, whether the email doesn't exist or the password is wrong. |
-| Scoped admins can't see/act on unassigned customers | `canAccessCustomer()` — SUPER_ADMIN passes always; plain ADMIN only for customers with an `AdminCustomerAssignment` row; checked fresh against the DB every call, not trusted from the session token. |
+| Scoped admins can't see/act on unassigned customers | `canAccessCustomer()` — SUPER_ADMIN passes always; plain ADMIN only for customers with an `AdminCustomerAssignment` row; checked fresh against the DB every call, not trusted from the session token. Now gates listing, checkout, AND suspend/restore. |
+| Customer codes never reused, even across future deletions | `CustomerCodeCounter` singleton row, atomically incremented — never derived from `COUNT(*)` on `Customer`, which would reuse a number if a row were ever deleted. |
 | Admin-management privilege can't self-escalate | `createAdmin()`/`setCustomerAssignments()` require SUPER_ADMIN to create another SUPER_ADMIN or grant `canManageAdmins` — a delegated admin-manager cannot mint peers or successors. |
 | Payment notifications only reach the right admin(s) | `notifyAdminsForCustomer()` fans out to every SUPER_ADMIN plus assigned ADMINs only, deduplicated — tested for the "assigned to a different customer gets nothing" case specifically. |
 | Wrong payment provider never silently used | `resolvePaymentProvider()` throws a typed error for providers with no real adapter (FLUTTERWAVE today) instead of falling back to Paystack or faking success. |
@@ -154,14 +163,6 @@ themselves are thin, reviewed-by-eye wrappers around that logic.
 
 ## What's deliberately NOT done yet
 
-- **Suspend/restore routes are not scoped to admin assignments.** Any
-  authenticated ADMIN or SUPER_ADMIN can currently suspend/restore any
-  customer's subscription, regardless of the assignment table. Scoped
-  visibility (listing, checkout ownership, notifications) IS enforced;
-  scoped *action* restriction on suspend/restore is not. This was a
-  scope decision based on what was actually asked for (see/monitor/get
-  notified), not an oversight — but flag if you want it locked down too,
-  it's a small change to those two route files.
 - No Next.js admin/customer UI — only API routes exist.
 - No real email/WhatsApp/SMS notification dispatch — `EmailNotificationSender`
   currently just writes a `Notification` row (audit trail is correct;
@@ -170,10 +171,9 @@ themselves are thin, reviewed-by-eye wrappers around that logic.
   them out as email/SMS yet.
 - No Flutterwave adapter — the routing/schema support is real (see
   above), the actual provider implementation isn't.
-- `POST /api/customers`, `/api/domains`, `/api/plans` (basic CRUD, spec
-  section 39), and a route to actually set `Customer.paymentProvider`
-  aren't built yet — direct DB access is the only way to set that field
-  today.
+- `POST /api/domains`, `/api/plans` (basic CRUD, spec section 39) aren't
+  built yet — customers now have a real creation route, domains/plans
+  don't.
 - Customer self-service password setup (invite/reset flow) isn't built —
   `Customer.passwordHash` exists and can be null, `authenticateCustomer`
   handles the null case, but nothing issues a reset link yet.

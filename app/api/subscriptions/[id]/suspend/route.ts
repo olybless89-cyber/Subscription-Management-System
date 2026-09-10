@@ -1,15 +1,17 @@
 // POST /api/subscriptions/:id/suspend
-// Admin-only. Manual suspension bypasses the customer's
-// automaticSuspension=false override (that override only protects
-// against the automated cron worker, not an admin who's decided to
-// suspend anyway) but still runs through the exact same safety-checked
-// suspendCustomer engine as the cron path — there is no separate,
-// less-safe "admin suspend" code path to accidentally reach a forbidden
-// action through.
+// Admin-only, AND scoped to admin assignment: a plain ADMIN can only
+// suspend a subscription belonging to a customer assigned to them;
+// SUPER_ADMIN can suspend anyone's. Manual suspension bypasses the
+// customer's automaticSuspension=false override (that override only
+// protects against the automated cron worker, not an admin who's
+// decided to suspend anyway) but still runs through the exact same
+// safety-checked suspendCustomer engine as the cron path — there is no
+// separate, less-safe "admin suspend" code path to accidentally reach a
+// forbidden action through.
 
 import { suspendCustomer } from '../../../../../src/lib/suspension/engine';
 import { buildWebhookDeps, buildRailwayClient, buildAuditLogRepository } from '../../../../../src/lib/deps-factory';
-import { authenticateFromHeader, hasAdminRole } from '../../../../../src/lib/auth/authorize';
+import { authenticateFromHeader, hasAdminRole, canAccessCustomer } from '../../../../../src/lib/auth/authorize';
 import { recordAuditLog } from '../../../../../src/lib/audit/log';
 
 export async function POST(
@@ -21,6 +23,16 @@ export async function POST(
     return json(403, { error: 'Admin access required' });
   }
 
+  const deps = buildWebhookDeps();
+
+  const subscription = await deps.subscriptions.findById(context.params.id);
+  if (!subscription) {
+    return json(404, { error: 'Subscription not found' });
+  }
+  if (!(await canAccessCustomer(auth.session, subscription.customerId, deps.adminAssignments))) {
+    return json(403, { error: 'This subscription is not assigned to you' });
+  }
+
   let body: { reason?: string };
   try {
     body = await request.json();
@@ -29,7 +41,6 @@ export async function POST(
   }
   const reason = body.reason?.trim() || 'MANUAL_ADMIN_SUSPENSION';
 
-  const deps = buildWebhookDeps();
   const result = await suspendCustomer(deps, buildRailwayClient(), context.params.id, reason, {
     manual: true,
     performedBy: auth.session.sub,

@@ -13,6 +13,7 @@ import {
 
 function makeCustomerRepo(seed: CustomerRecord[]) {
   const byId = new Map(seed.map((c) => [c.id, { ...c }]));
+  let codeCounter = seed.length;
   const repo = {
     async findById(id: string) {
       return byId.get(id) ?? null;
@@ -30,6 +31,26 @@ function makeCustomerRepo(seed: CustomerRecord[]) {
       const c = byId.get(id);
       if (!c) throw new Error('not found');
       c.status = status;
+    },
+    async create(input: {
+      name: string;
+      email: string;
+      phone?: string | null;
+      paymentProvider: CustomerRecord['paymentProvider'];
+      automaticSuspension: boolean;
+    }) {
+      codeCounter += 1;
+      const record: CustomerRecord = {
+        id: `cust_${codeCounter}`,
+        customerCode: `WOH-${String(codeCounter).padStart(6, '0')}`,
+        email: input.email,
+        passwordHash: null,
+        status: 'ACTIVE',
+        automaticSuspension: input.automaticSuspension,
+        paymentProvider: input.paymentProvider,
+      };
+      byId.set(record.id, record);
+      return record;
     },
   };
   return { repo, byId };
@@ -74,6 +95,10 @@ function makeAssignmentRepo(seed: Array<{ adminId: string; customerId: string }>
     },
     async setAssignments(adminId: string, customerIds: string[]) {
       byAdmin.set(adminId, new Set(customerIds));
+    },
+    async addAssignment(adminId: string, customerId: string) {
+      if (!byAdmin.has(adminId)) byAdmin.set(adminId, new Set());
+      byAdmin.get(adminId)!.add(customerId);
     },
   };
   return { repo, byAdmin };

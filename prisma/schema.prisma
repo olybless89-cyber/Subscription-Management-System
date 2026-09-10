@@ -299,6 +299,15 @@ model SystemSetting {
   updatedAt DateTime @updatedAt
 }
 
+// Singleton row backing sequential, never-reused customer codes
+// (spec section 5: WOH-000001, WOH-000002, ...). A dedicated counter
+// table rather than COUNT(*) on Customer, so the sequence survives even
+// if a customer is ever permanently deleted (spec section 44).
+model CustomerCodeCounter {
+  id    Int @id @default(1)
+  value Int @default(0)
+}
+
 model AuditLog {
   id        String   @id @default(cuid())
   actor     String // AdminUser id or "SYSTEM"
