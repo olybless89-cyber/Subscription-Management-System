@@ -148,13 +148,13 @@ model Subscription {
   autoRenew           Boolean             @default(true)
   suspensionEnabled   Boolean             @default(true)
   suspendedAt         DateTime?
-  /** Per-subscription override of SUSPENSION_DRY_RUN — null means
-   * "inherit the global env var". Lets an admin test real
-   * suspend/restore against one throwaway subscription (override:
-   * false) without disarming dry-run protection for every other
-   * customer, or force-protect one specific subscription (override:
-   * true) even if the global var is off. See
-   * src/lib/suspension/dry-run-override.ts. */
+  // Per-subscription override of SUSPENSION_DRY_RUN — null means
+  // "inherit the global env var". Lets an admin test real
+  // suspend/restore against one throwaway subscription (override:
+  // false) without disarming dry-run protection for every other
+  // customer, or force-protect one specific subscription (override:
+  // true) even if the global var is off. See
+  // src/lib/suspension/dry-run-override.ts.
   dryRunOverride      Boolean?
 
   createdAt           DateTime            @default(now())
