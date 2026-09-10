@@ -63,7 +63,7 @@ app/api/
   cron/railway-sync/route.ts             Railway sync (CRON_SECRET-protected)
   subscriptions/[id]/suspend/route.ts     Admin manual suspend — scoped to assignment
   subscriptions/[id]/restore/route.ts      Admin manual restore — scoped to assignment
-tests/                                109 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
+tests/                                119 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
 ```
 
 ## Scoped admin access — how it actually works
@@ -144,23 +144,56 @@ before it can even be saved if someone tries to pair `MULTI_TENANT` with
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit — passes clean (prisma-repository.ts excluded, see below)
-npm test            # vitest — 95 tests, all green, no network/DB needed
+npm test            # vitest — 119 tests, all green, no network/DB needed
 npm run build       # next build — verified working in this sandbox, produces all 18 routes
 ```
 
-### Two things I could NOT verify from this sandbox — be aware before you ship
+### One thing I still could NOT verify from this sandbox — be aware before you ship
 
-1. **`prisma generate`/`prisma validate` need `binaries.prisma.sh`,
-   which this sandbox can't reach.** `src/lib/db/prisma-repository.ts`
-   is excluded from `tsconfig.json`'s default typecheck for exactly this
-   reason. Once you've run `npx prisma generate` somewhere with open
-   network access, run `npx tsc --noEmit -p tsconfig.full.json` to
-   typecheck it for real.
-2. **Railway mutation names are unverified against Railway's live
-   schema** (`deploymentStop`, `serviceInstanceRedeploy`, the `domains`
-   query shape). Spec section 48 is explicit: introspect the live schema
-   before wiring this to production. If a name has drifted, the client
-   fails loudly (`RailwayApiError`) rather than silently no-op'ing.
+**`prisma generate`/`prisma validate` need `binaries.prisma.sh`,
+which this sandbox can't reach.** `src/lib/db/prisma-repository.ts`
+is excluded from `tsconfig.json`'s default typecheck for exactly this
+reason. Once you've run `npx prisma generate` somewhere with open
+network access, run `npx tsc --noEmit -p tsconfig.full.json` to
+typecheck it for real.
+
+### Railway's GraphQL schema — verified, not assumed (2026-09-10)
+
+Every Railway mutation/query name and argument shape in
+`src/lib/railway/*` was confirmed against Railway's **live** schema via
+introspection from the actual Railway shell — not guessed from public
+docs or examples. This found and fixed three real bugs that would have
+broken at runtime:
+
+1. **`getServiceDomains()` was missing two required arguments.** The
+   `domains` query needs `projectId`, `environmentId`, AND `serviceId` —
+   all `NON_NULL` — not just `serviceId`. Every call would have failed
+   with a GraphQL validation error.
+2. **`ServiceDomain` and `CustomDomain` don't share a `status` field
+   name.** `ServiceDomain` has `syncStatus`; only `CustomDomain` has
+   `status`. Querying `status` on both (as the original draft did) would
+   have failed validation for the `serviceDomains` half specifically.
+3. **`getDeployments()`'s pagination used a `limit` field that doesn't
+   exist.** `DeploymentListInput` has no such field — real pagination is
+   Relay-style (`first` as a separate top-level argument).
+
+One correctness *improvement* also came out of this: `Deployment` has a
+real `deploymentStopped: Boolean` field, now used as the authoritative
+"did this actually stop" signal in `stopDeployment()` instead of
+inferring from status text. And the real `DeploymentStatus` enum has 13
+values, not the 5 originally assumed — an invented `'ACTIVE'` status
+that never existed has been removed from every check.
+
+`tests/railway-adapters.test.ts` covers all of this directly: the exact
+arguments sent for `domains`/`deployments`, the exact field names
+requested per domain type, and the `deploymentStopped`-takes-priority
+behavior.
+
+**Still true, and this doesn't change it:** Railway's schema can change
+again in the future. If these functions start throwing `RailwayApiError`
+unexpectedly, re-run introspection (the shell script used to produce
+the above is straightforward — ask if you need it again) rather than
+guessing at a fix.
 
 **Everything under `app/`** is also not included in this sandbox's
 typecheck/test run — those route files need the `next` package to
@@ -194,6 +227,7 @@ themselves are thin, reviewed-by-eye wrappers around that logic.
 | Suspended-but-not-terminated customers can still log in | `authenticateCustomer` only blocks `TERMINATED`, specifically so a suspended customer can reach the billing portal and pay their way back. |
 | Railway sync never assumes success OR failure | `syncRailwayResources` sets `UNKNOWN` (not `ERROR`, not silently unchanged) when Railway is unreachable — "we don't know" is a distinct, honest state from both extremes. |
 | MULTI_TENANT can never be mapped with an unsafe suspension strategy | `mapRailwayResource()` rejects `MULTI_TENANT` + anything other than `APP_LEVEL` at data-entry time — a bad pairing can't even get saved, rather than sitting in the database until a future suspension takes down every other customer sharing that service. |
+| Railway suspension verification uses the real, authoritative signal | `stopDeployment()` checks `Deployment.deploymentStopped: Boolean` (confirmed real via live introspection), not a guess from status text — see "Railway's GraphQL schema" above. |
 
 ## What's deliberately NOT done yet
 

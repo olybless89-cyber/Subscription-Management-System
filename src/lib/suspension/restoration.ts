@@ -1,5 +1,5 @@
 import { RailwayClient } from '../railway/client';
-import { redeployService, verifyDeploymentReachesStatus } from '../railway/deployments';
+import { redeployService, verifyDeploymentReachesStatus, DEPLOYMENT_RUNNING_STATUSES } from '../railway/deployments';
 import { EngineDeps } from '../db/ports';
 import { RailwayResourceRecord, SuspensionResult } from '@/types/domain';
 
@@ -132,10 +132,16 @@ async function executeRestorationForResource(
       return { resourceId: resource.id, result: 'FAILED', detail: 'Redeploy did not return a deployment id' };
     }
 
-    const { reached, finalStatus } = await verifyDeploymentReachesStatus(railway, deploymentId, [
-      'SUCCESS',
-      'ACTIVE',
-    ]);
+    // 'SUCCESS' is the only real DeploymentStatus value meaning "up and
+    // serving" — confirmed via live schema introspection. An earlier
+    // draft also checked for 'ACTIVE', which does not exist in Railway's
+    // actual enum and was silently harmless (just never matched) rather
+    // than wrong, but removed now that it's been verified.
+    const { reached, finalStatus } = await verifyDeploymentReachesStatus(
+      railway,
+      deploymentId,
+      DEPLOYMENT_RUNNING_STATUSES
+    );
 
     return {
       resourceId: resource.id,
