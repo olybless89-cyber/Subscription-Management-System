@@ -169,10 +169,11 @@ export default function SubscriptionDetailPage({ params }: { params: { id: strin
       <h1 style={{ fontSize: '1.5em', fontWeight: 700, marginBottom: '0.2em' }}>Subscription</h1>
       <p className="mono" style={{ color: 'var(--ink-soft)', marginTop: 0 }}>{subscription.id}</p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '2em', alignItems: 'start', marginTop: '1.5em' }}>
+      <div className="layout-main-side" style={{ marginTop: '1.5em' }}>
         <div className="card">
           <h2 style={{ fontSize: '1.05em', fontWeight: 600, marginTop: 0 }}>Details</h2>
-          <table className="data-table">
+          <div className="table-scroll">
+                    <table className="data-table">
             <tbody>
               <tr><th>Status</th><td>{subscription.status}</td></tr>
               <tr><th>Next billing</th><td className="mono">{new Date(subscription.nextBillingDate).toLocaleString()}</td></tr>
@@ -190,6 +191,7 @@ export default function SubscriptionDetailPage({ params }: { params: { id: strin
               </tr>
             </tbody>
           </table>
+          </div>
 
           {isSuperAdmin ? (
             <>
@@ -235,7 +237,8 @@ export default function SubscriptionDetailPage({ params }: { params: { id: strin
               </h2>
               {resources === null && <p style={{ color: 'var(--ink-soft)' }}>Loading…</p>}
               {resources && resources.length > 0 && (
-                <table className="data-table">
+                <div className="table-scroll">
+                                <table className="data-table">
                   <thead>
                     <tr>
                       <th>Service</th>
@@ -255,6 +258,7 @@ export default function SubscriptionDetailPage({ params }: { params: { id: strin
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
 
               <form onSubmit={handleMapResource} style={{ marginTop: '1.2em' }}>

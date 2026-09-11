@@ -83,7 +83,7 @@ export default function PlansPage() {
     <div>
       <h1 style={{ fontSize: '1.5em', fontWeight: 700, marginBottom: '1em' }}>Plans</h1>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '2em', alignItems: 'start' }}>
+      <div className="layout-main-side">
         <div className="card">
           {loadError && <p className="error-text">{loadError}</p>}
           {!plans && !loadError && <p style={{ color: 'var(--ink-soft)' }}>Loading…</p>}
@@ -91,7 +91,8 @@ export default function PlansPage() {
             <p style={{ color: 'var(--ink-soft)' }}>No plans yet — create one on the right.</p>
           )}
           {plans && plans.length > 0 && (
-            <table className="data-table">
+            <div className="table-scroll">
+                        <table className="data-table">
               <thead>
                 <tr>
                   <th>Name</th>
@@ -111,6 +112,7 @@ export default function PlansPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
 

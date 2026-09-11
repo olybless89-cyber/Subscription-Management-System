@@ -12,7 +12,7 @@ export default function DashboardHome() {
         Signed in as {session?.email} ({session?.role}).
       </p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1em', marginTop: '2em' }}>
+      <div className="layout-3col" style={{ marginTop: '2em' }}>
         <a href="/dashboard/customers" className="card" style={{ textDecoration: 'none', color: 'inherit' }}>
           <div style={{ fontWeight: 600, marginBottom: '0.3em' }}>Customers</div>
           <div style={{ color: 'var(--ink-soft)', fontSize: '0.9em' }}>

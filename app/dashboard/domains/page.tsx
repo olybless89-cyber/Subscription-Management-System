@@ -84,7 +84,7 @@ export default function DomainsPage() {
     <div>
       <h1 style={{ fontSize: '1.5em', fontWeight: 700, marginBottom: '1em' }}>Domains</h1>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '2em', alignItems: 'start' }}>
+      <div className="layout-main-side">
         <div className="card">
           {loadError && <p className="error-text">{loadError}</p>}
           {!domains && !loadError && <p style={{ color: 'var(--ink-soft)' }}>Loading…</p>}
@@ -92,7 +92,8 @@ export default function DomainsPage() {
             <p style={{ color: 'var(--ink-soft)' }}>No domains yet — attach one on the right.</p>
           )}
           {domains && domains.length > 0 && (
-            <table className="data-table">
+            <div className="table-scroll">
+                        <table className="data-table">
               <thead>
                 <tr>
                   <th>Domain</th>
@@ -112,6 +113,7 @@ export default function DomainsPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
 

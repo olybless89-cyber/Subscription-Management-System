@@ -160,3 +160,213 @@ table.data-table td {
 table.data-table tbody tr:hover {
   background: rgba(20, 35, 28, 0.03);
 }
+
+/* ---------- responsive layout system ---------- */
+
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Main content + narrow side panel (forms next to lists). Collapses to
+   one column below 860px so the side form drops beneath the list
+   instead of squeezing both into an unreadable width. */
+.layout-main-side {
+  display: grid;
+  gap: 1.5em;
+  align-items: start;
+  grid-template-columns: 1fr 340px;
+}
+
+/* Two equal-width panels (e.g. edit form + email composer). */
+.layout-equal {
+  display: grid;
+  gap: 1.5em;
+  align-items: start;
+  grid-template-columns: 1fr 1fr;
+}
+
+/* Feature/link cards — 3 across on desktop, 2 on tablet, 1 on mobile. */
+.layout-3col {
+  display: grid;
+  gap: 1em;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+@media (max-width: 860px) {
+  .layout-main-side,
+  .layout-equal {
+    grid-template-columns: 1fr;
+  }
+  .layout-3col {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .layout-3col {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- marketing homepage ---------- */
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 3em;
+  align-items: center;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+@media (max-width: 900px) {
+  .hero-grid {
+    grid-template-columns: 1fr;
+    gap: 2.5em;
+    text-align: center;
+  }
+}
+
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6em;
+  justify-content: flex-start;
+}
+
+@media (max-width: 900px) {
+  .pill-row {
+    justify-content: center;
+  }
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.4em 0.9em;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 0.82em;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.feature-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: rgba(193, 96, 43, 0.12);
+  color: var(--clay);
+  margin-bottom: 0.9em;
+}
+
+.feature-card {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  padding: 1.6em;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.feature-card:hover {
+  border-color: var(--line-strong);
+  transform: translateY(-2px);
+}
+
+.step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--forest);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.9em;
+  margin-bottom: 0.9em;
+}
+
+.dashboard-mock {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 1.3em;
+  backdrop-filter: blur(2px);
+}
+
+.dashboard-mock-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7em 0.2em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.85em;
+}
+
+.dashboard-mock-row:last-child {
+  border-bottom: none;
+}
+
+.woh-sidebar-toggle {
+  display: none;
+}
+
+.woh-sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  body {
+    font-size: 14px;
+  }
+
+  .woh-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25);
+  }
+
+  .woh-sidebar.open {
+    transform: translateX(0);
+  }
+
+  .woh-sidebar-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 60;
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+    border: 1px solid var(--line-strong);
+    background: var(--paper-raised);
+    color: var(--ink);
+    cursor: pointer;
+  }
+
+  .woh-sidebar-backdrop.open {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 40;
+  }
+
+  .dashboard-main {
+    padding: 4.2em 1.2em 2em !important;
+  }
+}

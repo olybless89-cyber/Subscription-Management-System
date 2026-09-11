@@ -35,7 +35,7 @@ export default function LoginPage() {
         background: 'var(--forest)',
       }}
     >
-      <div className="card" style={{ width: 360, background: 'var(--paper-raised)' }}>
+      <div className="card" style={{ width: '100%', maxWidth: 360, margin: '0 1em', background: 'var(--paper-raised)' }}>
         <div style={{ marginBottom: '1.6em' }}>
           <div
             style={{

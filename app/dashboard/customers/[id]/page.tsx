@@ -159,6 +159,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             the super admin will need it to configure this customer on Railway.
           </p>
         ) : (
+          <div className="table-scroll">
           <table className="data-table">
             <thead>
               <tr>
@@ -177,10 +178,11 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2em', alignItems: 'start', marginTop: '1.5em' }}>
+      <div className="layout-equal" style={{ marginTop: '1.5em' }}>
         <div className="card">
           <h2 style={{ fontSize: '1.05em', fontWeight: 600, marginTop: 0, marginBottom: '1em' }}>Edit details</h2>
           <form onSubmit={handleSave}>

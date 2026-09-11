@@ -192,6 +192,33 @@ before it can even be saved if someone tries to pair `MULTI_TENANT` with
   into `/login`. Static, no client-side state, matches the same design
   tokens as the dashboard (forest green / paper / clay accent).
 
+## Mobile responsiveness + homepage redesign
+
+- **Dashboard**: the sidebar is now off-canvas on screens ≤860px — a
+  hamburger button (fixed top-left) toggles it as a sliding overlay with
+  a backdrop, closing automatically on navigation. Every fixed-width
+  two-column layout (`1fr 340px`, `1fr 1fr`, etc.) across all dashboard
+  pages was replaced with shared CSS classes (`.layout-main-side`,
+  `.layout-equal`, `.layout-3col` in `app/globals.css`) that collapse to
+  a single column below 860px instead of squeezing both panels into an
+  unreadable width. Every data table is wrapped in `.table-scroll`
+  (`overflow-x: auto`) so a wide table scrolls horizontally on a phone
+  instead of breaking the page layout.
+- **Homepage**: rebuilt with a two-column hero (copy + a stylized,
+  clearly-illustrative dashboard preview panel — not a real screenshot),
+  small inline SVG icons on the feature cards instead of plain text, and
+  a new "how it works" three-step section grounded in the actual product
+  flow (create customer → map Railway resource → billing runs itself).
+  No fabricated stats or uptime percentages — the pills under the
+  headline ("Server-verified payments", "Safety-checked suspension",
+  "Full activity audit log") describe real, already-built behavior
+  rather than asserting unverified metrics.
+- **Honest limitation, stated plainly**: this sandbox has no headless
+  browser, so none of this was visually screenshotted at actual mobile
+  widths — verified by compiling cleanly and reasoning through the CSS
+  breakpoints/off-canvas math, not by looking at it render. Give it a
+  real look on a phone once deployed.
+
 ## Onboarding: website type and domain capture
 
 Two fields captured at customer creation, specifically so the super

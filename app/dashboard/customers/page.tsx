@@ -122,7 +122,7 @@ export default function CustomersPage() {
     <div>
       <h1 style={{ fontSize: '1.5em', fontWeight: 700, marginBottom: '1em' }}>Customers</h1>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '2em', alignItems: 'start' }}>
+      <div className="layout-main-side">
         <div className="card">
           {loadError && <p className="error-text">{loadError}</p>}
           {!customers && !loadError && <p style={{ color: 'var(--ink-soft)' }}>Loading…</p>}
@@ -130,6 +130,7 @@ export default function CustomersPage() {
             <p style={{ color: 'var(--ink-soft)' }}>No customers yet — create one on the right.</p>
           )}
           {customers && customers.length > 0 && (
+            <div className="table-scroll">
             <table className="data-table">
               <thead>
                 <tr>
@@ -162,6 +163,7 @@ export default function CustomersPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
 

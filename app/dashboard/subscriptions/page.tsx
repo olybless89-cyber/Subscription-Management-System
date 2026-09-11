@@ -108,7 +108,7 @@ export default function SubscriptionsPage() {
     <div>
       <h1 style={{ fontSize: '1.5em', fontWeight: 700, marginBottom: '1em' }}>Subscriptions</h1>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '2em', alignItems: 'start' }}>
+      <div className="layout-main-side">
         <div className="card">
           {loadError && <p className="error-text">{loadError}</p>}
           {!subscriptions && !loadError && <p style={{ color: 'var(--ink-soft)' }}>Loading…</p>}
@@ -116,7 +116,8 @@ export default function SubscriptionsPage() {
             <p style={{ color: 'var(--ink-soft)' }}>No subscriptions yet — create one on the right.</p>
           )}
           {subscriptions && subscriptions.length > 0 && (
-            <table className="data-table">
+            <div className="table-scroll">
+                        <table className="data-table">
               <thead>
                 <tr>
                   <th>Customer</th>
@@ -143,6 +144,7 @@ export default function SubscriptionsPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
 

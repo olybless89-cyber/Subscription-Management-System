@@ -51,7 +51,8 @@ export default function ActivityPage() {
 
       {entries && entries.length > 0 && (
         <div className="card">
-          <table className="data-table">
+          <div className="table-scroll">
+                    <table className="data-table">
             <thead>
               <tr>
                 <th>When</th>
@@ -75,6 +76,7 @@ export default function ActivityPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>
