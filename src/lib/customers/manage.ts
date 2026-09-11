@@ -1,5 +1,7 @@
-import { AdminManagementDeps } from '../db/ports';
+import { AdminManagementDeps, RegisterCustomerDeps } from '../db/ports';
 import { CustomerRecord, PaymentProviderName, WebsiteType } from '@/types/domain';
+import { hashPassword } from '../auth/password';
+import { notifyAdminsForCustomer } from '../notifications/admin-notify';
 
 const VALID_WEBSITE_TYPES: readonly WebsiteType[] = [
   'ONLINE_BANKING',
@@ -271,4 +273,153 @@ export async function updateCustomer(
   });
 
   return { outcome: 'UPDATED', message: 'Customer updated', customer: updated };
+}
+
+// ---------- registerCustomer (self-service, public signup) ----------
+
+export interface RegisterCustomerInput {
+  name: string;
+  email: string;
+  password: string;
+  phone?: string | null;
+  dateOfBirth?: string | null;
+  websiteType?: WebsiteType | null;
+  domainName: string;
+  paymentProvider?: PaymentProviderName;
+}
+
+export type RegisterCustomerOutcome = 'REGISTERED' | 'INVALID_INPUT' | 'ALREADY_EXISTS';
+
+export interface RegisterCustomerResult {
+  outcome: RegisterCustomerOutcome;
+  message: string;
+  customer?: CustomerRecord;
+  domainOutcome?: 'ATTACHED' | 'ALREADY_EXISTS';
+  domainMessage?: string;
+}
+
+const MIN_REGISTRATION_PASSWORD_LENGTH = 12;
+
+/**
+ * registerCustomer — public, self-service signup (spec: "customer can
+ * visit and register and create account... by themselves"). No acting
+ * admin at all, which is what makes this genuinely different from
+ * createCustomer rather than a thin wrapper around it:
+ *
+ * - The customer sets their OWN password here, at signup — this is
+ *   what actually answers "how does a customer get login credentials"
+ *   for anyone who registers this way (createCustomer, by contrast,
+ *   never sets one; that's why the reset-password tooling exists for
+ *   customers an admin created directly).
+ * - notificationEmail is NOT a separate field in the public form —
+ *   just the one email they signed up with. Asking a new signup for
+ *   two email addresses is unusual friction for a public form; an
+ *   admin can still set a separate one later via the dashboard.
+ * - No admin assignment happens here — a self-registered customer is
+ *   visible only to SUPER_ADMIN until a super admin deliberately
+ *   assigns them to a specific plain admin (matches "the admin sees
+ *   it, the super admin adds it to Railway infrastructure" exactly:
+ *   nothing here silently hands a new signup to a random admin).
+ * - domainName stays REQUIRED, same policy as admin-created customers
+ *   — the super admin needs it to actually do that Railway step.
+ * - serviceStartDate defaults to today — the one date field that's
+ *   unambiguous at signup (unlike admin-created customers, who might
+ *   backdate/forward-date it for a specific business reason).
+ */
+export async function registerCustomer(
+  deps: RegisterCustomerDeps,
+  input: RegisterCustomerInput
+): Promise<RegisterCustomerResult> {
+  const name = input.name?.trim();
+  const email = input.email?.toLowerCase().trim();
+  if (!name) {
+    return { outcome: 'INVALID_INPUT', message: 'name is required' };
+  }
+  if (!email || !email.includes('@')) {
+    return { outcome: 'INVALID_INPUT', message: 'A valid email is required' };
+  }
+  if (!input.password || input.password.length < MIN_REGISTRATION_PASSWORD_LENGTH) {
+    return { outcome: 'INVALID_INPUT', message: `Password must be at least ${MIN_REGISTRATION_PASSWORD_LENGTH} characters` };
+  }
+
+  const domainName = input.domainName?.trim().toLowerCase();
+  if (!domainName) {
+    return { outcome: 'INVALID_INPUT', message: 'domainName is required' };
+  }
+
+  const websiteTypeError = validateWebsiteType(input.websiteType);
+  if (websiteTypeError) return { outcome: 'INVALID_INPUT', message: websiteTypeError };
+
+  const dobError = validateOptionalDate(input.dateOfBirth, 'dateOfBirth');
+  if (dobError) return { outcome: 'INVALID_INPUT', message: dobError };
+
+  const existing = await deps.customers.findByEmail(email);
+  if (existing) {
+    return { outcome: 'ALREADY_EXISTS', message: 'An account with this email already exists' };
+  }
+
+  const passwordHash = await hashPassword(input.password);
+  const today = new Date().toISOString();
+
+  const created = await deps.customers.create({
+    name,
+    email,
+    notificationEmail: email,
+    phone: input.phone ?? null,
+    dateOfBirth: input.dateOfBirth || null,
+    serviceStartDate: today,
+    serviceEndDate: null,
+    websiteType: input.websiteType ?? null,
+    paymentProvider: input.paymentProvider ?? 'PAYSTACK',
+    automaticSuspension: true,
+  });
+  await deps.customers.updatePassword(created.id, passwordHash);
+  const customer = { ...created, passwordHash };
+
+  await deps.auditLog.create({
+    actor: 'SYSTEM',
+    action: 'CUSTOMER_SELF_REGISTERED',
+    target: customer.id,
+    metadata: { email: customer.email, customerCode: customer.customerCode },
+    result: 'SUCCESS',
+  });
+
+  const result: RegisterCustomerResult = { outcome: 'REGISTERED', message: 'Account created', customer };
+
+  const existingDomain = await deps.domains.findByDomainName(domainName);
+  if (existingDomain) {
+    result.domainOutcome = 'ALREADY_EXISTS';
+    result.domainMessage =
+      'This domain is already attached to a different customer — our team will follow up to resolve it.';
+  } else {
+    await deps.domains.create({ customerId: customer.id, domainName, isPrimary: true });
+    result.domainOutcome = 'ATTACHED';
+    result.domainMessage = `${domainName} attached`;
+  }
+
+  // Best-effort: welcome the customer, and tell whichever admin(s) need
+  // to know (every SUPER_ADMIN, per notifyAdminsForCustomer's existing
+  // behavior — exactly right for an unassigned new signup). Neither can
+  // be allowed to undo the registration that already succeeded above.
+  try {
+    await deps.notifications.send(
+      customer.id,
+      'WELCOME',
+      `Welcome to Web Oracle Host, ${customer.name}! Your account (${customer.customerCode}) has been created. Our team will be in touch to finish setting up your hosting.`
+    );
+  } catch {
+    // Deliberately swallowed — see comment above.
+  }
+  try {
+    await notifyAdminsForCustomer(
+      deps,
+      customer.id,
+      'CUSTOMER_REGISTERED',
+      `${customer.customerCode} (${customer.name}) just self-registered — assign to an admin and configure Railway resources.`
+    );
+  } catch {
+    // Deliberately swallowed — see comment above.
+  }
+
+  return result;
 }

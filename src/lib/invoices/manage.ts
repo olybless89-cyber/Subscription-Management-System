@@ -1,6 +1,7 @@
 import { EngineDeps } from '../db/ports';
 import { InvoiceRecord } from '@/types/domain';
 import { generateInvoicePdf } from './pdf';
+import { buildRenewalUrl } from '../customers/renewal-link';
 
 export interface CreateInvoiceInput {
   customerId: string;
@@ -94,7 +95,7 @@ async function sendInvoiceEmail(deps: EngineDeps, invoice: InvoiceRecord): Promi
   const message =
     invoice.type === 'RECEIPT'
       ? `Thank you — we've received your payment of ${invoice.currency} ${majorAmount}. Your receipt is attached.`
-      : `An invoice for ${invoice.currency} ${majorAmount} is now due${invoice.dueDate ? ` by ${new Date(invoice.dueDate).toLocaleDateString()}` : ''}. Please find it attached.`;
+      : `An invoice for ${invoice.currency} ${majorAmount} is now due${invoice.dueDate ? ` by ${new Date(invoice.dueDate).toLocaleDateString()}` : ''}. Renew here: ${buildRenewalUrl(customer.customerCode)}`;
 
   await deps.notifications.send(
     invoice.customerId,

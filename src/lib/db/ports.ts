@@ -35,6 +35,9 @@ import {
 
 export interface SubscriptionRepository {
   findById(id: string): Promise<SubscriptionRecord | null>;
+  /** Used by the public renewal page — given a customer, find which
+   * subscription(s) they have so the page can show the right one. */
+  findByCustomerId(customerId: string): Promise<SubscriptionRecord[]>;
   updateStatus(
     id: string,
     status: SubscriptionStatus,
@@ -118,6 +121,9 @@ export interface PaymentRepository {
 export interface CustomerRepository {
   findById(id: string): Promise<CustomerRecord | null>;
   findByEmail(email: string): Promise<CustomerRecord | null>;
+  /** Used by the public renewal page — the URL is keyed by the
+   * human-facing customerCode (WOH-000001), not the internal id. */
+  findByCustomerCode(customerCode: string): Promise<CustomerRecord | null>;
   findByIds(ids: string[]): Promise<CustomerRecord[]>;
   listAll(): Promise<CustomerRecord[]>;
   updateStatus(id: string, status: CustomerStatus): Promise<void>;
@@ -417,5 +423,22 @@ export interface CampaignDeps {
   campaigns: CampaignRepository;
   notifications: NotificationSender;
   whatsapp: WhatsAppSender;
+  auditLog: AuditLogRepository;
+}
+
+/** Self-service customer registration — deliberately its own deps bag,
+ * not AdminManagementDeps, since there's no acting admin here at all.
+ * Needs adminAssignments/adminNotifications so the new registration can
+ * still notify every SUPER_ADMIN (a self-registered customer starts
+ * with NO admin assignment — notifyAdminsForCustomer's existing
+ * "every SUPER_ADMIN regardless of assignment" behavior is exactly
+ * right for this, no new fan-out logic needed). */
+export interface RegisterCustomerDeps {
+  customers: CustomerRepository;
+  domains: DomainRepository;
+  admins: AdminRepository;
+  adminAssignments: AdminAssignmentRepository;
+  adminNotifications: AdminNotificationRepository;
+  notifications: NotificationSender;
   auditLog: AuditLogRepository;
 }

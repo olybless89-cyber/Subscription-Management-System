@@ -57,6 +57,24 @@ function dedicatedResource(overrides: Partial<RailwayResourceRecord> = {}): Rail
   };
 }
 
+describe('suspendCustomer — customer message includes a renewal link', () => {
+  it('the SUSPENDED notification includes a renewal URL keyed by the customer code', async () => {
+    process.env.APP_URL = 'https://example.com';
+    const deps = makeFakeDeps({
+      customers: [baseCustomer({ customerCode: 'WOH-000042' })],
+      subscriptions: [baseSubscription()],
+      railwayResources: [
+        dedicatedResource({ hostingMode: 'MULTI_TENANT', suspensionStrategy: 'APP_LEVEL' }),
+      ],
+    });
+    const railway: RailwayClient = { request: vi.fn() };
+
+    await suspendCustomer(deps, railway, 'sub_1', 'NON_PAYMENT', { manual: true });
+
+    expect(deps.notificationLog[0].message).toContain('https://example.com/renew/WOH-000042');
+  });
+});
+
 describe('suspendCustomer — notification failures never crash the response', () => {
   it('still reports SUSPENDED even if deps.notifications.send() throws', async () => {
     const deps = makeFakeDeps({

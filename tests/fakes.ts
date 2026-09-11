@@ -1,4 +1,4 @@
-import { EngineDeps, WebhookDeps, AuthDeps, AdminManagementDeps, BillingSetupDeps, CustomEmailDeps, CampaignDeps } from '@/lib/db/ports';
+import { EngineDeps, WebhookDeps, AuthDeps, AdminManagementDeps, BillingSetupDeps, CustomEmailDeps, CampaignDeps, RegisterCustomerDeps } from '@/lib/db/ports';
 import {
   CustomerRecord,
   SubscriptionRecord,
@@ -24,6 +24,9 @@ function makeCustomerRepo(seed: CustomerRecord[]) {
     },
     async findByEmail(email: string) {
       return [...byId.values()].find((c) => c.email === email) ?? null;
+    },
+    async findByCustomerCode(customerCode: string) {
+      return [...byId.values()].find((c) => c.customerCode === customerCode) ?? null;
     },
     async findByIds(ids: string[]) {
       return ids.map((id) => byId.get(id)).filter((c): c is CustomerRecord => !!c);
@@ -210,6 +213,9 @@ function makeSubscriptionRepo(seed: SubscriptionRecord[]) {
   const repo = {
     async findById(id: string) {
       return byId.get(id) ?? null;
+    },
+    async findByCustomerId(customerId: string) {
+      return [...byId.values()].filter((s) => s.customerId === customerId);
     },
     async updateStatus(id: string, status: SubscriptionRecord['status'], extra?: { suspendedAt?: string | null }) {
       const s = byId.get(id);
@@ -726,6 +732,43 @@ export function makeFakeCampaignDeps(seed: {
     whatsapp: {
       async send(customerId, message) {
         whatsappLog.push({ customerId, message });
+      },
+    },
+  };
+}
+
+export function makeFakeRegisterCustomerDeps(seed: {
+  admins: AdminRecord[];
+  customers: CustomerRecord[];
+  domains?: DomainRecord[];
+}): RegisterCustomerDeps & {
+  auditLogEntries: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }>;
+  domainStore: Map<string, DomainRecord>;
+  notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }>;
+  adminNotificationLog: Array<{ adminId: string; customerId: string; event: string; message: string }>;
+} {
+  const { repo: customersRepo } = makeCustomerRepo(seed.customers);
+  const { repo: domainsRepo, byId: domainStore } = makeDomainRepo(seed.domains ?? []);
+  const { repo: adminsRepo } = makeAdminRepo(seed.admins);
+  const { repo: assignmentsRepo } = makeAssignmentRepo([]);
+  const { repo: adminNotificationRepo, log: adminNotificationLog } = makeAdminNotificationRepo();
+  const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
+  const notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }> = [];
+
+  return {
+    customers: customersRepo,
+    domains: domainsRepo,
+    admins: adminsRepo,
+    adminAssignments: assignmentsRepo,
+    adminNotifications: adminNotificationRepo,
+    auditLog: auditLogRepo,
+    auditLogEntries,
+    domainStore,
+    notificationLog,
+    adminNotificationLog,
+    notifications: {
+      async send(customerId, event, message, subject) {
+        notificationLog.push({ customerId, event, message, subject });
       },
     },
   };

@@ -79,9 +79,14 @@ export default function HomePage() {
         }}
       >
         <img src="/dwo-logo.jpg" alt="Web Oracle Host" style={{ height: 28, width: 'auto' }} />
-        <a href="/login" className="btn btn-primary" style={{ textDecoration: 'none' }}>
-          Admin sign in
-        </a>
+        <div style={{ display: 'flex', gap: '0.6em' }}>
+          <a href="/register" className="btn" style={{ textDecoration: 'none' }}>
+            Get started
+          </a>
+          <a href="/login" className="btn btn-primary" style={{ textDecoration: 'none' }}>
+            Admin sign in
+          </a>
+        </div>
       </header>
 
       {/* Hero */}
@@ -125,14 +130,14 @@ export default function HomePage() {
             </p>
             <div style={{ display: 'flex', gap: '0.8em', flexWrap: 'wrap' }}>
               <a
-                href="/login"
+                href="/register"
                 className="btn btn-primary"
                 style={{ textDecoration: 'none', fontSize: '1.02em', padding: '0.75em 1.6em' }}
               >
-                Sign in to your dashboard
+                Get started — create your account
               </a>
               <a
-                href="#how-it-works"
+                href="/login"
                 className="btn"
                 style={{
                   textDecoration: 'none',
@@ -143,7 +148,7 @@ export default function HomePage() {
                   color: '#fff',
                 }}
               >
-                See how it works
+                Admin sign in
               </a>
             </div>
           </div>
@@ -220,14 +225,19 @@ export default function HomePage() {
       {/* Closing CTA */}
       <section style={{ padding: '4em 1.5em', textAlign: 'center' }}>
         <h2 style={{ fontSize: '1.4em', fontWeight: 700, marginBottom: '0.6em' }}>
-          Already have an account?
+          Ready to get started?
         </h2>
         <p style={{ color: 'var(--ink-soft)', marginBottom: '1.5em' }}>
-          Sign in to manage your customers, subscriptions, and billing.
+          New customer? Create your account. Already with us? Sign in below.
         </p>
-        <a href="/login" className="btn btn-primary" style={{ textDecoration: 'none' }}>
-          Admin sign in
-        </a>
+        <div style={{ display: 'flex', gap: '0.8em', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <a href="/register" className="btn btn-primary" style={{ textDecoration: 'none' }}>
+            Create your account
+          </a>
+          <a href="/login" className="btn" style={{ textDecoration: 'none' }}>
+            Admin sign in
+          </a>
+        </div>
       </section>
 
       {/* Footer */}

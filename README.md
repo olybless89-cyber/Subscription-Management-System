@@ -40,6 +40,9 @@ src/lib/invoices/
   manage.ts                                    createAndSendReceiptInvoice() / createAndSendDueInvoice()
 src/lib/campaigns/manage.ts               createCampaign() / sendCampaign()
 src/lib/notifications/whatsapp.ts         sendWhatsAppMessage() — Meta Cloud API, one generic template, never throws
+src/lib/customers/
+  renewal-link.ts                          buildRenewalUrl() — the public "pay to unlock" link, keyed by customerCode
+  public-renewal.ts                          getRenewalInfo() — what the public renewal page needs to render
 src/lib/notifications/custom-email.ts   sendCustomEmail() — admin-composed message through the same Resend pipeline
 src/lib/billing/
   cycle.ts                              addBillingCycle() / addDays()
@@ -82,12 +85,14 @@ app/api/
   cron/railway-sync/route.ts             Railway sync (CRON_SECRET-protected)
   subscriptions/[id]/suspend/route.ts     Admin manual suspend — scoped to assignment
   subscriptions/[id]/restore/route.ts      Admin manual restore — scoped to assignment
-tests/                                224 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
+tests/                                243 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
 app/
   globals.css                          Design tokens (forest green/paper/clay — matches the spec's own branding request)
   layout.tsx                            Root layout, wraps everything in AuthProvider
   page.tsx                               Placeholder home page with a link into /login
   login/page.tsx                          Admin login form
+renew/[customerCode]/page.tsx           Public, unauthenticated "subscription expired, renew" page
+register/page.tsx                          Public, unauthenticated self-service signup page
   dashboard/
     layout.tsx                             Sidebar + auth guard (redirects to /login if not signed in)
     page.tsx                                 Overview
@@ -197,6 +202,112 @@ before it can even be saved if someone tries to pair `MULTI_TENANT` with
   placeholder: hero with the logo, a features grid, and a closing CTA
   into `/login`. Static, no client-side state, matches the same design
   tokens as the dashboard (forest green / paper / clay accent).
+
+## Self-service customer registration
+
+`/register` — a public signup page. Answers a real gap that existed
+before this round: previously, customers had NO way to get a login of
+their own — every account was admin-created with no password, requiring
+either the admin-reset-password tool or nothing at all. Now anyone can
+register themselves.
+
+- **`registerCustomer()`** (`src/lib/customers/manage.ts`) is
+  deliberately a separate function from `createCustomer()`, not a thin
+  wrapper — the two have genuinely different rules:
+  - The customer sets their **own password** here, at signup. This is
+    what actually solves "how does a self-registered customer get
+    credentials" — `createCustomer` still never sets one.
+  - `notificationEmail` is **not** a separate field in the public form —
+    it defaults to whatever email they signed up with. Asking a brand
+    new signup for two email addresses is unusual friction for a public
+    form; an admin can still set a distinct one later.
+  - **No admin assignment happens.** A self-registered customer is
+    visible only to `SUPER_ADMIN` until a super admin deliberately
+    assigns them to a specific plain admin via the existing
+    assignments UI — matches "the admin sees it, the super admin adds
+    it to Railway infrastructure" exactly: nothing here silently hands
+    a new signup to a random admin.
+  - `domainName` stays **required**, same policy as admin-created
+    customers — the super admin needs it for the Railway step.
+  - `serviceStartDate` defaults to today automatically (the one
+    onboarding date field that's genuinely unambiguous at signup).
+- **`POST /api/public/register`** — unauthenticated, as it has to be.
+  Strips the password hash before it ever reaches the response.
+- On success: the new customer gets a `WELCOME` email, and every
+  `SUPER_ADMIN` gets notified via the same `notifyAdminsForCustomer`
+  fan-out used elsewhere — its existing "every SUPER_ADMIN regardless of
+  assignment" behavior was already exactly right for an unassigned new
+  signup, no new notification logic needed.
+- The homepage now leads with **"Get started — create your account"**
+  as the primary call to action, with admin sign-in as the secondary
+  option — previously the homepage was written entirely as marketing
+  for the admin tool itself, with no path in for an actual prospective
+  hosting customer.
+
+**What's explicitly not built**: no email verification (a typo'd or
+fake email is accepted at signup — the same trust level as most small
+first-version signup flows, worth revisiting), and no customer-facing
+dashboard yet for someone to log into after registering — that's the
+next piece, deliberately sequenced after this since a customer needs an
+account before a dashboard makes sense.
+
+## Public renewal page — "your subscription expired, pay to unlock"
+
+The auto-unlock part of this already existed before this round: the
+payment webhook has always restored a suspended subscription the
+instant Paystack confirms payment. What was missing was a page to send
+customers to, and a link in front of them to click.
+
+- **`/renew/[customerCode]`** — a public, unauthenticated page (no
+  login, no dashboard chrome) keyed by the customer's human-facing code
+  (`WOH-000042`), not the internal id. Shows the plan and amount due,
+  with a "Renew now with Paystack" button. If the subscription isn't
+  actually due (already renewed, or nothing to pay), it shows "You're
+  all set" instead — checked live via `GET /api/public/renew/:code`
+  every time the page loads, not just once and cached.
+- **`POST /api/public/renew/:code/checkout`** — re-derives which
+  subscription actually needs payment itself (via the same
+  `getRenewalInfo()` the page uses to render) rather than trusting
+  anything the client sends, then calls the existing `initiateCheckout`
+  — the exact same function and safety checks (blocked statuses, https-
+  only callback) the authenticated admin-facing checkout already used.
+- **The renewal link is now included in every customer-facing message
+  that should carry it**: the suspension notice, the payment-due
+  notice, the grace-period notice, and the DUE invoice email. All four
+  updated; one direct test confirms the link actually lands in the real
+  suspend message, not just in isolation.
+- After Paystack redirects back with `?paid=1`, the page shows "Payment
+  received, your service is being restored" — an honest "please wait a
+  few seconds" message, since the actual restoration happens
+  asynchronously via the webhook, not synchronously on that redirect.
+
+### The part that's a real architecture decision, not just more code
+
+**A visitor landing on the customer's own domain does NOT automatically
+see this page** — that depends entirely on how that specific
+subscription is suspended:
+
+- **`STOP_DEPLOYMENT`**: the Railway deployment is literally stopped.
+  Nothing is running to show any page at all — this is a fact about how
+  Railway works, not something more code here can change.
+- **`APP_LEVEL` / `REDIRECT`**: the site itself would need a small
+  status-check added to its own code — call
+  `GET /api/public/renew/:code`, and if `needsPayment: true`, redirect
+  the visitor to `/renew/:code` (or show your own version of that
+  message). This is genuinely easy to add to any site whose code you
+  control (a few lines, any stack — PHP, static HTML with a tiny JS
+  check, Next.js middleware, etc.) but it's a per-site change, not
+  something this admin panel can push out on its own.
+- A universal "point every customer's domain at one shared gateway that
+  decides what to show" approach is possible in principle but is a
+  meaningfully bigger, separate infrastructure project (a multi-tenant
+  reverse proxy, DNS changes for every customer) — not built here, and
+  not something to take on without discussing it directly first.
+
+For now: the link is what actually reaches customers automatically
+(via email/WhatsApp at the moments that matter), and it's ready to wire
+into a site's own code as a small snippet whenever that's wanted for a
+particular client.
 
 ## WhatsApp integration and bulk campaigns
 
@@ -600,8 +711,8 @@ every real customer.
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit — passes clean (prisma-repository.ts excluded, see below)
-npm test            # vitest — 224 tests, all green, no network/DB needed
-npm run build       # next build — verified working in this sandbox, produces all 32 API routes + 16 UI pages
+npm test            # vitest — 243 tests, all green, no network/DB needed
+npm run build       # next build — verified working in this sandbox, produces all 35 API routes + 18 UI pages
 ```
 
 ### One thing I still could NOT verify from this sandbox — be aware before you ship
@@ -693,6 +804,7 @@ themselves are thin, reviewed-by-eye wrappers around that logic.
 | Self-service password change can't be used to take over someone else's account | `changeOwnPassword()` requires the CURRENT password, verified with the same constant-time comparison used at login, before accepting a new one — there's no separate "set password" path that skips this for your own account the way a SUPER_ADMIN reset skips it for someone else's. |
 | A failed invoice generation can never undo a recorded payment or a due-status transition | Both `createAndSendReceiptInvoice()` (webhook) and `createAndSendDueInvoice()` (cron) are called inside try/catch at their respective call sites, same pattern as the notification-failure fix from an earlier round. Tested directly by simulating an invoice-creation crash in both the webhook and the cron, confirming the payment/subscription-status change still completes either way. |
 | The invoice PDF viewer can't silently fail via an unauthenticated link | A real bug caught during development, not after: the first draft of the Invoices page used a plain `<a href>` to the PDF route, which can't carry the login token — clicking it would have 403'd for every admin. Fixed by fetching the PDF as an authenticated blob and opening it from an object URL instead. |
+| The public checkout route can't be tricked into acting on an arbitrary subscription | `POST /api/public/renew/:code/checkout` is intentionally unauthenticated (a stranger paying on someone else's behalf is harmless), but it never trusts a subscriptionId from the request — it re-derives which subscription actually needs payment itself via the same `getRenewalInfo()` the page uses to render, then reuses `initiateCheckout`'s own existing safety checks (blocked statuses, https-only callback) unchanged. |
 | A failed or unconfigured email dispatch can never block a payment, suspension, or restoration | `sendEmail()` never throws — a missing `RESEND_API_KEY`, a Resend outage, or a bad address always returns `{ success: false }`, checked and tested directly (`tests/email.test.ts`) for the network-error, error-status, and unconfigured cases. Every caller (webhook, suspension engine, cron) has already done the thing that matters — recorded the payment, stopped/restored the deployment — before attempting to notify anyone. |
 | A delegated admin-manager can't spread scope beyond their own | `setCustomerAssignments()` now checks that a non-SUPER_ADMIN requester only assigns customers they can already see themselves — a real gap caught before shipping: without this, a delegated `canManageAdmins` admin could have granted a sub-admin visibility into a customer the delegator never had access to. SUPER_ADMIN is exempt (no scope to exceed). Tested directly (`tests/admin-management.test.ts`). |
 | Subscription status can never be set directly, bypassing verification | `UpdateSubscriptionInput` (the PATCH type) has no `status` field at all — a compile-time guarantee, not just a runtime check (see the `@ts-expect-error` test in `domains-and-subscription-editing.test.ts`). The PATCH route additionally rejects any request body containing `status` with an explicit 400, pointing at the right endpoint instead. |

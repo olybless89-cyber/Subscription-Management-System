@@ -3,6 +3,7 @@ import { stopDeployment } from '../railway/deployments';
 import { EngineDeps } from '../db/ports';
 import { assertStrategyAutomatable, ForbiddenSuspensionActionError } from './safety';
 import { RailwayResourceRecord, SuspensionResult, SubscriptionRecord } from '@/types/domain';
+import { buildRenewalUrl } from '../customers/renewal-link';
 
 export interface SuspendCustomerOptions {
   /** Who triggered this. Omit for the automated worker. */
@@ -178,7 +179,7 @@ export async function suspendCustomer(
     await deps.notifications.send(
       customer.id,
       'SUSPENDED',
-      'Your hosting service has been temporarily suspended due to non-payment.'
+      `Your hosting service has been temporarily suspended due to non-payment. Renew here to restore it immediately: ${buildRenewalUrl(customer.customerCode)}`
     );
   } catch {
     // Deliberately swallowed — see comment above. The suspension itself

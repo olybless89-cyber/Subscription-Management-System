@@ -4,6 +4,7 @@ import { suspendCustomer } from '../suspension/engine';
 import { addDays } from '../billing/cycle';
 import { notifyAdminsForCustomer } from '../notifications/admin-notify';
 import { createAndSendDueInvoice } from '../invoices/manage';
+import { buildRenewalUrl } from '../customers/renewal-link';
 
 export interface SubscriptionCheckerOptions {
   now?: Date;
@@ -54,10 +55,11 @@ export async function runSubscriptionChecker(
           continue;
         }
         await deps.subscriptions.updateStatus(subscription.id, 'PAYMENT_DUE');
+        const customer = await deps.customers.findById(subscription.customerId);
         await deps.notifications.send(
           subscription.customerId,
           'PAYMENT_DUE',
-          'Your Web Oracle Host subscription is now due.'
+          `Your Web Oracle Host subscription is now due. Renew here: ${buildRenewalUrl(customer?.customerCode ?? '')}`
         );
 
         // Auto-generate a DUE invoice and remind whichever admin(s) own
@@ -82,7 +84,6 @@ export async function runSubscriptionChecker(
           }
         }
         try {
-          const customer = await deps.customers.findById(subscription.customerId);
           await notifyAdminsForCustomer(
             deps,
             subscription.customerId,
@@ -106,10 +107,11 @@ export async function runSubscriptionChecker(
         const graceDays = plan?.gracePeriodDays ?? 2;
         const gracePeriodEnd = addDays(now, graceDays).toISOString();
         await deps.subscriptions.startGracePeriod(subscription.id, gracePeriodEnd);
+        const customer = await deps.customers.findById(subscription.customerId);
         await deps.notifications.send(
           subscription.customerId,
           'GRACE_PERIOD',
-          'Your hosting subscription is overdue. Please renew to avoid service interruption.'
+          `Your hosting subscription is overdue. Please renew to avoid service interruption: ${buildRenewalUrl(customer?.customerCode ?? '')}`
         );
         result.movedToGracePeriod++;
         continue;

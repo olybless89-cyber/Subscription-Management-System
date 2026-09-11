@@ -74,6 +74,23 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
     };
   }
 
+  async findByCustomerId(customerId: string): Promise<SubscriptionRecord[]> {
+    const rows = await this.prisma.subscription.findMany({ where: { customerId }, orderBy: { createdAt: 'desc' } });
+    return rows.map((s: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+      id: s.id,
+      customerId: s.customerId,
+      planId: s.planId,
+      status: s.status,
+      suspensionEnabled: s.suspensionEnabled,
+      suspendedAt: s.suspendedAt ? s.suspendedAt.toISOString() : null,
+      currentPeriodStart: s.currentPeriodStart.toISOString(),
+      currentPeriodEnd: s.currentPeriodEnd.toISOString(),
+      nextBillingDate: s.nextBillingDate.toISOString(),
+      gracePeriodEnd: s.gracePeriodEnd ? s.gracePeriodEnd.toISOString() : null,
+      dryRunOverride: s.dryRunOverride,
+    }));
+  }
+
   async setDryRunOverride(id: string, override: boolean | null): Promise<void> {
     await this.prisma.subscription.update({ where: { id }, data: { dryRunOverride: override } });
   }
@@ -225,6 +242,11 @@ export class PrismaCustomerRepository implements CustomerRepository {
 
   async findByEmail(email: string): Promise<CustomerRecord | null> {
     const c = await this.prisma.customer.findUnique({ where: { email } });
+    return c ? this.map(c) : null;
+  }
+
+  async findByCustomerCode(customerCode: string): Promise<CustomerRecord | null> {
+    const c = await this.prisma.customer.findUnique({ where: { customerCode } });
     return c ? this.map(c) : null;
   }
 
