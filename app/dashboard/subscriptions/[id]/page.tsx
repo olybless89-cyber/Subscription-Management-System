@@ -58,19 +58,31 @@ export default function SubscriptionDetailPage({ params }: { params: { id: strin
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapNotice, setMapNotice] = useState<string | null>(null);
 
+  const isSuperAdmin = session?.role === 'SUPER_ADMIN';
+
   const load = useCallback(async () => {
     if (!session) return;
     try {
-      const [subData, planData, resourceData] = await Promise.all([
+      const [subData, planData] = await Promise.all([
         authFetch<{ subscription: Subscription }>(session.token, `/api/admin/subscriptions/${params.id}`),
         authFetch<{ plans: Plan[] }>(session.token, '/api/admin/plans'),
-        authFetch<{ resources: RailwayResource[] }>(session.token, `/api/admin/subscriptions/${params.id}/railway-resource`),
       ]);
       setSubscription(subData.subscription);
       setPlanId(subData.subscription.planId);
       setSuspensionEnabled(subData.subscription.suspensionEnabled);
       setPlans(planData.plans);
-      setResources(resourceData.resources);
+
+      // Railway resources are SUPER_ADMIN-only — don't even attempt this
+      // call for a plain admin, since it would 403 and (if bundled into
+      // the same Promise.all as everything else) take the whole page
+      // load down with it.
+      if (session.role === 'SUPER_ADMIN') {
+        const resourceData = await authFetch<{ resources: RailwayResource[] }>(
+          session.token,
+          `/api/admin/subscriptions/${params.id}/railway-resource`
+        );
+        setResources(resourceData.resources);
+      }
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : 'Failed to load subscription');
     }
@@ -179,125 +191,138 @@ export default function SubscriptionDetailPage({ params }: { params: { id: strin
             </tbody>
           </table>
 
-          <div style={{ marginTop: '1.5em', display: 'flex', gap: '0.6em' }}>
-            <button
-              className="btn"
-              disabled={actionPending !== null}
-              onClick={() => handleSuspendOrRestore('suspend')}
-            >
-              {actionPending === 'suspend' ? 'Suspending…' : 'Suspend now'}
-            </button>
-            <button
-              className="btn"
-              disabled={actionPending !== null}
-              onClick={() => handleSuspendOrRestore('restore')}
-            >
-              {actionPending === 'restore' ? 'Restoring…' : 'Restore now'}
-            </button>
-          </div>
-          {actionNotice && <p style={{ fontSize: '0.9em', marginTop: '0.8em' }}>{actionNotice}</p>}
-          {resources && resources.length === 0 && (
-            <p style={{ fontSize: '0.8em', color: 'var(--clay)', marginTop: '0.8em' }}>
-              No Railway resource is mapped to this subscription yet — suspend/restore will
-              succeed without ever touching real infrastructure. Map one below first.
+          {isSuperAdmin ? (
+            <>
+              <div style={{ marginTop: '1.5em', display: 'flex', gap: '0.6em' }}>
+                <button
+                  className="btn"
+                  disabled={actionPending !== null}
+                  onClick={() => handleSuspendOrRestore('suspend')}
+                >
+                  {actionPending === 'suspend' ? 'Suspending…' : 'Suspend now'}
+                </button>
+                <button
+                  className="btn"
+                  disabled={actionPending !== null}
+                  onClick={() => handleSuspendOrRestore('restore')}
+                >
+                  {actionPending === 'restore' ? 'Restoring…' : 'Restore now'}
+                </button>
+              </div>
+              {actionNotice && <p style={{ fontSize: '0.9em', marginTop: '0.8em' }}>{actionNotice}</p>}
+              {resources && resources.length === 0 && (
+                <p style={{ fontSize: '0.8em', color: 'var(--clay)', marginTop: '0.8em' }}>
+                  No Railway resource is mapped to this subscription yet — suspend/restore will
+                  succeed without ever touching real infrastructure. Map one below first.
+                </p>
+              )}
+              <p style={{ fontSize: '0.8em', color: 'var(--ink-soft)', marginTop: '0.8em' }}>
+                These call the real suspend/restore engine. Check the dry-run override above before
+                testing against a real customer.
+              </p>
+            </>
+          ) : (
+            <p style={{ fontSize: '0.85em', color: 'var(--ink-soft)', marginTop: '1.5em' }}>
+              Only the super admin can suspend, restore, or manage Railway infrastructure for this
+              subscription.
             </p>
           )}
-          <p style={{ fontSize: '0.8em', color: 'var(--ink-soft)', marginTop: '0.8em' }}>
-            These call the real suspend/restore engine. Check the dry-run override above before
-            testing against a real customer.
-          </p>
 
-          <h2 style={{ fontSize: '1.05em', fontWeight: 600, marginTop: '2em', marginBottom: '0.8em' }}>
-            Railway infrastructure
-          </h2>
-          {resources === null && <p style={{ color: 'var(--ink-soft)' }}>Loading…</p>}
-          {resources && resources.length > 0 && (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Service</th>
-                  <th>Mode</th>
-                  <th>Strategy</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {resources.map((r) => (
-                  <tr key={r.id}>
-                    <td className="mono">{r.serviceId}</td>
-                    <td>{r.hostingMode}</td>
-                    <td>{r.suspensionStrategy}</td>
-                    <td>{r.status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {isSuperAdmin && (
+            <>
+              <h2 style={{ fontSize: '1.05em', fontWeight: 600, marginTop: '2em', marginBottom: '0.8em' }}>
+                Railway infrastructure
+              </h2>
+              {resources === null && <p style={{ color: 'var(--ink-soft)' }}>Loading…</p>}
+              {resources && resources.length > 0 && (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Service</th>
+                      <th>Mode</th>
+                      <th>Strategy</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resources.map((r) => (
+                      <tr key={r.id}>
+                        <td className="mono">{r.serviceId}</td>
+                        <td>{r.hostingMode}</td>
+                        <td>{r.suspensionStrategy}</td>
+                        <td>{r.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              <form onSubmit={handleMapResource} style={{ marginTop: '1.2em' }}>
+                <div className="field">
+                  <label htmlFor="rw-project">Project ID</label>
+                  <input id="rw-project" required value={projectId} onChange={(e) => setProjectId(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label htmlFor="rw-env">Environment ID</label>
+                  <input id="rw-env" required value={environmentId} onChange={(e) => setEnvironmentId(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label htmlFor="rw-service">Service ID</label>
+                  <input id="rw-service" required value={serviceId} onChange={(e) => setServiceId(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label htmlFor="rw-deployment">Deployment ID (optional)</label>
+                  <input id="rw-deployment" value={deploymentId} onChange={(e) => setDeploymentId(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label htmlFor="rw-mode">Hosting mode</label>
+                  <select
+                    id="rw-mode"
+                    value={hostingMode}
+                    onChange={(e) => {
+                      const mode = e.target.value as RailwayResource['hostingMode'];
+                      setHostingMode(mode);
+                      // MULTI_TENANT can only pair with APP_LEVEL — mirror the
+                      // server-side invariant here so the form can't submit an
+                      // invalid combination in the first place.
+                      if (mode === 'MULTI_TENANT') setSuspensionStrategy('APP_LEVEL');
+                      else if (suspensionStrategy === 'APP_LEVEL') setSuspensionStrategy('STOP_DEPLOYMENT');
+                    }}
+                  >
+                    <option value="DEDICATED">Dedicated</option>
+                    <option value="SHARED_SERVICE">Shared service</option>
+                    <option value="MULTI_TENANT">Multi-tenant</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="rw-strategy">Suspension strategy</label>
+                  <select
+                    id="rw-strategy"
+                    value={suspensionStrategy}
+                    onChange={(e) => setSuspensionStrategy(e.target.value as RailwayResource['suspensionStrategy'])}
+                    disabled={hostingMode === 'MULTI_TENANT'}
+                  >
+                    {hostingMode === 'MULTI_TENANT' ? (
+                      <option value="APP_LEVEL">App level (required for multi-tenant)</option>
+                    ) : (
+                      <>
+                        <option value="STOP_DEPLOYMENT">Stop deployment</option>
+                        <option value="REDIRECT">Redirect</option>
+                        <option value="MANUAL">Manual</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+
+                {mapError && <p className="error-text">{mapError}</p>}
+                {mapNotice && <p style={{ color: 'var(--forest-bright)', fontSize: '0.9em' }}>{mapNotice}</p>}
+
+                <button type="submit" className="btn btn-primary" disabled={mapping} style={{ width: '100%', justifyContent: 'center' }}>
+                  {mapping ? 'Mapping…' : 'Map Railway resource'}
+                </button>
+              </form>
+            </>
           )}
-
-          <form onSubmit={handleMapResource} style={{ marginTop: '1.2em' }}>
-            <div className="field">
-              <label htmlFor="rw-project">Project ID</label>
-              <input id="rw-project" required value={projectId} onChange={(e) => setProjectId(e.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="rw-env">Environment ID</label>
-              <input id="rw-env" required value={environmentId} onChange={(e) => setEnvironmentId(e.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="rw-service">Service ID</label>
-              <input id="rw-service" required value={serviceId} onChange={(e) => setServiceId(e.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="rw-deployment">Deployment ID (optional)</label>
-              <input id="rw-deployment" value={deploymentId} onChange={(e) => setDeploymentId(e.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="rw-mode">Hosting mode</label>
-              <select
-                id="rw-mode"
-                value={hostingMode}
-                onChange={(e) => {
-                  const mode = e.target.value as RailwayResource['hostingMode'];
-                  setHostingMode(mode);
-                  // MULTI_TENANT can only pair with APP_LEVEL — mirror the
-                  // server-side invariant here so the form can't submit an
-                  // invalid combination in the first place.
-                  if (mode === 'MULTI_TENANT') setSuspensionStrategy('APP_LEVEL');
-                  else if (suspensionStrategy === 'APP_LEVEL') setSuspensionStrategy('STOP_DEPLOYMENT');
-                }}
-              >
-                <option value="DEDICATED">Dedicated</option>
-                <option value="SHARED_SERVICE">Shared service</option>
-                <option value="MULTI_TENANT">Multi-tenant</option>
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="rw-strategy">Suspension strategy</label>
-              <select
-                id="rw-strategy"
-                value={suspensionStrategy}
-                onChange={(e) => setSuspensionStrategy(e.target.value as RailwayResource['suspensionStrategy'])}
-                disabled={hostingMode === 'MULTI_TENANT'}
-              >
-                {hostingMode === 'MULTI_TENANT' ? (
-                  <option value="APP_LEVEL">App level (required for multi-tenant)</option>
-                ) : (
-                  <>
-                    <option value="STOP_DEPLOYMENT">Stop deployment</option>
-                    <option value="REDIRECT">Redirect</option>
-                    <option value="MANUAL">Manual</option>
-                  </>
-                )}
-              </select>
-            </div>
-
-            {mapError && <p className="error-text">{mapError}</p>}
-            {mapNotice && <p style={{ color: 'var(--forest-bright)', fontSize: '0.9em' }}>{mapNotice}</p>}
-
-            <button type="submit" className="btn btn-primary" disabled={mapping} style={{ width: '100%', justifyContent: 'center' }}>
-              {mapping ? 'Mapping…' : 'Map Railway resource'}
-            </button>
-          </form>
         </div>
 
         <div className="card">

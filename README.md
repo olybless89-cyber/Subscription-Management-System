@@ -192,6 +192,45 @@ before it can even be saved if someone tries to pair `MULTI_TENANT` with
   into `/login`. Static, no client-side state, matches the same design
   tokens as the dashboard (forest green / paper / clay accent).
 
+## Policy: Railway and suspension power belongs to the super admin alone
+
+Per an explicit decision, this is now stricter than the general
+"scoped admin" model described below: **plain admins have zero access
+to Railway infrastructure or the suspend/restore power, regardless of
+which customers are assigned to them.**
+
+- `POST /api/subscriptions/:id/suspend` — `SUPER_ADMIN` only.
+- `POST /api/subscriptions/:id/restore` — `SUPER_ADMIN` only.
+- `GET`/`POST /api/admin/subscriptions/:id/railway-resource` — `SUPER_ADMIN` only.
+
+The assignment-based `canAccessCustomer()` scoping used everywhere else
+(customer/plan/domain/subscription creation, the custom-email composer)
+does **not** apply here — these three surfaces check `hasAdminRole(...,
+['SUPER_ADMIN'])` directly and nothing else. A plain admin's dashboard
+correspondingly hides the Suspend/Restore buttons and the "Railway
+infrastructure" section entirely on the subscription detail page
+(`app/dashboard/subscriptions/[id]/page.tsx`) rather than showing
+controls that would just 403 — the page also had to stop bundling the
+Railway-resource fetch into the same `Promise.all` as everything else,
+since that 403 would otherwise have taken the whole page load down for
+a plain admin.
+
+What a plain admin still *can* do, unchanged: create and manage their
+own customers, plans, subscriptions (billing fields only), and domains;
+send the custom-email composer; everything data-entry-shaped. What
+happens automatically regardless of role: birthday messages, payment-due/
+grace-period reminders via the cron workers — these were never
+admin-triggered actions, so this policy change doesn't touch them.
+
+One thing worth deciding later, flagged rather than silently assumed:
+`suspensionEnabled` (on a subscription) and `automaticSuspension` (on a
+customer) are still editable via the plain PATCH routes by any admin
+with access to that resource — these are *inputs* to the automated
+suspension worker, not the suspend/restore action itself, so they
+weren't included in this restriction. If you want those locked to
+SUPER_ADMIN too, say so and it's a small change to the same two route
+files.
+
 ## Admin visibility, customer profile fields, and custom messaging
 
 This is largely the same scoped-admin model from before, extended with
@@ -368,7 +407,7 @@ themselves are thin, reviewed-by-eye wrappers around that logic.
 | Webhook idempotency | Anchored on `payment.status`; `reference` is `@unique` as a second line of defense. |
 | `callbackUrl` must be `https://` | Enforced in both `paystack.ts` and `checkout.ts` — the exact bug flagged as outstanding on Remitrova. |
 | No email enumeration via login | `authenticateAdmin`/`authenticateCustomer` return the identical `INVALID_CREDENTIALS` outcome, with an equalized-timing dummy hash comparison, whether the email doesn't exist or the password is wrong. |
-| Scoped admins can't see/act on unassigned customers | `canAccessCustomer()` — SUPER_ADMIN passes always; plain ADMIN only for customers with an `AdminCustomerAssignment` row; checked fresh against the DB every call, not trusted from the session token. Now gates listing, checkout, AND suspend/restore. |
+| Scoped admins can't see/act on unassigned customers | `canAccessCustomer()` — SUPER_ADMIN passes always; plain ADMIN only for customers with an `AdminCustomerAssignment` row; checked fresh against the DB every call, not trusted from the session token. Gates listing, checkout, and the CRUD routes. **Does not gate suspend/restore/Railway resources** — those are `SUPER_ADMIN`-only regardless of assignment, per the explicit policy above. |
 | Customer codes never reused, even across future deletions | `CustomerCodeCounter` singleton row, atomically incremented — never derived from `COUNT(*)` on `Customer`, which would reuse a number if a row were ever deleted. |
 | Admin-management privilege can't self-escalate | `createAdmin()`/`setCustomerAssignments()` require SUPER_ADMIN to create another SUPER_ADMIN or grant `canManageAdmins` — a delegated admin-manager cannot mint peers or successors. |
 | Payment notifications only reach the right admin(s) | `notifyAdminsForCustomer()` fans out to every SUPER_ADMIN plus assigned ADMINs only, deduplicated — tested for the "assigned to a different customer gets nothing" case specifically. |
