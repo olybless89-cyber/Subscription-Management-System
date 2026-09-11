@@ -15,6 +15,9 @@ import {
   DomainRecord,
   AuditLogRecord,
   WebsiteType,
+  InvoiceRecord,
+  InvoiceType,
+  InvoiceStatus,
 } from '@/types/domain';
 
 /**
@@ -255,8 +258,16 @@ export interface NotificationSender {
   /** subjectOverride lets a caller (the custom-email composer) supply
    * its own subject instead of the automatic one derived from `event`
    * via subjectForEvent(). Omit it for every automated notification —
-   * only the admin-composed custom-email path passes one. */
-  send(customerId: string, event: string, message: string, subjectOverride?: string): Promise<void>;
+   * only the admin-composed custom-email path passes one.
+   * attachments is for the invoice PDF specifically — omit it for
+   * everything else. */
+  send(
+    customerId: string,
+    event: string,
+    message: string,
+    subjectOverride?: string,
+    attachments?: Array<{ filename: string; content: string }>
+  ): Promise<void>;
 }
 
 export interface AuditLogEntry {
@@ -274,12 +285,30 @@ export interface AuditLogRepository {
   listRecent(limit?: number): Promise<AuditLogRecord[]>;
 }
 
+export interface InvoiceRepository {
+  create(input: {
+    customerId: string;
+    subscriptionId: string | null;
+    type: InvoiceType;
+    status: InvoiceStatus;
+    amount: number;
+    currency: string;
+    description: string;
+    dueDate: string | null;
+    paidAt: string | null;
+  }): Promise<InvoiceRecord>;
+  findById(id: string): Promise<InvoiceRecord | null>;
+  findByCustomerId(customerId: string): Promise<InvoiceRecord[]>;
+  listAll(): Promise<InvoiceRecord[]>;
+}
+
 export interface EngineDeps {
   subscriptions: SubscriptionRepository;
   customers: CustomerRepository;
   railwayResources: RailwayResourceRepository;
   suspensionEvents: SuspensionEventRepository;
   notifications: NotificationSender;
+  invoices: InvoiceRepository;
 }
 
 /** Superset of EngineDeps used by the payment webhook handler, which also

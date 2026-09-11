@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: '/dashboard/customers', label: 'Customers' },
   { href: '/dashboard/plans', label: 'Plans' },
   { href: '/dashboard/subscriptions', label: 'Subscriptions' },
+  { href: '/dashboard/invoices', label: 'Invoices' },
   { href: '/dashboard/domains', label: 'Domains' },
   { href: '/dashboard/admins', label: 'Admins' },
   { href: '/dashboard/settings', label: 'Settings' },

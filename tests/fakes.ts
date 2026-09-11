@@ -8,6 +8,7 @@ import {
   PaymentRecord,
   AdminRecord,
   DomainRecord,
+  InvoiceRecord,
 } from '@/types/domain';
 
 // ---------- shared primitive stores, reused across the various fake-deps builders ----------
@@ -349,16 +350,20 @@ export function makeFakeDeps(seed: {
 }): EngineDeps & {
   events: SuspensionEventInput[];
   notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }>;
+  invoiceStore: Map<string, InvoiceRecord>;
 } {
   const { repo: customersRepo } = makeCustomerRepo(seed.customers);
   const { repo: subscriptionsRepo } = makeSubscriptionRepo(seed.subscriptions);
   const resources = [...seed.railwayResources];
   const events: SuspensionEventInput[] = [];
   const notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }> = [];
+  const invoiceStore = new Map<string, InvoiceRecord>();
+  let invoiceCounter = 0;
 
   return {
     events,
     notificationLog,
+    invoiceStore,
     subscriptions: subscriptionsRepo,
     customers: customersRepo,
     railwayResources: {
@@ -398,6 +403,28 @@ export function makeFakeDeps(seed: {
     notifications: {
       async send(customerId, event, message, subject) {
         notificationLog.push({ customerId, event, message, subject });
+      },
+    },
+    invoices: {
+      async create(input) {
+        invoiceCounter += 1;
+        const record: InvoiceRecord = {
+          id: `inv_${invoiceCounter}`,
+          invoiceNumber: `INV-${String(invoiceCounter).padStart(6, '0')}`,
+          issuedAt: new Date().toISOString(),
+          ...input,
+        };
+        invoiceStore.set(record.id, record);
+        return record;
+      },
+      async findById(id) {
+        return invoiceStore.get(id) ?? null;
+      },
+      async findByCustomerId(customerId) {
+        return [...invoiceStore.values()].filter((i) => i.customerId === customerId);
+      },
+      async listAll() {
+        return [...invoiceStore.values()];
       },
     },
   };

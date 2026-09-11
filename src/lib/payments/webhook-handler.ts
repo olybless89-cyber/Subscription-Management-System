@@ -4,6 +4,7 @@ import { PaymentProvider } from './provider';
 import { addBillingCycle } from '../billing/cycle';
 import { restoreCustomer } from '../suspension/restoration';
 import { notifyAdminsForCustomer } from '../notifications/admin-notify';
+import { createAndSendReceiptInvoice } from '../invoices/manage';
 
 export type WebhookOutcome =
   | 'PROCESSED'
@@ -171,6 +172,21 @@ export async function handlePaymentWebhook(
       'PAYMENT_RECEIVED',
       'Payment received. Your service is being restored.'
     );
+  } catch {
+    // Deliberately swallowed — see comment above.
+  }
+
+  // Auto-generate and email a receipt invoice — same best-effort
+  // contract: a failed/erroring invoice must never undo the payment
+  // that was already recorded and extended above.
+  try {
+    await createAndSendReceiptInvoice(deps, {
+      customerId: subscription.customerId,
+      subscriptionId: subscription.id,
+      amount: verified.amountMinor,
+      currency: verified.currency,
+      description: `${plan.name} — ${base.toISOString().slice(0, 10)} to ${newPeriodEnd.toISOString().slice(0, 10)}`,
+    });
   } catch {
     // Deliberately swallowed — see comment above.
   }

@@ -11,6 +11,7 @@ import {
   PrismaAdminNotificationRepository,
   PrismaAuditLogRepository,
   PrismaDomainRepository,
+  PrismaInvoiceRepository,
   EmailNotificationSender,
 } from './db/prisma-repository';
 import { WebhookDeps, AuthDeps, CronDeps, AdminManagementDeps, BillingSetupDeps, CustomEmailDeps } from './db/ports';
@@ -35,6 +36,7 @@ export function buildWebhookDeps(): WebhookDeps {
     railwayResources: new PrismaRailwayResourceRepository(client),
     suspensionEvents: new PrismaSuspensionEventRepository(client),
     notifications: new EmailNotificationSender(client),
+    invoices: new PrismaInvoiceRepository(client),
     plans: new PrismaPlanRepository(client),
     payments: new PrismaPaymentRepository(client),
     admins: new PrismaAdminRepository(client),

@@ -12,6 +12,7 @@ import {
   AdminNotificationRepository,
   DomainRepository,
   AuditLogRepository,
+  InvoiceRepository,
 } from './ports';
 import {
   SubscriptionRecord,
@@ -21,6 +22,7 @@ import {
   PaymentRecord,
   DomainRecord,
   AdminRecord,
+  InvoiceRecord,
 } from '@/types/domain';
 import { sendEmail, subjectForEvent, renderBrandedEmailHtml } from '../notifications/email';
 
@@ -328,6 +330,83 @@ export class PrismaCustomerRepository implements CustomerRepository {
       update: { value: { increment: 1 } },
     });
     return `WOH-${String(row.value).padStart(6, '0')}`;
+  }
+}
+
+export class PrismaInvoiceRepository implements InvoiceRepository {
+  constructor(private prisma: PrismaClient) {}
+
+  private map(i: any): InvoiceRecord { // eslint-disable-line @typescript-eslint/no-explicit-any
+    return {
+      id: i.id,
+      invoiceNumber: i.invoiceNumber,
+      customerId: i.customerId,
+      subscriptionId: i.subscriptionId,
+      type: i.type,
+      status: i.status,
+      amount: i.amount,
+      currency: i.currency,
+      description: i.description,
+      dueDate: i.dueDate ? i.dueDate.toISOString() : null,
+      paidAt: i.paidAt ? i.paidAt.toISOString() : null,
+      issuedAt: i.issuedAt.toISOString(),
+    };
+  }
+
+  /** Same pattern as nextCustomerCode — atomic increment on a singleton
+   * counter row, never derived from COUNT(*), so the sequence survives
+   * even if an invoice is ever deleted. */
+  private async nextInvoiceNumber(): Promise<string> {
+    const row = await this.prisma.invoiceCounter.upsert({
+      where: { id: 1 },
+      create: { id: 1, value: 1 },
+      update: { value: { increment: 1 } },
+    });
+    return `INV-${String(row.value).padStart(6, '0')}`;
+  }
+
+  async create(input: {
+    customerId: string;
+    subscriptionId: string | null;
+    type: InvoiceRecord['type'];
+    status: InvoiceRecord['status'];
+    amount: number;
+    currency: string;
+    description: string;
+    dueDate: string | null;
+    paidAt: string | null;
+  }): Promise<InvoiceRecord> {
+    const invoiceNumber = await this.nextInvoiceNumber();
+    const i = await this.prisma.invoice.create({
+      data: {
+        invoiceNumber,
+        customerId: input.customerId,
+        subscriptionId: input.subscriptionId,
+        type: input.type as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        status: input.status as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        amount: input.amount,
+        currency: input.currency,
+        description: input.description,
+        dueDate: input.dueDate ? new Date(input.dueDate) : undefined,
+        paidAt: input.paidAt ? new Date(input.paidAt) : undefined,
+      },
+    });
+    return this.map(i);
+  }
+
+  async findById(id: string): Promise<InvoiceRecord | null> {
+    const i = await this.prisma.invoice.findUnique({ where: { id } });
+    return i ? this.map(i) : null;
+  }
+
+  async findByCustomerId(customerId: string): Promise<InvoiceRecord[]> {
+    const rows = await this.prisma.invoice.findMany({ where: { customerId }, orderBy: { issuedAt: 'desc' } });
+    return rows.map((i: any) => this.map(i)); // eslint-disable-line @typescript-eslint/no-explicit-any
+  }
+
+  async listAll(): Promise<InvoiceRecord[]> {
+    const rows = await this.prisma.invoice.findMany({ orderBy: { issuedAt: 'desc' } });
+    return rows.map((i: any) => this.map(i)); // eslint-disable-line @typescript-eslint/no-explicit-any
   }
 }
 
@@ -743,7 +822,13 @@ export class PrismaPaymentRepository implements PaymentRepository {
 export class EmailNotificationSender implements NotificationSender {
   constructor(private prisma: PrismaClient) {}
 
-  async send(customerId: string, event: string, message: string, subjectOverride?: string): Promise<void> {
+  async send(
+    customerId: string,
+    event: string,
+    message: string,
+    subjectOverride?: string,
+    attachments?: Array<{ filename: string; content: string }>
+  ): Promise<void> {
     // Always record the Notification row first — this is the audit
     // trail of record. Whether the real email actually goes out is a
     // best-effort add-on layered on top: if Resend is unconfigured or
@@ -765,6 +850,7 @@ export class EmailNotificationSender implements NotificationSender {
       subject,
       text: message,
       html: renderBrandedEmailHtml({ subject, bodyText: message }),
+      attachments,
     });
 
     if (result.success) {

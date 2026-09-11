@@ -262,6 +262,49 @@ describe('handlePaymentWebhook — notification failures never crash the webhook
   });
 });
 
+describe('handlePaymentWebhook — receipt invoice', () => {
+  it('creates and sends a PAID receipt invoice on a successful payment', async () => {
+    const deps = makeFakeWebhookDeps({
+      customers: [baseCustomer({ status: 'SUSPENDED' })],
+      subscriptions: [baseSubscription({ status: 'SUSPENDED' })],
+      railwayResources: [multiTenantResource()],
+      plans: [basePlan()],
+      payments: [basePayment()],
+    });
+    const provider = fakeProvider();
+
+    const result = await handlePaymentWebhook(deps, provider, railway, chargeSuccessBody(), 'sig');
+
+    expect(result.outcome).toBe('PROCESSED');
+    const invoices = await deps.invoices.findByCustomerId('cust_1');
+    expect(invoices).toHaveLength(1);
+    expect(invoices[0].type).toBe('RECEIPT');
+    expect(invoices[0].status).toBe('PAID');
+    expect(invoices[0].subscriptionId).toBe('sub_1');
+  });
+
+  it('a failed invoice creation never undoes the payment or subscription restoration', async () => {
+    const deps = makeFakeWebhookDeps({
+      customers: [baseCustomer({ status: 'SUSPENDED' })],
+      subscriptions: [baseSubscription({ status: 'SUSPENDED' })],
+      railwayResources: [multiTenantResource()],
+      plans: [basePlan()],
+      payments: [basePayment()],
+    });
+    deps.invoices.create = async () => {
+      throw new Error('simulated invoice DB failure');
+    };
+    const provider = fakeProvider();
+
+    const result = await handlePaymentWebhook(deps, provider, railway, chargeSuccessBody(), 'sig');
+
+    expect(result.outcome).toBe('PROCESSED');
+    expect(result.httpStatus).toBe(200);
+    const subscription = await deps.subscriptions.findById('sub_1');
+    expect(subscription!.status).toBe('ACTIVE');
+  });
+});
+
 describe('handlePaymentWebhook — restoration wiring', () => {
   it('restores a MULTI_TENANT suspended customer end-to-end on successful payment', async () => {
     const deps = makeFakeWebhookDeps({

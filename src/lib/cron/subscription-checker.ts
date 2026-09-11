@@ -2,6 +2,8 @@ import { CronDeps } from '../db/ports';
 import { RailwayClient } from '../railway/client';
 import { suspendCustomer } from '../suspension/engine';
 import { addDays } from '../billing/cycle';
+import { notifyAdminsForCustomer } from '../notifications/admin-notify';
+import { createAndSendDueInvoice } from '../invoices/manage';
 
 export interface SubscriptionCheckerOptions {
   now?: Date;
@@ -57,6 +59,40 @@ export async function runSubscriptionChecker(
           'PAYMENT_DUE',
           'Your Web Oracle Host subscription is now due.'
         );
+
+        // Auto-generate a DUE invoice and remind whichever admin(s) own
+        // this customer to follow up — both best-effort, same principle
+        // as everywhere else: neither can be allowed to undo the status
+        // transition that already happened above.
+        const plan = await deps.plans.findById(subscription.planId);
+        if (plan) {
+          const graceDays = plan.gracePeriodDays ?? 2;
+          const invoiceDueDate = addDays(now, graceDays).toISOString();
+          try {
+            await createAndSendDueInvoice(deps, {
+              customerId: subscription.customerId,
+              subscriptionId: subscription.id,
+              amount: plan.amount,
+              currency: plan.currency,
+              description: plan.name,
+              dueDate: invoiceDueDate,
+            });
+          } catch {
+            // Deliberately swallowed — see comment above.
+          }
+        }
+        try {
+          const customer = await deps.customers.findById(subscription.customerId);
+          await notifyAdminsForCustomer(
+            deps,
+            subscription.customerId,
+            'PAYMENT_DUE',
+            `${customer?.customerCode ?? subscription.customerId}'s subscription is now due — follow up if needed.`
+          );
+        } catch {
+          // Deliberately swallowed — see comment above.
+        }
+
         result.movedToPaymentDue++;
         continue;
       }

@@ -88,6 +88,24 @@ export interface AuditLogRecord {
   createdAt: string;
 }
 
+export type InvoiceType = 'RECEIPT' | 'DUE';
+export type InvoiceStatus = 'PENDING' | 'PAID';
+
+export interface InvoiceRecord {
+  id: string;
+  invoiceNumber: string;
+  customerId: string;
+  subscriptionId: string | null;
+  type: InvoiceType;
+  status: InvoiceStatus;
+  amount: number;
+  currency: string;
+  description: string;
+  dueDate: string | null;
+  paidAt: string | null;
+  issuedAt: string;
+}
+
 export interface DomainRecord {
   id: string;
   customerId: string;

@@ -35,6 +35,9 @@ src/lib/admin/manage.ts              createAdmin() / setCustomerAssignments() �
 src/lib/customers/
   manage.ts                              createCustomer() / updateCustomer() — spec sections 5 & 39, auto-assigns scoped creators
   birthday.ts                              runBirthdayMessages() — daily cron logic, month/day match, year ignored
+src/lib/invoices/
+  pdf.ts                                     generateInvoicePdf() — pdfkit, visually verified against real rendered output
+  manage.ts                                    createAndSendReceiptInvoice() / createAndSendDueInvoice()
 src/lib/notifications/custom-email.ts   sendCustomEmail() — admin-composed message through the same Resend pipeline
 src/lib/billing/
   cycle.ts                              addBillingCycle() / addDays()
@@ -77,7 +80,7 @@ app/api/
   cron/railway-sync/route.ts             Railway sync (CRON_SECRET-protected)
   subscriptions/[id]/suspend/route.ts     Admin manual suspend — scoped to assignment
   subscriptions/[id]/restore/route.ts      Admin manual restore — scoped to assignment
-tests/                                198 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
+tests/                                208 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
 app/
   globals.css                          Design tokens (forest green/paper/clay — matches the spec's own branding request)
   layout.tsx                            Root layout, wraps everything in AuthProvider
@@ -92,6 +95,7 @@ app/
     subscriptions/[id]/page.tsx                 View/edit one subscription + suspend/restore buttons
     domains/page.tsx                             List + attach-domain form
     admins/page.tsx                                List + create admin form (role/canManageAdmins fields only shown to SUPER_ADMIN)
+    invoices/page.tsx                                Invoice list — PDF opened via authenticated fetch, not a plain link
     admins/[id]/assignments/page.tsx                 Checkbox list of customers this admin can see
     customers/[id]/page.tsx                            View/edit a customer + send-custom-email composer
     activity/page.tsx                                    System-wide audit log — SUPER_ADMIN only, hidden from nav for everyone else
@@ -191,6 +195,48 @@ before it can even be saved if someone tries to pair `MULTI_TENANT` with
   placeholder: hero with the logo, a features grid, and a closing CTA
   into `/login`. Static, no client-side state, matches the same design
   tokens as the dashboard (forest green / paper / clay accent).
+
+## Invoicing system (PDF receipts and due invoices)
+
+Real invoice records now exist, not just notification emails —
+`Invoice` table, sequential `INV-000001` numbering (same atomic-counter
+pattern as customer codes), generated as actual downloadable PDFs
+(`pdfkit`, no headless browser or external service — visually verified
+by actually rendering sample invoices to images and looking at them
+during development, not just trusting the code compiled).
+
+- **On successful payment** (`src/lib/payments/webhook-handler.ts`): a
+  `RECEIPT` invoice (status `PAID`, `paidAt` set) is auto-created and
+  emailed with the PDF attached, right after the payment is recorded and
+  the subscription extended. Best-effort — a failed invoice can never
+  undo a successful payment, tested directly by simulating an
+  invoice-creation crash and confirming the payment/restoration still
+  completes.
+- **When a subscription becomes due** (`src/lib/cron/subscription-checker.ts`):
+  a `DUE` invoice (status `PENDING`, with a real `dueDate` computed from
+  the plan's grace period) is auto-created and emailed the moment a
+  subscription moves ACTIVE → PAYMENT_DUE. Same best-effort contract.
+- **Admin follow-up reminder** — a real gap that existed before this
+  round: the cron worker notified customers when they became due, but
+  never notified any admin at all. Now it does, via the same
+  `notifyAdminsForCustomer` fan-out used for payment notifications
+  (reaches the assigned admin plus the super admin), so whoever owns
+  that customer can actually follow up.
+- **`GET /api/admin/invoices`** (scoped, `?customerId=` filter) and
+  **`GET /api/admin/invoices/:id/pdf`** — the PDF is regenerated on
+  demand from the stored Invoice row rather than stored as a binary
+  anywhere; everything needed to reproduce it deterministically already
+  lives in the database.
+- **UI**: a new Invoices page in the sidebar. Its "View PDF" button
+  deliberately does NOT use a plain `<a href>` link — a real bug caught
+  during development: a plain link can't carry the login token, so
+  clicking it would 403. Fixed by fetching the PDF as a blob with the
+  token attached and opening it from an object URL instead.
+- **What's not built**: no link yet from a customer's own detail page to
+  their filtered invoice history (the main Invoices page lists
+  everyone's, still usable, just not deep-linked per customer yet); no
+  overdue/reminder escalation beyond the one DUE invoice sent at the
+  ACTIVE→PAYMENT_DUE transition.
 
 ## Password management, mandatory onboarding fields, billing cycles & currency
 
@@ -468,8 +514,8 @@ every real customer.
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit — passes clean (prisma-repository.ts excluded, see below)
-npm test            # vitest — 198 tests, all green, no network/DB needed
-npm run build       # next build — verified working in this sandbox, produces all 27 API routes + 12 UI pages
+npm test            # vitest — 208 tests, all green, no network/DB needed
+npm run build       # next build — verified working in this sandbox, produces all 29 API routes + 14 UI pages
 ```
 
 ### One thing I still could NOT verify from this sandbox — be aware before you ship
@@ -559,6 +605,8 @@ themselves are thin, reviewed-by-eye wrappers around that logic.
 | A failed onboarding domain attach never undoes a successful customer creation | `createCustomer()`'s optional `domainName` composition checks global uniqueness the same way the standalone Domains page does, but a conflict only sets `domainOutcome: 'ALREADY_EXISTS'` on the response — the customer row itself is never rolled back or left in a partial state. Tested directly for both the attach-succeeds and domain-already-taken-elsewhere cases. |
 | A delegated admin-manager cannot reset another admin's password even though they can create admins | `resetAdminPassword()` checks `requester.role === 'SUPER_ADMIN'` directly — not `canManageOtherAdmins()`, which a delegated admin with `canManageAdmins: true` would pass. Controlling another privileged account's credentials is treated as more sensitive than creating one. Tested directly, including the specific case of a `canManageAdmins` admin being rejected. |
 | Self-service password change can't be used to take over someone else's account | `changeOwnPassword()` requires the CURRENT password, verified with the same constant-time comparison used at login, before accepting a new one — there's no separate "set password" path that skips this for your own account the way a SUPER_ADMIN reset skips it for someone else's. |
+| A failed invoice generation can never undo a recorded payment or a due-status transition | Both `createAndSendReceiptInvoice()` (webhook) and `createAndSendDueInvoice()` (cron) are called inside try/catch at their respective call sites, same pattern as the notification-failure fix from an earlier round. Tested directly by simulating an invoice-creation crash in both the webhook and the cron, confirming the payment/subscription-status change still completes either way. |
+| The invoice PDF viewer can't silently fail via an unauthenticated link | A real bug caught during development, not after: the first draft of the Invoices page used a plain `<a href>` to the PDF route, which can't carry the login token — clicking it would have 403'd for every admin. Fixed by fetching the PDF as an authenticated blob and opening it from an object URL instead. |
 | A failed or unconfigured email dispatch can never block a payment, suspension, or restoration | `sendEmail()` never throws — a missing `RESEND_API_KEY`, a Resend outage, or a bad address always returns `{ success: false }`, checked and tested directly (`tests/email.test.ts`) for the network-error, error-status, and unconfigured cases. Every caller (webhook, suspension engine, cron) has already done the thing that matters — recorded the payment, stopped/restored the deployment — before attempting to notify anyone. |
 | A delegated admin-manager can't spread scope beyond their own | `setCustomerAssignments()` now checks that a non-SUPER_ADMIN requester only assigns customers they can already see themselves — a real gap caught before shipping: without this, a delegated `canManageAdmins` admin could have granted a sub-admin visibility into a customer the delegator never had access to. SUPER_ADMIN is exempt (no scope to exceed). Tested directly (`tests/admin-management.test.ts`). |
 | Subscription status can never be set directly, bypassing verification | `UpdateSubscriptionInput` (the PATCH type) has no `status` field at all — a compile-time guarantee, not just a runtime check (see the `@ts-expect-error` test in `domains-and-subscription-editing.test.ts`). The PATCH route additionally rejects any request body containing `status` with an explicit 400, pointing at the right endpoint instead. |

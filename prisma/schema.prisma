@@ -106,6 +106,19 @@ enum AdminRole {
   ADMIN
 }
 
+// RECEIPT = auto-generated when a payment is verified/recorded, proof
+// of what was paid. DUE = auto-generated when a subscription moves to
+// PAYMENT_DUE, showing what's owed and by when.
+enum InvoiceType {
+  RECEIPT
+  DUE
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+}
+
 enum PaymentProviderName {
   PAYSTACK
   FLUTTERWAVE // routing/schema support exists; provider adapter not yet implemented — see src/lib/payments/registry.ts
@@ -137,6 +150,7 @@ model Customer {
   notifications       Notification[]
   adminAssignments    AdminCustomerAssignment[]
   adminNotifications  AdminNotification[]
+  invoices            Invoice[]
 
   @@index([status])
 }
@@ -186,6 +200,7 @@ model Subscription {
   payments            Payment[]
   railwayResources     RailwayResource[]
   suspensionEvents     SuspensionEvent[]
+  invoices             Invoice[]
 
   @@index([status])
   @@index([nextBillingDate])
@@ -339,6 +354,35 @@ model SystemSetting {
 model CustomerCodeCounter {
   id    Int @id @default(1)
   value Int @default(0)
+}
+
+// Same pattern as CustomerCodeCounter — sequential, never-reused
+// invoice numbers (INV-000001, ...) that survive even if an invoice
+// row is ever deleted.
+model InvoiceCounter {
+  id    Int @id @default(1)
+  value Int @default(0)
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  invoiceNumber  String        @unique // INV-000001
+  customerId     String
+  customer       Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  type           InvoiceType
+  status         InvoiceStatus @default(PENDING)
+  amount         Int // minor units (kobo/cents)
+  currency       String
+  description    String // e.g. plan name + billing period, shown as the line item
+  dueDate        DateTime?
+  paidAt         DateTime?
+  issuedAt       DateTime      @default(now())
+  createdAt      DateTime      @default(now())
+
+  @@index([customerId])
+  @@index([subscriptionId])
 }
 
 model AuditLog {

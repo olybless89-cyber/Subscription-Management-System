@@ -104,6 +104,62 @@ describe('runSubscriptionChecker', () => {
     expect(result.movedToPaymentDue).toBe(0);
   });
 
+  it('creates and sends a DUE invoice when a subscription becomes payment-due', async () => {
+    const deps = makeFakeWebhookDeps({
+      customers: [customer()],
+      subscriptions: [subscription({ status: 'ACTIVE', nextBillingDate: '2026-09-09T00:00:00.000Z' })],
+      railwayResources: [],
+      plans: [plan()],
+      payments: [],
+    });
+
+    await runSubscriptionChecker(deps, railway, { now: NOW });
+
+    const invoices = await deps.invoices.findByCustomerId('cust_1');
+    expect(invoices).toHaveLength(1);
+    expect(invoices[0].type).toBe('DUE');
+    expect(invoices[0].status).toBe('PENDING');
+    expect(invoices[0].dueDate).not.toBeNull();
+  });
+
+  it('notifies the assigned admin(s) so they can follow up on the due subscription', async () => {
+    const deps = makeFakeWebhookDeps({
+      customers: [customer()],
+      subscriptions: [subscription({ status: 'ACTIVE', nextBillingDate: '2026-09-09T00:00:00.000Z' })],
+      railwayResources: [],
+      plans: [plan()],
+      payments: [],
+      admins: [
+        { id: 'super_1', name: 'Super', email: 'super@dwo.example', passwordHash: 'x', passwordChangedAt: null, role: 'SUPER_ADMIN', canManageAdmins: true },
+      ],
+    });
+
+    await runSubscriptionChecker(deps, railway, { now: NOW });
+
+    expect(deps.adminNotificationLog.length).toBeGreaterThan(0);
+    expect(deps.adminNotificationLog.some((n) => n.event === 'PAYMENT_DUE' && n.customerId === 'cust_1')).toBe(true);
+  });
+
+  it('a failed invoice or admin-notify attempt never blocks the ACTIVE -> PAYMENT_DUE transition itself', async () => {
+    const deps = makeFakeWebhookDeps({
+      customers: [customer()],
+      subscriptions: [subscription({ status: 'ACTIVE', nextBillingDate: '2026-09-09T00:00:00.000Z' })],
+      railwayResources: [],
+      plans: [plan()],
+      payments: [],
+    });
+    deps.invoices.create = async () => {
+      throw new Error('simulated invoice failure');
+    };
+
+    const result = await runSubscriptionChecker(deps, railway, { now: NOW });
+
+    expect(result.movedToPaymentDue).toBe(1);
+    const s = await deps.subscriptions.findById('sub_1');
+    expect(s!.status).toBe('PAYMENT_DUE');
+    expect(result.errors).toHaveLength(0);
+  });
+
   it('moves PAYMENT_DUE -> GRACE_PERIOD and computes gracePeriodEnd from the plan', async () => {
     const deps = makeFakeWebhookDeps({
       customers: [customer()],

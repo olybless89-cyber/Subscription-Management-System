@@ -6,6 +6,9 @@ export interface SendEmailInput {
    * plain-text fallback — Resend (and every real mail client) uses the
    * HTML part when it can render it, falling back to text otherwise. */
   html?: string;
+  /** Optional attachments — used specifically for invoice PDFs. content
+   * is base64-encoded, matching Resend's attachment format exactly. */
+  attachments?: Array<{ filename: string; content: string }>;
 }
 
 export interface SendEmailResult {
@@ -50,6 +53,7 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
         subject: input.subject,
         text: input.text,
         ...(input.html ? { html: input.html } : {}),
+        ...(input.attachments && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
       }),
     });
 
