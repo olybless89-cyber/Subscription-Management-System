@@ -51,6 +51,8 @@ enum SubscriptionStatus {
 enum BillingCycle {
   MONTHLY
   QUARTERLY
+  FOUR_MONTHS
+  SEMI_ANNUAL
   YEARLY
   CUSTOM
 }
@@ -276,6 +278,7 @@ model AdminUser {
   name         String
   email        String    @unique
   passwordHash String
+  passwordChangedAt DateTime? // null = never changed since account creation; set on self-change AND super-admin reset
   role         AdminRole @default(ADMIN)
   canManageAdmins Boolean @default(false)
   createdAt    DateTime  @default(now())

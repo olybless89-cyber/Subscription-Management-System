@@ -77,7 +77,7 @@ app/api/
   cron/railway-sync/route.ts             Railway sync (CRON_SECRET-protected)
   subscriptions/[id]/suspend/route.ts     Admin manual suspend — scoped to assignment
   subscriptions/[id]/restore/route.ts      Admin manual restore — scoped to assignment
-tests/                                179 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
+tests/                                198 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
 app/
   globals.css                          Design tokens (forest green/paper/clay — matches the spec's own branding request)
   layout.tsx                            Root layout, wraps everything in AuthProvider
@@ -191,6 +191,65 @@ before it can even be saved if someone tries to pair `MULTI_TENANT` with
   placeholder: hero with the logo, a features grid, and a closing CTA
   into `/login`. Static, no client-side state, matches the same design
   tokens as the dashboard (forest green / paper / clay accent).
+
+## Password management, mandatory onboarding fields, billing cycles & currency
+
+**Password change/reset** (`src/lib/admin/password.ts`, three functions,
+each with a deliberately different permission model):
+
+- `changeOwnPassword` — any admin, own account, **requires the current
+  password** (verified the same constant-time way as login). Route:
+  `POST /api/auth/change-password`. UI: `/dashboard/settings`, in the
+  sidebar for every admin.
+- `resetAdminPassword` — **strictly `SUPER_ADMIN`**, no proof of the old
+  password needed (that's the point — they forgot it). Deliberately
+  stricter than the `canManageOtherAdmins` delegation used for
+  `createAdmin`/`setCustomerAssignments` elsewhere: a delegated
+  admin-manager who *can* create admins still *cannot* reset one's
+  password. Route: `POST /api/admin/admins/:id/reset-password`. UI: a
+  "Reset password" button per row on `/dashboard/admins`, visible only
+  to `SUPER_ADMIN` and hidden on the logged-in admin's own row (use
+  Settings for your own).
+- `resetCustomerPassword` — any admin with access to that customer
+  (matches the normal customer-CRUD scoping, not the strict Railway
+  policy — this is a support action, not an infrastructure one). Route:
+  `POST /api/admin/customers/:id/reset-password`. UI: a card on the
+  customer detail page.
+- **`AdminUser.passwordChangedAt`** is set on every change (self or
+  reset) and shown to `SUPER_ADMIN` as a column on `/dashboard/admins` —
+  "Never (still original)" until it's ever been changed. This is exactly
+  the visibility into admin password changes that was asked for.
+- **No reset-link/email-verification flow exists for either admins or
+  customers** — an admin with the right permission just types a new
+  password directly and is expected to relay it to the account holder
+  themselves. A real "forgot password" self-service flow (customer
+  clicks a link, gets a token-based reset page) is a meaningfully bigger
+  feature and hasn't been built.
+
+**Mandatory customer fields at onboarding** — `notificationEmail` and
+`domainName` are now **required** in `createCustomer()`, not optional.
+This applies to *creation* only — `updateCustomer()` still treats every
+field as optional to change, so existing customers created before this
+policy aren't forced to backfill anything. `phone`, `dateOfBirth`, and
+the service dates remain optional (only the two explicitly named fields
+became mandatory).
+
+**Billing cycles expanded** — `BillingCycle` now includes `FOUR_MONTHS`
+and `SEMI_ANNUAL` alongside the existing `MONTHLY`/`QUARTERLY`/`YEARLY`/
+`CUSTOM`, giving Monthly / Quarterly / every-4-months / Semi-annual /
+Yearly as selectable options. `addBillingCycle()` handles both new
+intervals, tested directly for all six cases.
+
+**Plan currency was already fully wired end-to-end** in the business
+logic and route (`Plan.currency`, defaulting to NGN) — the only actual
+gap was that the create-plan UI form never exposed a currency selector
+at all, silently treating every amount as Naira. Fixed: the form now has
+a currency dropdown (NGN/USD) with the amount label and placeholder
+adjusting to match. **No specific dollar-amount plans were seeded** —
+the $20/$50 examples in the original request were illustrative of the
+system needing to support multiple currencies and amounts, not a literal
+spec to hardcode; create the actual plans that match your real pricing
+through this form.
 
 ## Open Graph image (link previews on WhatsApp, etc.)
 
@@ -409,8 +468,8 @@ every real customer.
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit — passes clean (prisma-repository.ts excluded, see below)
-npm test            # vitest — 179 tests, all green, no network/DB needed
-npm run build       # next build — verified working in this sandbox, produces all 24 API routes + 11 UI pages
+npm test            # vitest — 198 tests, all green, no network/DB needed
+npm run build       # next build — verified working in this sandbox, produces all 27 API routes + 12 UI pages
 ```
 
 ### One thing I still could NOT verify from this sandbox — be aware before you ship
@@ -498,6 +557,8 @@ themselves are thin, reviewed-by-eye wrappers around that logic.
 | PATCH on a subscription can never set `status` | `updateSubscription()`'s input type has no `status` field at all — not filtered out, structurally absent — and the route explicitly rejects a `status` key in the request body with a message pointing at the right endpoint. Status only ever changes through suspendCustomer/restoreCustomer (verified against Railway) or the webhook (verified against the payment provider). |
 | A notification failure can never crash a suspend/restore/webhook response | **Real bug caught in production, not just review**: `deps.notifications.send()` was called with no try/catch in `suspendCustomer`, `restoreCustomer`, and the payment webhook — if it threw (a database error, anything), the exception had nothing stopping it from reaching the route as a raw, non-JSON 500. All three call sites now wrap the notification call and swallow failures deliberately, since the suspension/restoration/payment itself already succeeded and was recorded before the notification was ever attempted. Tested directly: each engine still reports its real outcome (`SUSPENDED`/`RESTORED`/`PROCESSED`) even when notification dispatch throws. |
 | A failed onboarding domain attach never undoes a successful customer creation | `createCustomer()`'s optional `domainName` composition checks global uniqueness the same way the standalone Domains page does, but a conflict only sets `domainOutcome: 'ALREADY_EXISTS'` on the response — the customer row itself is never rolled back or left in a partial state. Tested directly for both the attach-succeeds and domain-already-taken-elsewhere cases. |
+| A delegated admin-manager cannot reset another admin's password even though they can create admins | `resetAdminPassword()` checks `requester.role === 'SUPER_ADMIN'` directly — not `canManageOtherAdmins()`, which a delegated admin with `canManageAdmins: true` would pass. Controlling another privileged account's credentials is treated as more sensitive than creating one. Tested directly, including the specific case of a `canManageAdmins` admin being rejected. |
+| Self-service password change can't be used to take over someone else's account | `changeOwnPassword()` requires the CURRENT password, verified with the same constant-time comparison used at login, before accepting a new one — there's no separate "set password" path that skips this for your own account the way a SUPER_ADMIN reset skips it for someone else's. |
 | A failed or unconfigured email dispatch can never block a payment, suspension, or restoration | `sendEmail()` never throws — a missing `RESEND_API_KEY`, a Resend outage, or a bad address always returns `{ success: false }`, checked and tested directly (`tests/email.test.ts`) for the network-error, error-status, and unconfigured cases. Every caller (webhook, suspension engine, cron) has already done the thing that matters — recorded the payment, stopped/restored the deployment — before attempting to notify anyone. |
 | A delegated admin-manager can't spread scope beyond their own | `setCustomerAssignments()` now checks that a non-SUPER_ADMIN requester only assigns customers they can already see themselves — a real gap caught before shipping: without this, a delegated `canManageAdmins` admin could have granted a sub-admin visibility into a customer the delegator never had access to. SUPER_ADMIN is exempt (no scope to exceed). Tested directly (`tests/admin-management.test.ts`). |
 | Subscription status can never be set directly, bypassing verification | `UpdateSubscriptionInput` (the PATCH type) has no `status` field at all — a compile-time guarantee, not just a runtime check (see the `@ts-expect-error` test in `domains-and-subscription-editing.test.ts`). The PATCH route additionally rejects any request body containing `status` with an explicit 400, pointing at the right endpoint instead. |

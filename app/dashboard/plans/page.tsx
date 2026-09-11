@@ -13,6 +13,20 @@ interface Plan {
   gracePeriodDays: number;
 }
 
+const CURRENCIES: Array<{ value: string; symbol: string; label: string }> = [
+  { value: 'NGN', symbol: '₦', label: 'Naira (NGN)' },
+  { value: 'USD', symbol: '$', label: 'US Dollar (USD)' },
+];
+
+const BILLING_CYCLES: Array<{ value: string; label: string }> = [
+  { value: 'MONTHLY', label: 'Monthly (1 month)' },
+  { value: 'QUARTERLY', label: 'Quarterly (3 months)' },
+  { value: 'FOUR_MONTHS', label: 'Every 4 months' },
+  { value: 'SEMI_ANNUAL', label: 'Semi-annual (6 months)' },
+  { value: 'YEARLY', label: 'Yearly (12 months)' },
+  { value: 'CUSTOM', label: 'Custom' },
+];
+
 function formatAmount(minorUnits: number, currency: string): string {
   return `${currency} ${(minorUnits / 100).toLocaleString()}`;
 }
@@ -23,12 +37,15 @@ export default function PlansPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [name, setName] = useState('');
-  const [amountNaira, setAmountNaira] = useState('');
-  const [billingCycle, setBillingCycle] = useState<'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'CUSTOM'>('MONTHLY');
+  const [currency, setCurrency] = useState('NGN');
+  const [amount, setAmount] = useState('');
+  const [billingCycle, setBillingCycle] = useState<'MONTHLY' | 'QUARTERLY' | 'FOUR_MONTHS' | 'SEMI_ANNUAL' | 'YEARLY' | 'CUSTOM'>('MONTHLY');
   const [gracePeriodDays, setGracePeriodDays] = useState('2');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formNotice, setFormNotice] = useState<string | null>(null);
+
+  const currencySymbol = CURRENCIES.find((c) => c.value === currency)?.symbol ?? '';
 
   const load = useCallback(async () => {
     if (!session) return;
@@ -50,9 +67,9 @@ export default function PlansPage() {
     setFormError(null);
     setFormNotice(null);
 
-    const naira = Number(amountNaira);
-    if (!Number.isFinite(naira) || naira <= 0) {
-      setFormError('Enter a valid amount in Naira');
+    const majorUnits = Number(amount);
+    if (!Number.isFinite(majorUnits) || majorUnits <= 0) {
+      setFormError(`Enter a valid amount in ${currency}`);
       return;
     }
 
@@ -62,14 +79,15 @@ export default function PlansPage() {
         method: 'POST',
         body: JSON.stringify({
           name,
-          amount: Math.round(naira * 100), // Naira -> kobo
+          amount: Math.round(majorUnits * 100), // major units -> minor units (kobo/cents)
+          currency,
           billingCycle,
           gracePeriodDays: Number(gracePeriodDays) || 2,
         }),
       });
       setFormNotice(`Created "${result.plan?.name}"`);
       setName('');
-      setAmountNaira('');
+      setAmount('');
       setGracePeriodDays('2');
       await load();
     } catch (err) {
@@ -106,7 +124,7 @@ export default function PlansPage() {
                   <tr key={p.id}>
                     <td>{p.name}</td>
                     <td className="mono">{formatAmount(p.amount, p.currency)}</td>
-                    <td>{p.billingCycle}</td>
+                    <td>{BILLING_CYCLES.find((c) => c.value === p.billingCycle)?.label ?? p.billingCycle}</td>
                     <td>{p.gracePeriodDays} day{p.gracePeriodDays === 1 ? '' : 's'}</td>
                   </tr>
                 ))}
@@ -124,25 +142,36 @@ export default function PlansPage() {
               <input id="plan-name" required value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             <div className="field">
-              <label htmlFor="amount">Amount (₦)</label>
+              <label htmlFor="currency">Currency</label>
+              <select id="currency" value={currency} onChange={(e) => setCurrency(e.target.value)}>
+                {CURRENCIES.map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </select>
+              <p style={{ fontSize: '0.78em', color: 'var(--ink-soft)', margin: '0.3em 0 0' }}>
+                Different customers can be billed in different currencies and amounts — create as
+                many plans as you need.
+              </p>
+            </div>
+            <div className="field">
+              <label htmlFor="amount">Amount ({currencySymbol})</label>
               <input
                 id="amount"
                 type="number"
                 min="1"
                 step="1"
                 required
-                value={amountNaira}
-                onChange={(e) => setAmountNaira(e.target.value)}
-                placeholder="25000"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder={currency === 'USD' ? '20' : '25000'}
               />
             </div>
             <div className="field">
               <label htmlFor="cycle">Billing cycle</label>
               <select id="cycle" value={billingCycle} onChange={(e) => setBillingCycle(e.target.value as typeof billingCycle)}>
-                <option value="MONTHLY">Monthly</option>
-                <option value="QUARTERLY">Quarterly</option>
-                <option value="YEARLY">Yearly</option>
-                <option value="CUSTOM">Custom</option>
+                {BILLING_CYCLES.map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
               </select>
             </div>
             <div className="field">

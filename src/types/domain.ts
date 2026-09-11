@@ -28,7 +28,7 @@ export type SuspensionResult = 'SUCCESS' | 'FAILED' | 'SKIPPED';
 
 export type PaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'REFUNDED' | 'CANCELLED';
 
-export type BillingCycle = 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'CUSTOM';
+export type BillingCycle = 'MONTHLY' | 'QUARTERLY' | 'FOUR_MONTHS' | 'SEMI_ANNUAL' | 'YEARLY' | 'CUSTOM';
 
 export type AdminRole = 'SUPER_ADMIN' | 'ADMIN';
 
@@ -66,6 +66,7 @@ export interface AdminRecord {
   name: string;
   email: string;
   passwordHash: string;
+  passwordChangedAt: string | null;
   role: AdminRole;
   canManageAdmins: boolean;
 }

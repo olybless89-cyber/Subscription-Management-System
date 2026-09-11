@@ -48,7 +48,8 @@ export interface CreateCustomerResult {
   outcome: CreateCustomerOutcome;
   message: string;
   customer?: CustomerRecord;
-  /** Only present if `domainName` was provided. The customer is still
+  /** domainName is now required at creation (see validation below), so
+   * this is always present on a CREATED result. The customer is still
    * CREATED even if the domain attachment failed (e.g. already claimed
    * by a different customer) — a failed domain attach must never undo a
    * successful customer creation, it's just reported back so the admin
@@ -101,8 +102,23 @@ export async function createCustomer(
   if (!email || !email.includes('@')) {
     return { outcome: 'INVALID_INPUT', message: 'A valid email is required' };
   }
-  if (input.notificationEmail && !input.notificationEmail.includes('@')) {
-    return { outcome: 'INVALID_INPUT', message: 'notificationEmail is not a valid email' };
+
+  // Both required at onboarding, per an explicit policy decision — the
+  // notification email is where every automated message (payment due,
+  // suspension, birthday, custom composer) actually goes, and the
+  // domain is what the super admin needs on hand to configure Railway
+  // resources afterward. Neither is optional here, even though the
+  // underlying database columns stay nullable (existing customers
+  // created before this policy, or ones edited later, aren't forced to
+  // backfill retroactively — this validation only applies going forward,
+  // at creation).
+  const notificationEmail = input.notificationEmail?.trim().toLowerCase();
+  if (!notificationEmail || !notificationEmail.includes('@')) {
+    return { outcome: 'INVALID_INPUT', message: 'A valid notificationEmail is required' };
+  }
+  const domainNameRequired = input.domainName?.trim().toLowerCase();
+  if (!domainNameRequired) {
+    return { outcome: 'INVALID_INPUT', message: 'domainName is required' };
   }
 
   const websiteTypeError = validateWebsiteType(input.websiteType);
@@ -132,7 +148,7 @@ export async function createCustomer(
   const customer = await deps.customers.create({
     name,
     email,
-    notificationEmail: input.notificationEmail?.toLowerCase().trim() || null,
+    notificationEmail,
     phone: input.phone ?? null,
     dateOfBirth: input.dateOfBirth || null,
     serviceStartDate: input.serviceStartDate || null,
@@ -156,24 +172,22 @@ export async function createCustomer(
 
   const result: CreateCustomerResult = { outcome: 'CREATED', message: 'Customer created', customer };
 
-  const domainName = input.domainName?.trim().toLowerCase();
-  if (domainName) {
-    const existingDomain = await deps.domains.findByDomainName(domainName);
-    if (existingDomain) {
-      result.domainOutcome = 'ALREADY_EXISTS';
-      result.domainMessage = 'This domain is already attached to a different customer — attach it manually from the Domains page once resolved.';
-    } else {
-      await deps.domains.create({ customerId: customer.id, domainName, isPrimary: true });
-      await deps.auditLog.create({
-        actor: requestingAdminId,
-        action: 'CUSTOMER_ONBOARDING_DOMAIN_ATTACHED',
-        target: customer.id,
-        metadata: { domainName },
-        result: 'SUCCESS',
-      });
-      result.domainOutcome = 'ATTACHED';
-      result.domainMessage = `${domainName} attached`;
-    }
+  const domainName = domainNameRequired;
+  const existingDomain = await deps.domains.findByDomainName(domainName);
+  if (existingDomain) {
+    result.domainOutcome = 'ALREADY_EXISTS';
+    result.domainMessage = 'This domain is already attached to a different customer — attach it manually from the Domains page once resolved.';
+  } else {
+    await deps.domains.create({ customerId: customer.id, domainName, isPrimary: true });
+    await deps.auditLog.create({
+      actor: requestingAdminId,
+      action: 'CUSTOMER_ONBOARDING_DOMAIN_ATTACHED',
+      target: customer.id,
+      metadata: { domainName },
+      result: 'SUCCESS',
+    });
+    result.domainOutcome = 'ATTACHED';
+    result.domainMessage = `${domainName} attached`;
   }
 
   return result;

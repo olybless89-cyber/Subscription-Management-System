@@ -95,6 +95,11 @@ function makeCustomerRepo(seed: CustomerRecord[]) {
     async findWithBirthday() {
       return [...byId.values()].filter((c) => c.dateOfBirth !== null);
     },
+    async updatePassword(id: string, passwordHash: string) {
+      const c = byId.get(id);
+      if (!c) throw new Error('not found');
+      c.passwordHash = passwordHash;
+    },
   };
   return { repo, byId };
 }
@@ -118,6 +123,12 @@ function makeAdminRepo(seed: AdminRecord[]) {
       const record: AdminRecord = { id: `admin_${byId.size + 1}`, ...input };
       byId.set(record.id, record);
       return record;
+    },
+    async updatePassword(id: string, passwordHash: string) {
+      const a = byId.get(id);
+      if (!a) throw new Error('not found');
+      a.passwordHash = passwordHash;
+      a.passwordChangedAt = new Date().toISOString();
     },
   };
   return { repo, byId };

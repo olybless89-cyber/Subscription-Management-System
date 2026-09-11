@@ -150,6 +150,11 @@ export interface CustomerRepository {
    * cron. The worker itself matches month/day against `now`; this just
    * narrows to customers where there's anything to check. */
   findWithBirthday(): Promise<CustomerRecord[]>;
+  /** Admin-triggered "forgot password" reset — sets a new password the
+   * admin has chosen/typed for the customer. No email verification loop
+   * here (no reset-link flow exists yet — see README); this is the
+   * "customer calls/messages support, support resets it" pattern. */
+  updatePassword(id: string, passwordHash: string): Promise<void>;
 }
 
 export interface AdminRepository {
@@ -169,6 +174,11 @@ export interface AdminRepository {
     role: 'SUPER_ADMIN' | 'ADMIN';
     canManageAdmins: boolean;
   }): Promise<AdminRecord>;
+  /** Updates password + passwordChangedAt together — used by both
+   * self-service change and a SUPER_ADMIN's reset-on-behalf-of. Callers
+   * (src/lib/admin/password.ts) are what distinguish "who did this and
+   * were they allowed to" — this method just performs the write. */
+  updatePassword(id: string, passwordHash: string): Promise<void>;
 }
 
 /** spec extension: which customers a given (non-super) admin is scoped

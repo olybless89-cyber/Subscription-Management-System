@@ -76,6 +76,7 @@ describe('authenticateAdmin', () => {
       name: 'Test Admin',
       email: 'jeffrey@digitalweboracleict.com',
       passwordHash: await hashPassword('correct-password'),
+      passwordChangedAt: null,
       role: 'SUPER_ADMIN',
       canManageAdmins: true,
       ...overrides,

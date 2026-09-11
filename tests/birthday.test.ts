@@ -9,6 +9,7 @@ function admin(): AdminRecord {
     name: 'Test Admin',
     email: 'admin@dwo.example',
     passwordHash: 'x',
+    passwordChangedAt: null,
     role: 'ADMIN',
     canManageAdmins: false,
   };

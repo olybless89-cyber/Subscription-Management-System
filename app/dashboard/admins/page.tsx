@@ -10,6 +10,11 @@ interface Admin {
   email: string;
   role: 'SUPER_ADMIN' | 'ADMIN';
   canManageAdmins: boolean;
+  passwordChangedAt: string | null;
+}
+
+function formatPasswordChanged(iso: string | null): string {
+  return iso ? new Date(iso).toLocaleString() : 'Never (still original)';
 }
 
 export default function AdminsPage() {
@@ -25,6 +30,12 @@ export default function AdminsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formNotice, setFormNotice] = useState<string | null>(null);
+
+  const [resettingId, setResettingId] = useState<string | null>(null);
+  const [resetPasswordValue, setResetPasswordValue] = useState('');
+  const [resetSubmitting, setResetSubmitting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetNotice, setResetNotice] = useState<string | null>(null);
 
   const isSuperAdmin = session?.role === 'SUPER_ADMIN';
 
@@ -79,6 +90,37 @@ export default function AdminsPage() {
     }
   }
 
+  function startReset(adminId: string) {
+    setResettingId(adminId);
+    setResetPasswordValue('');
+    setResetError(null);
+    setResetNotice(null);
+  }
+
+  async function submitReset(adminId: string) {
+    if (!session) return;
+    setResetError(null);
+    setResetNotice(null);
+    if (resetPasswordValue.length < 12) {
+      setResetError('New password must be at least 12 characters');
+      return;
+    }
+    setResetSubmitting(true);
+    try {
+      await authFetch(session.token, `/api/admin/admins/${adminId}/reset-password`, {
+        method: 'POST',
+        body: JSON.stringify({ newPassword: resetPasswordValue }),
+      });
+      setResetNotice('Password reset');
+      setResettingId(null);
+      await load();
+    } catch (err) {
+      setResetError(err instanceof ApiError ? err.message : 'Failed to reset password');
+    } finally {
+      setResetSubmitting(false);
+    }
+  }
+
   return (
     <div>
       <h1 style={{ fontSize: '1.5em', fontWeight: 700, marginBottom: '1em' }}>Admins</h1>
@@ -97,6 +139,7 @@ export default function AdminsPage() {
                   <th>Email</th>
                   <th>Role</th>
                   <th>Can manage admins</th>
+                  {isSuperAdmin && <th>Password changed</th>}
                   <th></th>
                 </tr>
               </thead>
@@ -107,7 +150,12 @@ export default function AdminsPage() {
                     <td>{a.email}</td>
                     <td className="mono">{a.role}</td>
                     <td>{a.canManageAdmins ? 'Yes' : ''}</td>
-                    <td>
+                    {isSuperAdmin && (
+                      <td style={{ fontSize: '0.88em', color: 'var(--ink-soft)' }}>
+                        {formatPasswordChanged(a.passwordChangedAt)}
+                      </td>
+                    )}
+                    <td style={{ display: 'flex', gap: '1em', alignItems: 'center' }}>
                       {a.role !== 'SUPER_ADMIN' && (
                         <a
                           href={`/dashboard/admins/${a.id}/assignments`}
@@ -116,11 +164,51 @@ export default function AdminsPage() {
                           Manage customers
                         </a>
                       )}
+                      {isSuperAdmin && a.email !== session?.email && (
+                        <button
+                          className="btn"
+                          style={{ padding: '0.3em 0.7em', fontSize: '0.85em' }}
+                          onClick={() => startReset(a.id)}
+                        >
+                          Reset password
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
+          )}
+
+          {resettingId && (
+            <div className="card" style={{ marginTop: '1em', background: 'var(--paper)' }}>
+              <h3 style={{ fontSize: '0.95em', fontWeight: 600, marginTop: 0, marginBottom: '0.8em' }}>
+                Set a new password for {admins?.find((a) => a.id === resettingId)?.email}
+              </h3>
+              <div className="field">
+                <label htmlFor="reset-password-value">New password</label>
+                <input
+                  id="reset-password-value"
+                  type="password"
+                  minLength={12}
+                  value={resetPasswordValue}
+                  onChange={(e) => setResetPasswordValue(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              {resetError && <p className="error-text">{resetError}</p>}
+              {resetNotice && <p style={{ color: 'var(--forest-bright)', fontSize: '0.9em' }}>{resetNotice}</p>}
+              <div style={{ display: 'flex', gap: '0.6em' }}>
+                <button
+                  className="btn btn-primary"
+                  disabled={resetSubmitting}
+                  onClick={() => submitReset(resettingId)}
+                >
+                  {resetSubmitting ? 'Resetting…' : 'Reset password'}
+                </button>
+                <button className="btn" onClick={() => setResettingId(null)}>Cancel</button>
+              </div>
             </div>
           )}
         </div>

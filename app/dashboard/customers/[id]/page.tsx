@@ -66,6 +66,11 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [emailError, setEmailError] = useState<string | null>(null);
   const [emailNotice, setEmailNotice] = useState<string | null>(null);
 
+  const [resetPasswordValue, setResetPasswordValue] = useState('');
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetNotice, setResetNotice] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     if (!session) return;
     try {
@@ -137,6 +142,30 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       setEmailError(err instanceof ApiError ? err.message : 'Failed to send');
     } finally {
       setSendingEmail(false);
+    }
+  }
+
+  async function handleResetPassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!session) return;
+    setResetError(null);
+    setResetNotice(null);
+    if (resetPasswordValue.length < 12) {
+      setResetError('New password must be at least 12 characters');
+      return;
+    }
+    setResettingPassword(true);
+    try {
+      await authFetch(session.token, `/api/admin/customers/${params.id}/reset-password`, {
+        method: 'POST',
+        body: JSON.stringify({ newPassword: resetPasswordValue }),
+      });
+      setResetNotice('Password reset — pass the new password to the customer through a channel you trust.');
+      setResetPasswordValue('');
+    } catch (err) {
+      setResetError(err instanceof ApiError ? err.message : 'Failed to reset password');
+    } finally {
+      setResettingPassword(false);
     }
   }
 
@@ -265,6 +294,31 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             </button>
           </form>
         </div>
+      </div>
+
+      <div className="card" style={{ marginTop: '1.5em', maxWidth: 480 }}>
+        <h2 style={{ fontSize: '1.05em', fontWeight: 600, marginTop: 0, marginBottom: '0.6em' }}>Reset password</h2>
+        <p style={{ fontSize: '0.85em', color: 'var(--ink-soft)', marginTop: 0 }}>
+          For a forgotten password — sets a new one directly. There's no reset-link/email flow;
+          you'll need to tell the customer their new password yourself.
+        </p>
+        <form onSubmit={handleResetPassword}>
+          <div className="field">
+            <label htmlFor="reset-password">New password</label>
+            <input
+              id="reset-password"
+              type="password"
+              minLength={12}
+              value={resetPasswordValue}
+              onChange={(e) => setResetPasswordValue(e.target.value)}
+            />
+          </div>
+          {resetError && <p className="error-text">{resetError}</p>}
+          {resetNotice && <p style={{ color: 'var(--forest-bright)', fontSize: '0.9em' }}>{resetNotice}</p>}
+          <button type="submit" className="btn" disabled={resettingPassword}>
+            {resettingPassword ? 'Resetting…' : 'Reset password'}
+          </button>
+        </form>
       </div>
     </div>
   );

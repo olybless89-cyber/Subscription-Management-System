@@ -179,13 +179,14 @@ export default function CustomersPage() {
               <input id="cust-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
             <div className="field">
-              <label htmlFor="notification-email">Notification email (optional)</label>
+              <label htmlFor="notification-email">Notification email</label>
               <input
                 id="notification-email"
                 type="email"
+                required
                 value={notificationEmail}
                 onChange={(e) => setNotificationEmail(e.target.value)}
-                placeholder="Defaults to login email if blank"
+                placeholder="Where this customer's emails actually go"
               />
             </div>
             <div className="field">
@@ -201,9 +202,10 @@ export default function CustomersPage() {
               </select>
             </div>
             <div className="field">
-              <label htmlFor="domain-name">Domain name (optional)</label>
+              <label htmlFor="domain-name">Domain name</label>
               <input
                 id="domain-name"
+                required
                 value={domainName}
                 onChange={(e) => setDomainName(e.target.value)}
                 placeholder="example.com"

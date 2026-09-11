@@ -20,6 +20,7 @@ import {
   PlanRecord,
   PaymentRecord,
   DomainRecord,
+  AdminRecord,
 } from '@/types/domain';
 import { sendEmail, subjectForEvent, renderBrandedEmailHtml } from '../notifications/email';
 
@@ -240,6 +241,10 @@ export class PrismaCustomerRepository implements CustomerRepository {
     await this.prisma.customer.update({ where: { id }, data: { status } });
   }
 
+  async updatePassword(id: string, passwordHash: string): Promise<void> {
+    await this.prisma.customer.update({ where: { id }, data: { passwordHash } });
+  }
+
   async create(input: {
     name: string;
     email: string;
@@ -329,54 +334,36 @@ export class PrismaCustomerRepository implements CustomerRepository {
 export class PrismaAdminRepository implements AdminRepository {
   constructor(private prisma: PrismaClient) {}
 
-  async findById(id: string) {
-    const a = await this.prisma.adminUser.findUnique({ where: { id } });
-    if (!a) return null;
+  private map(a: any): AdminRecord { // eslint-disable-line @typescript-eslint/no-explicit-any
     return {
       id: a.id,
       name: a.name,
       email: a.email,
       passwordHash: a.passwordHash,
+      passwordChangedAt: a.passwordChangedAt ? a.passwordChangedAt.toISOString() : null,
       role: a.role,
       canManageAdmins: a.canManageAdmins,
     };
+  }
+
+  async findById(id: string) {
+    const a = await this.prisma.adminUser.findUnique({ where: { id } });
+    return a ? this.map(a) : null;
   }
 
   async findByEmail(email: string) {
     const a = await this.prisma.adminUser.findUnique({ where: { email } });
-    if (!a) return null;
-    return {
-      id: a.id,
-      name: a.name,
-      email: a.email,
-      passwordHash: a.passwordHash,
-      role: a.role,
-      canManageAdmins: a.canManageAdmins,
-    };
+    return a ? this.map(a) : null;
   }
 
   async listSuperAdmins() {
     const rows = await this.prisma.adminUser.findMany({ where: { role: 'SUPER_ADMIN' } });
-    return rows.map((a: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-      id: a.id,
-      name: a.name,
-      email: a.email,
-      passwordHash: a.passwordHash,
-      role: a.role,
-      canManageAdmins: a.canManageAdmins,
-    }));
+    return rows.map((a: any) => this.map(a)); // eslint-disable-line @typescript-eslint/no-explicit-any
   }
 
   async listAll() {
     const rows = await this.prisma.adminUser.findMany({ orderBy: { createdAt: 'asc' } });
-    return rows.map((a: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-      id: a.id,
-      name: a.name,
-      email: a.email,
-      passwordHash: a.passwordHash,
-      role: a.role,
-      canManageAdmins: a.canManageAdmins,
-    }));
+    return rows.map((a: any) => this.map(a)); // eslint-disable-line @typescript-eslint/no-explicit-any
   }
 
   async create(input: {
@@ -395,14 +382,14 @@ export class PrismaAdminRepository implements AdminRepository {
         canManageAdmins: input.canManageAdmins,
       },
     });
-    return {
-      id: a.id,
-      name: a.name,
-      email: a.email,
-      passwordHash: a.passwordHash,
-      role: a.role,
-      canManageAdmins: a.canManageAdmins,
-    };
+    return this.map(a);
+  }
+
+  async updatePassword(id: string, passwordHash: string): Promise<void> {
+    await this.prisma.adminUser.update({
+      where: { id },
+      data: { passwordHash, passwordChangedAt: new Date() },
+    });
   }
 }
 

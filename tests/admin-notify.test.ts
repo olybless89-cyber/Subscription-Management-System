@@ -28,6 +28,7 @@ function admin(overrides: Partial<AdminRecord>): AdminRecord {
     name: 'Test Admin',
     email: 'a@dwo.example',
     passwordHash: 'x',
+    passwordChangedAt: null,
     role: 'ADMIN',
     canManageAdmins: false,
     ...overrides,

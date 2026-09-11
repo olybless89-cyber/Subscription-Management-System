@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: '/dashboard/subscriptions', label: 'Subscriptions' },
   { href: '/dashboard/domains', label: 'Domains' },
   { href: '/dashboard/admins', label: 'Admins' },
+  { href: '/dashboard/settings', label: 'Settings' },
 ];
 
 const SUPER_ADMIN_ONLY_NAV_ITEMS = [{ href: '/dashboard/activity', label: 'Activity' }];
