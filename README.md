@@ -192,6 +192,30 @@ before it can even be saved if someone tries to pair `MULTI_TENANT` with
   into `/login`. Static, no client-side state, matches the same design
   tokens as the dashboard (forest green / paper / clay accent).
 
+## Open Graph image (link previews on WhatsApp, etc.)
+
+- **`public/og-image.png`** — a static 1200×630 branded image (Pillow-
+  generated, not a Next.js dynamic `ImageResponse` route — deliberate
+  choice: a static file is something I could actually open and look at
+  in this sandbox to confirm it renders correctly, where a dynamic
+  render pipeline would have been unverified guesswork).
+- **`app/layout.tsx`** now sets `metadataBase` from `APP_URL`, plus real
+  `openGraph`/`twitter` metadata blocks pointing at that image.
+  `metadataBase` matters more than it looks: without it, Next emits a
+  *relative* `og:image` URL, which renders fine when Next.js itself
+  shows a preview but silently fails for WhatsApp/Twitter/etc.'s link
+  crawlers — they fetch your raw HTML from outside your server and can't
+  resolve a relative path.
+- **Verified, not assumed**: built the app with the real `APP_URL`,
+  actually started the production server in this sandbox, and confirmed
+  by curl that `og:image` resolves to the correct absolute URL
+  (`https://.../og-image.png`) and that the file itself serves as a real
+  200 OK 1200×630 PNG — not just "the code looks right."
+- **Requires `APP_URL` to be set correctly in Railway** (same variable
+  already used for the email logo) — if it's missing, `metadataBase`
+  falls back to `http://localhost:3000`, which would produce a broken,
+  unreachable image URL in production.
+
 ## Mobile responsiveness + homepage redesign
 
 - **Dashboard**: the sidebar is now off-canvas on screens ≤860px — a
