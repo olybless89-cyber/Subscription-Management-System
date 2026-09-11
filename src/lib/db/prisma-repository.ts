@@ -202,6 +202,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
       dateOfBirth: c.dateOfBirth ? c.dateOfBirth.toISOString() : null,
       serviceStartDate: c.serviceStartDate ? c.serviceStartDate.toISOString() : null,
       serviceEndDate: c.serviceEndDate ? c.serviceEndDate.toISOString() : null,
+      websiteType: c.websiteType,
       passwordHash: c.passwordHash,
       status: c.status,
       automaticSuspension: c.automaticSuspension,
@@ -247,6 +248,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
     dateOfBirth?: string | null;
     serviceStartDate?: string | null;
     serviceEndDate?: string | null;
+    websiteType?: CustomerRecord['websiteType'];
     paymentProvider: CustomerRecord['paymentProvider'];
     automaticSuspension: boolean;
   }): Promise<CustomerRecord> {
@@ -261,6 +263,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
         dateOfBirth: input.dateOfBirth ? new Date(input.dateOfBirth) : undefined,
         serviceStartDate: input.serviceStartDate ? new Date(input.serviceStartDate) : undefined,
         serviceEndDate: input.serviceEndDate ? new Date(input.serviceEndDate) : undefined,
+        websiteType: (input.websiteType ?? undefined) as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         paymentProvider: input.paymentProvider as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         automaticSuspension: input.automaticSuspension,
       },
@@ -277,6 +280,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
       dateOfBirth?: string | null;
       serviceStartDate?: string | null;
       serviceEndDate?: string | null;
+      websiteType?: CustomerRecord['websiteType'];
       paymentProvider?: CustomerRecord['paymentProvider'];
       automaticSuspension?: boolean;
     }
@@ -296,6 +300,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
         ...(patch.serviceEndDate !== undefined
           ? { serviceEndDate: patch.serviceEndDate ? new Date(patch.serviceEndDate) : null }
           : {}),
+        ...(patch.websiteType !== undefined ? { websiteType: patch.websiteType as any } : {}), // eslint-disable-line @typescript-eslint/no-explicit-any
         ...(patch.paymentProvider !== undefined ? { paymentProvider: patch.paymentProvider as any } : {}), // eslint-disable-line @typescript-eslint/no-explicit-any
         ...(patch.automaticSuspension !== undefined ? { automaticSuspension: patch.automaticSuspension } : {}),
       },

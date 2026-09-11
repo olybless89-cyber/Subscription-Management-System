@@ -39,6 +39,7 @@ function customer(overrides: Partial<CustomerRecord> = {}): CustomerRecord {
     dateOfBirth: null,
     serviceStartDate: null,
     serviceEndDate: null,
+    websiteType: null,
     passwordHash: null,
     status: 'ACTIVE',
     automaticSuspension: true,
@@ -90,6 +91,7 @@ describe('createCustomer', () => {
           dateOfBirth: null,
           serviceStartDate: null,
           serviceEndDate: null,
+          websiteType: null,
           passwordHash: null,
           status: 'ACTIVE',
           automaticSuspension: true,
@@ -203,6 +205,72 @@ describe('createCustomer', () => {
     });
 
     expect(result.outcome).toBe('INVALID_INPUT');
+  });
+
+  it('accepts a valid websiteType', async () => {
+    const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [] });
+
+    const result = await createCustomer(deps, 'super_1', {
+      name: 'Bank Co',
+      email: 'bank@example.com',
+      websiteType: 'ONLINE_BANKING',
+    });
+
+    expect(result.outcome).toBe('CREATED');
+    expect(result.customer?.websiteType).toBe('ONLINE_BANKING');
+  });
+
+  it('rejects an invalid websiteType rather than passing it through to the DB', async () => {
+    const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [] });
+
+    const result = await createCustomer(deps, 'super_1', {
+      name: 'X',
+      email: 'x@example.com',
+      // @ts-expect-error deliberately invalid for this test
+      websiteType: 'CRYPTO_CASINO',
+    });
+
+    expect(result.outcome).toBe('INVALID_INPUT');
+  });
+
+  it('attaches the domain given at onboarding in the same call', async () => {
+    const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [] });
+
+    const result = await createCustomer(deps, 'super_1', {
+      name: 'Chihap',
+      email: 'chihap@example.com',
+      domainName: 'chihap.com',
+    });
+
+    expect(result.outcome).toBe('CREATED');
+    expect(result.domainOutcome).toBe('ATTACHED');
+    const domains = [...deps.domainStore.values()];
+    expect(domains.some((d) => d.domainName === 'chihap.com' && d.customerId === result.customer!.id)).toBe(true);
+  });
+
+  it('still creates the customer even if the onboarding domain is already taken elsewhere', async () => {
+    const deps = makeFakeAdminManagementDeps({
+      admins: [superAdmin()],
+      customers: [],
+      domains: [{ id: 'dom_1', customerId: 'some_other_customer', domainName: 'taken.com', isPrimary: true, railwayStatus: null, createdAt: '2026-01-01T00:00:00.000Z' }],
+    });
+
+    const result = await createCustomer(deps, 'super_1', {
+      name: 'New Customer',
+      email: 'new@example.com',
+      domainName: 'taken.com',
+    });
+
+    expect(result.outcome).toBe('CREATED'); // customer creation itself never fails for this
+    expect(result.domainOutcome).toBe('ALREADY_EXISTS');
+  });
+
+  it('creates no domain outcome at all when domainName is omitted', async () => {
+    const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [] });
+
+    const result = await createCustomer(deps, 'super_1', { name: 'No Domain', email: 'nodomain@example.com' });
+
+    expect(result.domainOutcome).toBeUndefined();
   });
 });
 

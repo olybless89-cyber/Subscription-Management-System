@@ -17,7 +17,17 @@ export async function GET(request: Request): Promise<Response> {
   const scopeDeps = buildWebhookDeps();
   const visible = await listVisibleCustomerIds(auth.session, scopeDeps.adminAssignments);
   const all = await deps.domains.listAll();
-  const domains = visible === 'ALL' ? all : all.filter((d) => visible.includes(d.customerId));
+  let domains = visible === 'ALL' ? all : all.filter((d) => visible.includes(d.customerId));
+
+  // Optional convenience filter — e.g. the customer/subscription detail
+  // pages use this to show just that customer's domain(s) inline,
+  // without a separate route. Still respects the scoping above: a plain
+  // admin can't use this to peek at a customer they can't otherwise see.
+  const url = new URL(request.url);
+  const customerId = url.searchParams.get('customerId');
+  if (customerId) {
+    domains = domains.filter((d) => d.customerId === customerId);
+  }
 
   return json(200, { domains });
 }

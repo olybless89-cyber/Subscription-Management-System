@@ -133,6 +133,7 @@ describe('authenticateCustomer', () => {
       dateOfBirth: null,
       serviceStartDate: null,
       serviceEndDate: null,
+      websiteType: null,
       passwordHash: await hashPassword('client-password'),
       status: 'ACTIVE',
       automaticSuspension: true,

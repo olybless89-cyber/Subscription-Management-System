@@ -14,10 +14,30 @@ interface Customer {
   dateOfBirth: string | null;
   serviceStartDate: string | null;
   serviceEndDate: string | null;
+  websiteType: string | null;
   status: string;
   automaticSuspension: boolean;
   paymentProvider: 'PAYSTACK' | 'FLUTTERWAVE';
 }
+
+interface Domain {
+  id: string;
+  domainName: string;
+  isPrimary: boolean;
+  railwayStatus: string | null;
+}
+
+const WEBSITE_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: '', label: 'Not specified' },
+  { value: 'ONLINE_BANKING', label: 'Online banking' },
+  { value: 'INVESTMENT', label: 'Investment / business investment' },
+  { value: 'ECOMMERCE', label: 'E-commerce' },
+  { value: 'DELIVERY', label: 'Delivery' },
+  { value: 'SAAS', label: 'SaaS product' },
+  { value: 'WEB_APP', label: 'Web app' },
+  { value: 'CORPORATE', label: 'Corporate / brochure site' },
+  { value: 'OTHER', label: 'Other' },
+];
 
 function toDateInputValue(iso: string | null): string {
   return iso ? iso.slice(0, 10) : '';
@@ -26,6 +46,7 @@ function toDateInputValue(iso: string | null): string {
 export default function CustomerDetailPage({ params }: { params: { id: string } }) {
   const { session } = useAuth();
   const [customer, setCustomer] = useState<Customer | null>(null);
+  const [domains, setDomains] = useState<Domain[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [name, setName] = useState('');
@@ -34,6 +55,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [serviceStartDate, setServiceStartDate] = useState('');
   const [serviceEndDate, setServiceEndDate] = useState('');
+  const [websiteType, setWebsiteType] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
@@ -47,14 +69,19 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const load = useCallback(async () => {
     if (!session) return;
     try {
-      const data = await authFetch<{ customer: Customer }>(session.token, `/api/admin/customers/${params.id}`);
-      setCustomer(data.customer);
-      setName(data.customer.name);
-      setNotificationEmail(data.customer.notificationEmail ?? '');
-      setPhone(data.customer.phone ?? '');
-      setDateOfBirth(toDateInputValue(data.customer.dateOfBirth));
-      setServiceStartDate(toDateInputValue(data.customer.serviceStartDate));
-      setServiceEndDate(toDateInputValue(data.customer.serviceEndDate));
+      const [custData, domainData] = await Promise.all([
+        authFetch<{ customer: Customer }>(session.token, `/api/admin/customers/${params.id}`),
+        authFetch<{ domains: Domain[] }>(session.token, `/api/admin/domains?customerId=${params.id}`),
+      ]);
+      setCustomer(custData.customer);
+      setName(custData.customer.name);
+      setNotificationEmail(custData.customer.notificationEmail ?? '');
+      setPhone(custData.customer.phone ?? '');
+      setDateOfBirth(toDateInputValue(custData.customer.dateOfBirth));
+      setServiceStartDate(toDateInputValue(custData.customer.serviceStartDate));
+      setServiceEndDate(toDateInputValue(custData.customer.serviceEndDate));
+      setWebsiteType(custData.customer.websiteType ?? '');
+      setDomains(domainData.domains);
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : 'Failed to load customer');
     }
@@ -80,6 +107,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
           dateOfBirth: dateOfBirth || null,
           serviceStartDate: serviceStartDate || null,
           serviceEndDate: serviceEndDate || null,
+          websiteType: websiteType || null,
         }),
       });
       setSaveNotice('Saved');
@@ -122,6 +150,36 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         {customer.customerCode} — {customer.status}
       </p>
 
+      <div className="card" style={{ marginTop: '1em' }}>
+        <h2 style={{ fontSize: '1.05em', fontWeight: 600, marginTop: 0, marginBottom: '0.6em' }}>Domains</h2>
+        {domains.length === 0 ? (
+          <p style={{ color: 'var(--ink-soft)', fontSize: '0.9em', margin: 0 }}>
+            No domain attached yet. Attach one from the{' '}
+            <a href="/dashboard/domains" style={{ color: 'var(--forest-bright)' }}>Domains page</a> —
+            the super admin will need it to configure this customer on Railway.
+          </p>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Domain</th>
+                <th>Primary</th>
+                <th>Railway status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {domains.map((d) => (
+                <tr key={d.id}>
+                  <td className="mono">{d.domainName}</td>
+                  <td>{d.isPrimary ? 'Yes' : ''}</td>
+                  <td className="mono">{d.railwayStatus ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2em', alignItems: 'start', marginTop: '1.5em' }}>
         <div className="card">
           <h2 style={{ fontSize: '1.05em', fontWeight: 600, marginTop: 0, marginBottom: '1em' }}>Edit details</h2>
@@ -143,6 +201,14 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             <div className="field">
               <label htmlFor="edit-phone">Phone</label>
               <input id="edit-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="edit-website-type">Website type</label>
+              <select id="edit-website-type" value={websiteType} onChange={(e) => setWebsiteType(e.target.value)}>
+                {WEBSITE_TYPE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
             </div>
             <div className="field">
               <label htmlFor="edit-dob">Birthday</label>

@@ -34,6 +34,16 @@ export type AdminRole = 'SUPER_ADMIN' | 'ADMIN';
 
 export type PaymentProviderName = 'PAYSTACK' | 'FLUTTERWAVE';
 
+export type WebsiteType =
+  | 'ONLINE_BANKING'
+  | 'INVESTMENT'
+  | 'ECOMMERCE'
+  | 'DELIVERY'
+  | 'SAAS'
+  | 'WEB_APP'
+  | 'CORPORATE'
+  | 'OTHER';
+
 export interface CustomerRecord {
   id: string;
   customerCode: string;
@@ -44,6 +54,7 @@ export interface CustomerRecord {
   dateOfBirth: string | null;
   serviceStartDate: string | null;
   serviceEndDate: string | null;
+  websiteType: WebsiteType | null;
   passwordHash: string | null;
   status: CustomerStatus;
   automaticSuspension: boolean;

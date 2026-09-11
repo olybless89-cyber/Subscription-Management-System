@@ -14,6 +14,7 @@ import {
   PaymentProviderName,
   DomainRecord,
   AuditLogRecord,
+  WebsiteType,
 } from '@/types/domain';
 
 /**
@@ -123,6 +124,7 @@ export interface CustomerRepository {
     dateOfBirth?: string | null;
     serviceStartDate?: string | null;
     serviceEndDate?: string | null;
+    websiteType?: WebsiteType | null;
     paymentProvider: PaymentProviderName;
     automaticSuspension: boolean;
   }): Promise<CustomerRecord>;
@@ -139,6 +141,7 @@ export interface CustomerRepository {
       dateOfBirth?: string | null;
       serviceStartDate?: string | null;
       serviceEndDate?: string | null;
+      websiteType?: WebsiteType | null;
       paymentProvider?: PaymentProviderName;
       automaticSuspension?: boolean;
     }
@@ -299,6 +302,7 @@ export interface AdminManagementDeps {
   admins: AdminRepository;
   customers: CustomerRepository;
   adminAssignments: AdminAssignmentRepository;
+  domains: DomainRepository;
   auditLog: AuditLogRepository;
 }
 

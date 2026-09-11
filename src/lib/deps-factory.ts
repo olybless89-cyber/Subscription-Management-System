@@ -64,6 +64,7 @@ export function buildAdminManagementDeps(): AdminManagementDeps {
     admins: new PrismaAdminRepository(client),
     customers: new PrismaCustomerRepository(client),
     adminAssignments: new PrismaAdminAssignmentRepository(client),
+    domains: new PrismaDomainRepository(client),
     auditLog: new PrismaAuditLogRepository(client),
   };
 }

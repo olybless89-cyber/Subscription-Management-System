@@ -9,9 +9,26 @@ interface Customer {
   customerCode: string;
   name: string;
   email: string;
+  websiteType: string | null;
   status: string;
   automaticSuspension: boolean;
   paymentProvider: 'PAYSTACK' | 'FLUTTERWAVE';
+}
+
+const WEBSITE_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: '', label: 'Not specified' },
+  { value: 'ONLINE_BANKING', label: 'Online banking' },
+  { value: 'INVESTMENT', label: 'Investment / business investment' },
+  { value: 'ECOMMERCE', label: 'E-commerce' },
+  { value: 'DELIVERY', label: 'Delivery' },
+  { value: 'SAAS', label: 'SaaS product' },
+  { value: 'WEB_APP', label: 'Web app' },
+  { value: 'CORPORATE', label: 'Corporate / brochure site' },
+  { value: 'OTHER', label: 'Other' },
+];
+
+function websiteTypeLabel(value: string | null): string {
+  return WEBSITE_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? '—';
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -33,6 +50,8 @@ export default function CustomersPage() {
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [serviceStartDate, setServiceStartDate] = useState('');
   const [serviceEndDate, setServiceEndDate] = useState('');
+  const [websiteType, setWebsiteType] = useState('');
+  const [domainName, setDomainName] = useState('');
   const [paymentProvider, setPaymentProvider] = useState<'PAYSTACK' | 'FLUTTERWAVE'>('PAYSTACK');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -59,24 +78,28 @@ export default function CustomersPage() {
     setFormNotice(null);
     setSubmitting(true);
     try {
-      const result = await authFetch<{ outcome: string; customer?: Customer }>(
-        session.token,
-        '/api/admin/customers',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            name,
-            email,
-            notificationEmail: notificationEmail || undefined,
-            phone: phone || undefined,
-            dateOfBirth: dateOfBirth || undefined,
-            serviceStartDate: serviceStartDate || undefined,
-            serviceEndDate: serviceEndDate || undefined,
-            paymentProvider,
-          }),
-        }
-      );
-      setFormNotice(`Created ${result.customer?.customerCode}`);
+      const result = await authFetch<{
+        outcome: string;
+        customer?: Customer;
+        domainOutcome?: string;
+        domainMessage?: string;
+      }>(session.token, '/api/admin/customers', {
+        method: 'POST',
+        body: JSON.stringify({
+          name,
+          email,
+          notificationEmail: notificationEmail || undefined,
+          phone: phone || undefined,
+          dateOfBirth: dateOfBirth || undefined,
+          serviceStartDate: serviceStartDate || undefined,
+          serviceEndDate: serviceEndDate || undefined,
+          websiteType: websiteType || undefined,
+          domainName: domainName || undefined,
+          paymentProvider,
+        }),
+      });
+      const domainNote = result.domainOutcome ? ` — ${result.domainMessage}` : '';
+      setFormNotice(`Created ${result.customer?.customerCode}${domainNote}`);
       setName('');
       setEmail('');
       setNotificationEmail('');
@@ -84,6 +107,8 @@ export default function CustomersPage() {
       setDateOfBirth('');
       setServiceStartDate('');
       setServiceEndDate('');
+      setWebsiteType('');
+      setDomainName('');
       setPaymentProvider('PAYSTACK');
       await load();
     } catch (err) {
@@ -110,7 +135,7 @@ export default function CustomersPage() {
                 <tr>
                   <th>Code</th>
                   <th>Name</th>
-                  <th>Email</th>
+                  <th>Type</th>
                   <th>Status</th>
                   <th>Provider</th>
                 </tr>
@@ -124,7 +149,7 @@ export default function CustomersPage() {
                       </a>
                     </td>
                     <td>{c.name}</td>
-                    <td>{c.email}</td>
+                    <td style={{ fontSize: '0.9em', color: 'var(--ink-soft)' }}>{websiteTypeLabel(c.websiteType)}</td>
                     <td>
                       <span
                         className="status-dot"
@@ -164,6 +189,26 @@ export default function CustomersPage() {
             <div className="field">
               <label htmlFor="phone">Phone (optional)</label>
               <input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="website-type">Website type (optional)</label>
+              <select id="website-type" value={websiteType} onChange={(e) => setWebsiteType(e.target.value)}>
+                {WEBSITE_TYPE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="domain-name">Domain name (optional)</label>
+              <input
+                id="domain-name"
+                value={domainName}
+                onChange={(e) => setDomainName(e.target.value)}
+                placeholder="example.com"
+              />
+              <p style={{ fontSize: '0.78em', color: 'var(--ink-soft)', margin: '0.3em 0 0' }}>
+                Used by the super admin to configure this customer on Railway later.
+              </p>
             </div>
             <div className="field">
               <label htmlFor="dob">Birthday (optional)</label>

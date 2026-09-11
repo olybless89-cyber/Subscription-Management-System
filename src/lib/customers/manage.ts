@@ -1,5 +1,24 @@
 import { AdminManagementDeps } from '../db/ports';
-import { CustomerRecord, PaymentProviderName } from '@/types/domain';
+import { CustomerRecord, PaymentProviderName, WebsiteType } from '@/types/domain';
+
+const VALID_WEBSITE_TYPES: readonly WebsiteType[] = [
+  'ONLINE_BANKING',
+  'INVESTMENT',
+  'ECOMMERCE',
+  'DELIVERY',
+  'SAAS',
+  'WEB_APP',
+  'CORPORATE',
+  'OTHER',
+];
+
+function validateWebsiteType(value: WebsiteType | null | undefined): string | null {
+  if (value === undefined || value === null) return null;
+  if (!VALID_WEBSITE_TYPES.includes(value)) {
+    return `websiteType must be one of: ${VALID_WEBSITE_TYPES.join(', ')}`;
+  }
+  return null;
+}
 
 export interface CreateCustomerInput {
   name: string;
@@ -9,6 +28,16 @@ export interface CreateCustomerInput {
   dateOfBirth?: string | null;
   serviceStartDate?: string | null;
   serviceEndDate?: string | null;
+  websiteType?: WebsiteType | null;
+  /** Captured at onboarding, per an explicit request — the domain the
+   * super admin will later use to configure this customer on Railway.
+   * Composed here as a best-effort second step after the customer is
+   * created (see domainOutcome below), rather than folded into the
+   * Customer row itself: domains stay in their own table (Domain model)
+   * with the global-uniqueness guarantee `createDomain`-equivalent logic
+   * already enforces elsewhere, so onboarding doesn't get a second,
+   * inconsistent path for the same data. */
+  domainName?: string | null;
   paymentProvider?: PaymentProviderName;
   automaticSuspension?: boolean;
 }
@@ -19,6 +48,13 @@ export interface CreateCustomerResult {
   outcome: CreateCustomerOutcome;
   message: string;
   customer?: CustomerRecord;
+  /** Only present if `domainName` was provided. The customer is still
+   * CREATED even if the domain attachment failed (e.g. already claimed
+   * by a different customer) — a failed domain attach must never undo a
+   * successful customer creation, it's just reported back so the admin
+   * knows to sort it out via the Domains page. */
+  domainOutcome?: 'ATTACHED' | 'ALREADY_EXISTS' | 'FAILED';
+  domainMessage?: string;
 }
 
 /** Shared by createCustomer and updateCustomer — a date field is either
@@ -69,6 +105,9 @@ export async function createCustomer(
     return { outcome: 'INVALID_INPUT', message: 'notificationEmail is not a valid email' };
   }
 
+  const websiteTypeError = validateWebsiteType(input.websiteType);
+  if (websiteTypeError) return { outcome: 'INVALID_INPUT', message: websiteTypeError };
+
   for (const [value, fieldName] of [
     [input.dateOfBirth, 'dateOfBirth'],
     [input.serviceStartDate, 'serviceStartDate'],
@@ -98,6 +137,7 @@ export async function createCustomer(
     dateOfBirth: input.dateOfBirth || null,
     serviceStartDate: input.serviceStartDate || null,
     serviceEndDate: input.serviceEndDate || null,
+    websiteType: input.websiteType ?? null,
     paymentProvider: input.paymentProvider ?? 'PAYSTACK',
     automaticSuspension: input.automaticSuspension ?? true,
   });
@@ -114,7 +154,29 @@ export async function createCustomer(
     result: 'SUCCESS',
   });
 
-  return { outcome: 'CREATED', message: 'Customer created', customer };
+  const result: CreateCustomerResult = { outcome: 'CREATED', message: 'Customer created', customer };
+
+  const domainName = input.domainName?.trim().toLowerCase();
+  if (domainName) {
+    const existingDomain = await deps.domains.findByDomainName(domainName);
+    if (existingDomain) {
+      result.domainOutcome = 'ALREADY_EXISTS';
+      result.domainMessage = 'This domain is already attached to a different customer — attach it manually from the Domains page once resolved.';
+    } else {
+      await deps.domains.create({ customerId: customer.id, domainName, isPrimary: true });
+      await deps.auditLog.create({
+        actor: requestingAdminId,
+        action: 'CUSTOMER_ONBOARDING_DOMAIN_ATTACHED',
+        target: customer.id,
+        metadata: { domainName },
+        result: 'SUCCESS',
+      });
+      result.domainOutcome = 'ATTACHED';
+      result.domainMessage = `${domainName} attached`;
+    }
+  }
+
+  return result;
 }
 
 // ---------- updateCustomer ----------
@@ -126,6 +188,7 @@ export interface UpdateCustomerInput {
   dateOfBirth?: string | null;
   serviceStartDate?: string | null;
   serviceEndDate?: string | null;
+  websiteType?: WebsiteType | null;
   paymentProvider?: PaymentProviderName;
   automaticSuspension?: boolean;
 }
@@ -170,6 +233,9 @@ export async function updateCustomer(
   if (patch.notificationEmail && !patch.notificationEmail.includes('@')) {
     return { outcome: 'INVALID_INPUT', message: 'notificationEmail is not a valid email' };
   }
+
+  const websiteTypeError = validateWebsiteType(patch.websiteType);
+  if (websiteTypeError) return { outcome: 'INVALID_INPUT', message: websiteTypeError };
 
   for (const [value, fieldName] of [
     [patch.dateOfBirth, 'dateOfBirth'],

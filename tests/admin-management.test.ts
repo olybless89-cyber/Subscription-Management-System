@@ -38,6 +38,7 @@ function customer(overrides: Partial<CustomerRecord> = {}): CustomerRecord {
     dateOfBirth: null,
     serviceStartDate: null,
     serviceEndDate: null,
+    websiteType: null,
     passwordHash: null,
     status: 'ACTIVE',
     automaticSuspension: true,

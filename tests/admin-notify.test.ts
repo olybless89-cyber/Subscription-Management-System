@@ -14,6 +14,7 @@ function customer(id: string): CustomerRecord {
     dateOfBirth: null,
     serviceStartDate: null,
     serviceEndDate: null,
+    websiteType: null,
     passwordHash: null,
     status: 'ACTIVE',
     automaticSuspension: true,

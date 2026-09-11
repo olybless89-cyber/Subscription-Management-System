@@ -77,7 +77,7 @@ app/api/
   cron/railway-sync/route.ts             Railway sync (CRON_SECRET-protected)
   subscriptions/[id]/suspend/route.ts     Admin manual suspend — scoped to assignment
   subscriptions/[id]/restore/route.ts      Admin manual restore — scoped to assignment
-tests/                                174 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
+tests/                                179 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
 app/
   globals.css                          Design tokens (forest green/paper/clay — matches the spec's own branding request)
   layout.tsx                            Root layout, wraps everything in AuthProvider
@@ -191,6 +191,32 @@ before it can even be saved if someone tries to pair `MULTI_TENANT` with
   placeholder: hero with the logo, a features grid, and a closing CTA
   into `/login`. Static, no client-side state, matches the same design
   tokens as the dashboard (forest green / paper / clay accent).
+
+## Onboarding: website type and domain capture
+
+Two fields captured at customer creation, specifically so the super
+admin has what they need on hand when allocating Railway resources
+afterward:
+
+- **`websiteType`** — `ONLINE_BANKING`, `INVESTMENT`, `ECOMMERCE`,
+  `DELIVERY`, `SAAS`, `WEB_APP`, `CORPORATE`, or `OTHER`. Purely
+  informational (nothing in the suspension/hosting logic branches on it
+  today), but it tells the super admin what kind of infrastructure
+  they're about to configure before they even open Railway.
+- **`domainName`** — optional at creation. If provided, `createCustomer`
+  composes a second step internally: it attaches the domain (via the
+  same global-uniqueness-checked path as the standalone Domains page)
+  right after the customer is created. **A failed domain attach never
+  undoes the customer creation** — if the domain's already claimed by a
+  different customer, the customer is still `CREATED`, and the response
+  carries a separate `domainOutcome`/`domainMessage` so the admin knows
+  to sort out the domain manually via the Domains page. Tested directly
+  for both the success and already-taken cases.
+
+The customer detail page now shows any attached domain(s) directly
+(fetched via the new `?customerId=` filter on `GET /api/admin/domains`),
+so there's one place to see everything relevant before jumping to
+Railway resource mapping on the subscription page.
 
 ## Policy: Railway and suspension power belongs to the super admin alone
 
@@ -332,7 +358,7 @@ every real customer.
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit — passes clean (prisma-repository.ts excluded, see below)
-npm test            # vitest — 174 tests, all green, no network/DB needed
+npm test            # vitest — 179 tests, all green, no network/DB needed
 npm run build       # next build — verified working in this sandbox, produces all 24 API routes + 11 UI pages
 ```
 
@@ -420,6 +446,7 @@ themselves are thin, reviewed-by-eye wrappers around that logic.
 | Attaching a domain already claimed by a different customer fails cleanly, not with a crash | `domainName` is globally unique in the schema, not unique per-customer — a real bug caught before shipping: the original uniqueness check only looked at the target customer's own domains, so a cross-customer duplicate would have hit Prisma's constraint directly and thrown an unhandled error instead of a clean `ALREADY_EXISTS`. Fixed with a dedicated `findByDomainName()` lookup; tested directly. |
 | PATCH on a subscription can never set `status` | `updateSubscription()`'s input type has no `status` field at all — not filtered out, structurally absent — and the route explicitly rejects a `status` key in the request body with a message pointing at the right endpoint. Status only ever changes through suspendCustomer/restoreCustomer (verified against Railway) or the webhook (verified against the payment provider). |
 | A notification failure can never crash a suspend/restore/webhook response | **Real bug caught in production, not just review**: `deps.notifications.send()` was called with no try/catch in `suspendCustomer`, `restoreCustomer`, and the payment webhook — if it threw (a database error, anything), the exception had nothing stopping it from reaching the route as a raw, non-JSON 500. All three call sites now wrap the notification call and swallow failures deliberately, since the suspension/restoration/payment itself already succeeded and was recorded before the notification was ever attempted. Tested directly: each engine still reports its real outcome (`SUSPENDED`/`RESTORED`/`PROCESSED`) even when notification dispatch throws. |
+| A failed onboarding domain attach never undoes a successful customer creation | `createCustomer()`'s optional `domainName` composition checks global uniqueness the same way the standalone Domains page does, but a conflict only sets `domainOutcome: 'ALREADY_EXISTS'` on the response — the customer row itself is never rolled back or left in a partial state. Tested directly for both the attach-succeeds and domain-already-taken-elsewhere cases. |
 | A failed or unconfigured email dispatch can never block a payment, suspension, or restoration | `sendEmail()` never throws — a missing `RESEND_API_KEY`, a Resend outage, or a bad address always returns `{ success: false }`, checked and tested directly (`tests/email.test.ts`) for the network-error, error-status, and unconfigured cases. Every caller (webhook, suspension engine, cron) has already done the thing that matters — recorded the payment, stopped/restored the deployment — before attempting to notify anyone. |
 | A delegated admin-manager can't spread scope beyond their own | `setCustomerAssignments()` now checks that a non-SUPER_ADMIN requester only assigns customers they can already see themselves — a real gap caught before shipping: without this, a delegated `canManageAdmins` admin could have granted a sub-admin visibility into a customer the delegator never had access to. SUPER_ADMIN is exempt (no scope to exceed). Tested directly (`tests/admin-management.test.ts`). |
 | Subscription status can never be set directly, bypassing verification | `UpdateSubscriptionInput` (the PATCH type) has no `status` field at all — a compile-time guarantee, not just a runtime check (see the `@ts-expect-error` test in `domains-and-subscription-editing.test.ts`). The PATCH route additionally rejects any request body containing `status` with an explicit 400, pointing at the right endpoint instead. |

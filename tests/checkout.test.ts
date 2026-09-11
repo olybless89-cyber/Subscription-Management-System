@@ -19,6 +19,7 @@ function baseCustomer(overrides: Partial<CustomerRecord> = {}): CustomerRecord {
     dateOfBirth: null,
     serviceStartDate: null,
     serviceEndDate: null,
+    websiteType: null,
     passwordHash: null,
     paymentProvider: 'PAYSTACK',
     status: 'ACTIVE',

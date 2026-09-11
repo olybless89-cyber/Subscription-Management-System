@@ -41,6 +41,7 @@ function makeCustomerRepo(seed: CustomerRecord[]) {
       dateOfBirth?: string | null;
       serviceStartDate?: string | null;
       serviceEndDate?: string | null;
+      websiteType?: CustomerRecord['websiteType'];
       paymentProvider: CustomerRecord['paymentProvider'];
       automaticSuspension: boolean;
     }) {
@@ -55,6 +56,7 @@ function makeCustomerRepo(seed: CustomerRecord[]) {
         dateOfBirth: input.dateOfBirth ?? null,
         serviceStartDate: input.serviceStartDate ?? null,
         serviceEndDate: input.serviceEndDate ?? null,
+        websiteType: input.websiteType ?? null,
         passwordHash: null,
         status: 'ACTIVE',
         automaticSuspension: input.automaticSuspension,
@@ -72,6 +74,7 @@ function makeCustomerRepo(seed: CustomerRecord[]) {
         dateOfBirth?: string | null;
         serviceStartDate?: string | null;
         serviceEndDate?: string | null;
+        websiteType?: CustomerRecord['websiteType'];
         paymentProvider?: CustomerRecord['paymentProvider'];
         automaticSuspension?: boolean;
       }
@@ -84,6 +87,7 @@ function makeCustomerRepo(seed: CustomerRecord[]) {
       if (patch.dateOfBirth !== undefined) c.dateOfBirth = patch.dateOfBirth;
       if (patch.serviceStartDate !== undefined) c.serviceStartDate = patch.serviceStartDate;
       if (patch.serviceEndDate !== undefined) c.serviceEndDate = patch.serviceEndDate;
+      if (patch.websiteType !== undefined) c.websiteType = patch.websiteType;
       if (patch.paymentProvider !== undefined) c.paymentProvider = patch.paymentProvider;
       if (patch.automaticSuspension !== undefined) c.automaticSuspension = patch.automaticSuspension;
       return { ...c };
@@ -458,22 +462,27 @@ export function makeFakeAdminManagementDeps(seed: {
   admins: AdminRecord[];
   customers: CustomerRecord[];
   assignments?: Array<{ adminId: string; customerId: string }>;
+  domains?: DomainRecord[];
 }): AdminManagementDeps & {
   auditLogEntries: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }>;
   assignmentStore: Map<string, Set<string>>;
+  domainStore: Map<string, DomainRecord>;
 } {
   const { repo: adminsRepo } = makeAdminRepo(seed.admins);
   const { repo: customersRepo } = makeCustomerRepo(seed.customers);
   const { repo: assignmentsRepo, byAdmin } = makeAssignmentRepo(seed.assignments ?? []);
+  const { repo: domainsRepo, byId: domainStore } = makeDomainRepo(seed.domains ?? []);
   const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
 
   return {
     admins: adminsRepo,
     customers: customersRepo,
     adminAssignments: assignmentsRepo,
+    domains: domainsRepo,
     auditLog: auditLogRepo,
     auditLogEntries,
     assignmentStore: byAdmin,
+    domainStore,
   };
 }
 

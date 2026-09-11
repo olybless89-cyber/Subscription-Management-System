@@ -45,6 +45,7 @@ export async function PATCH(
     dateOfBirth?: string | null;
     serviceStartDate?: string | null;
     serviceEndDate?: string | null;
+    websiteType?: 'ONLINE_BANKING' | 'INVESTMENT' | 'ECOMMERCE' | 'DELIVERY' | 'SAAS' | 'WEB_APP' | 'CORPORATE' | 'OTHER' | null;
     paymentProvider?: 'PAYSTACK' | 'FLUTTERWAVE';
     automaticSuspension?: boolean;
     status?: unknown;
@@ -78,6 +79,7 @@ export async function PATCH(
     dateOfBirth: body.dateOfBirth,
     serviceStartDate: body.serviceStartDate,
     serviceEndDate: body.serviceEndDate,
+    websiteType: body.websiteType,
     paymentProvider: body.paymentProvider,
     automaticSuspension: body.automaticSuspension,
   });

@@ -29,6 +29,7 @@ describe('initiateCheckout — provider routing by customer group', () => {
       dateOfBirth: null,
       serviceStartDate: null,
       serviceEndDate: null,
+      websiteType: null,
       passwordHash: null,
       status: 'ACTIVE',
       automaticSuspension: true,
