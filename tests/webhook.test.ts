@@ -234,6 +234,33 @@ describe('handlePaymentWebhook — verification', () => {
   });
 });
 
+describe('handlePaymentWebhook — notification failures never crash the webhook response', () => {
+  it('still returns PROCESSED even if deps.notifications.send() throws', async () => {
+    const deps = makeFakeWebhookDeps({
+      customers: [baseCustomer({ status: 'SUSPENDED' })],
+      subscriptions: [baseSubscription({ status: 'SUSPENDED' })],
+      railwayResources: [multiTenantResource()],
+      plans: [basePlan()],
+      payments: [basePayment()],
+    });
+    deps.notifications.send = async () => {
+      throw new Error('simulated notification pipeline crash');
+    };
+    const provider = fakeProvider();
+
+    const result = await handlePaymentWebhook(deps, provider, railway, chargeSuccessBody(), 'sig');
+
+    // The payment was still recorded and the subscription still
+    // restored — a notification crash must degrade silently, never
+    // surface as a failed/uncaught webhook response (which a payment
+    // provider could misinterpret and retry unnecessarily).
+    expect(result.outcome).toBe('PROCESSED');
+    expect(result.httpStatus).toBe(200);
+    const subscription = await deps.subscriptions.findById('sub_1');
+    expect(subscription!.status).toBe('ACTIVE');
+  });
+});
+
 describe('handlePaymentWebhook — restoration wiring', () => {
   it('restores a MULTI_TENANT suspended customer end-to-end on successful payment', async () => {
     const deps = makeFakeWebhookDeps({

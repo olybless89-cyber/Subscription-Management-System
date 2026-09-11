@@ -162,11 +162,18 @@ export async function handlePaymentWebhook(
     nextBillingDate: newPeriodEnd.toISOString(),
   });
 
-  await deps.notifications.send(
-    subscription.customerId,
-    'PAYMENT_RECEIVED',
-    'Payment received. Your service is being restored.'
-  );
+  // A notification failure here must never undo or fail the payment
+  // recording/extension that already happened above. Both the customer
+  // notification and the admin fan-out are best-effort.
+  try {
+    await deps.notifications.send(
+      subscription.customerId,
+      'PAYMENT_RECEIVED',
+      'Payment received. Your service is being restored.'
+    );
+  } catch {
+    // Deliberately swallowed — see comment above.
+  }
 
   // Route the same event to whichever admin(s) should know: every
   // SUPER_ADMIN plus any ADMIN specifically assigned to this customer.
@@ -174,12 +181,16 @@ export async function handlePaymentWebhook(
   // being recorded/extended — that already happened above — so this is
   // best-effort and doesn't affect the webhook's own outcome/httpStatus.
   const customer = await deps.customers.findById(subscription.customerId);
-  await notifyAdminsForCustomer(
-    deps,
-    subscription.customerId,
-    'PAYMENT_RECEIVED',
-    `Payment received from ${customer?.customerCode ?? subscription.customerId} — ${(verified.amountMinor / 100).toLocaleString()} ${verified.currency}.`
-  );
+  try {
+    await notifyAdminsForCustomer(
+      deps,
+      subscription.customerId,
+      'PAYMENT_RECEIVED',
+      `Payment received from ${customer?.customerCode ?? subscription.customerId} — ${(verified.amountMinor / 100).toLocaleString()} ${verified.currency}.`
+    );
+  } catch {
+    // Deliberately swallowed — see comment above.
+  }
 
   if (subscription.status === 'SUSPENDED') {
     // Let restoreCustomer own the ACTIVE transition — it only flips status

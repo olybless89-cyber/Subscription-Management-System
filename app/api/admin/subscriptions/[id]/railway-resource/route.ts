@@ -1,3 +1,4 @@
+// GET /api/admin/subscriptions/:id/railway-resource — list mappings for this subscription, scoped
 // POST /api/admin/subscriptions/:id/railway-resource — spec section 12
 // The third, deliberately separate step: customer -> plan -> subscription
 // (all above) -> THIS maps that subscription to real Railway
@@ -7,6 +8,28 @@
 import { buildBillingSetupDeps, buildWebhookDeps } from '../../../../../../src/lib/deps-factory';
 import { authenticateFromHeader, hasAdminRole, canAccessCustomer } from '../../../../../../src/lib/auth/authorize';
 import { mapRailwayResource } from '../../../../../../src/lib/railway/mapping';
+
+export async function GET(
+  request: Request,
+  context: { params: { id: string } }
+): Promise<Response> {
+  const auth = authenticateFromHeader(request.headers.get('authorization'));
+  if (!auth.authenticated || !hasAdminRole(auth.session, ['ADMIN', 'SUPER_ADMIN'])) {
+    return json(403, { error: 'Admin access required' });
+  }
+
+  const deps = buildWebhookDeps();
+  const subscription = await deps.subscriptions.findById(context.params.id);
+  if (!subscription) {
+    return json(404, { error: 'Subscription not found' });
+  }
+  if (!(await canAccessCustomer(auth.session, subscription.customerId, deps.adminAssignments))) {
+    return json(403, { error: 'This subscription is not assigned to you' });
+  }
+
+  const resources = await deps.railwayResources.findBySubscriptionId(context.params.id);
+  return json(200, { resources });
+}
 
 export async function POST(
   request: Request,

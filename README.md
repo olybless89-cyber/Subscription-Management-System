@@ -64,7 +64,7 @@ app/api/
   admin/customers/route.ts                GET: scoped customer listing. POST: create a customer (spec section 5)
   admin/plans/route.ts                     GET: list plans. POST: create one (spec section 9)
   admin/subscriptions/route.ts              POST: create a subscription for a customer (spec sections 8-9), scoped
-  admin/subscriptions/[id]/railway-resource/route.ts  POST: map that subscription to Railway infra (spec section 12), scoped
+  admin/subscriptions/[id]/railway-resource/route.ts  GET: list mappings. POST: map to Railway infra (spec section 12), scoped
   admin/subscriptions/[id]/route.ts                     GET: view one subscription. PATCH: edit planId/suspensionEnabled ONLY (status excluded on purpose)
   admin/domains/route.ts                                 GET: scoped listing. POST: attach a domain to a customer
   admin/subscriptions/[id]/dry-run-override/route.ts   POST: per-subscription dry-run override, scoped
@@ -77,7 +77,7 @@ app/api/
   cron/railway-sync/route.ts             Railway sync (CRON_SECRET-protected)
   subscriptions/[id]/suspend/route.ts     Admin manual suspend — scoped to assignment
   subscriptions/[id]/restore/route.ts      Admin manual restore — scoped to assignment
-tests/                                171 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
+tests/                                174 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
 app/
   globals.css                          Design tokens (forest green/paper/clay — matches the spec's own branding request)
   layout.tsx                            Root layout, wraps everything in AuthProvider
@@ -293,7 +293,7 @@ every real customer.
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit — passes clean (prisma-repository.ts excluded, see below)
-npm test            # vitest — 171 tests, all green, no network/DB needed
+npm test            # vitest — 174 tests, all green, no network/DB needed
 npm run build       # next build — verified working in this sandbox, produces all 24 API routes + 11 UI pages
 ```
 
@@ -380,6 +380,7 @@ themselves are thin, reviewed-by-eye wrappers around that logic.
 | Testing real suspension can't accidentally disarm production for every customer | `subscription.dryRunOverride` takes precedence over the global `SUSPENSION_DRY_RUN` env var per-subscription — see "Testing suspend/restore against real Railway" above. The cron route no longer force-overrides this (a real bug caught and fixed: it was passing the global value explicitly, which would have silently defeated every subscription's individual override for the automated path). |
 | Attaching a domain already claimed by a different customer fails cleanly, not with a crash | `domainName` is globally unique in the schema, not unique per-customer — a real bug caught before shipping: the original uniqueness check only looked at the target customer's own domains, so a cross-customer duplicate would have hit Prisma's constraint directly and thrown an unhandled error instead of a clean `ALREADY_EXISTS`. Fixed with a dedicated `findByDomainName()` lookup; tested directly. |
 | PATCH on a subscription can never set `status` | `updateSubscription()`'s input type has no `status` field at all — not filtered out, structurally absent — and the route explicitly rejects a `status` key in the request body with a message pointing at the right endpoint. Status only ever changes through suspendCustomer/restoreCustomer (verified against Railway) or the webhook (verified against the payment provider). |
+| A notification failure can never crash a suspend/restore/webhook response | **Real bug caught in production, not just review**: `deps.notifications.send()` was called with no try/catch in `suspendCustomer`, `restoreCustomer`, and the payment webhook — if it threw (a database error, anything), the exception had nothing stopping it from reaching the route as a raw, non-JSON 500. All three call sites now wrap the notification call and swallow failures deliberately, since the suspension/restoration/payment itself already succeeded and was recorded before the notification was ever attempted. Tested directly: each engine still reports its real outcome (`SUSPENDED`/`RESTORED`/`PROCESSED`) even when notification dispatch throws. |
 | A failed or unconfigured email dispatch can never block a payment, suspension, or restoration | `sendEmail()` never throws — a missing `RESEND_API_KEY`, a Resend outage, or a bad address always returns `{ success: false }`, checked and tested directly (`tests/email.test.ts`) for the network-error, error-status, and unconfigured cases. Every caller (webhook, suspension engine, cron) has already done the thing that matters — recorded the payment, stopped/restored the deployment — before attempting to notify anyone. |
 | A delegated admin-manager can't spread scope beyond their own | `setCustomerAssignments()` now checks that a non-SUPER_ADMIN requester only assigns customers they can already see themselves — a real gap caught before shipping: without this, a delegated `canManageAdmins` admin could have granted a sub-admin visibility into a customer the delegator never had access to. SUPER_ADMIN is exempt (no scope to exceed). Tested directly (`tests/admin-management.test.ts`). |
 | Subscription status can never be set directly, bypassing verification | `UpdateSubscriptionInput` (the PATCH type) has no `status` field at all — a compile-time guarantee, not just a runtime check (see the `@ts-expect-error` test in `domains-and-subscription-editing.test.ts`). The PATCH route additionally rejects any request body containing `status` with an explicit 400, pointing at the right endpoint instead. |
