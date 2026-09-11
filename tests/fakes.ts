@@ -1,4 +1,4 @@
-import { EngineDeps, WebhookDeps, AuthDeps, AdminManagementDeps, BillingSetupDeps, CustomEmailDeps } from '@/lib/db/ports';
+import { EngineDeps, WebhookDeps, AuthDeps, AdminManagementDeps, BillingSetupDeps, CustomEmailDeps, CampaignDeps } from '@/lib/db/ports';
 import {
   CustomerRecord,
   SubscriptionRecord,
@@ -9,6 +9,8 @@ import {
   AdminRecord,
   DomainRecord,
   InvoiceRecord,
+  CampaignRecord,
+  CampaignRecipientRecord,
 } from '@/types/domain';
 
 // ---------- shared primitive stores, reused across the various fake-deps builders ----------
@@ -611,6 +613,119 @@ export function makeFakeCustomEmailDeps(seed: {
     notifications: {
       async send(customerId, event, message, subject) {
         notificationLog.push({ customerId, event, message, subject });
+      },
+    },
+  };
+}
+
+function makeCampaignRepo() {
+  const campaigns = new Map<string, CampaignRecord>();
+  const recipients = new Map<string, CampaignRecipientRecord>();
+  let campaignCounter = 0;
+  let recipientCounter = 0;
+
+  const repo = {
+    async create(input: { name: string; channels: CampaignRecord['channels']; subject: string | null; message: string; createdBy: string }) {
+      campaignCounter += 1;
+      const record: CampaignRecord = {
+        id: `camp_${campaignCounter}`,
+        name: input.name,
+        channels: input.channels,
+        subject: input.subject,
+        message: input.message,
+        status: 'DRAFT',
+        createdBy: input.createdBy,
+        createdAt: new Date().toISOString(),
+        sentAt: null,
+      };
+      campaigns.set(record.id, record);
+      return record;
+    },
+    async findById(id: string) {
+      return campaigns.get(id) ?? null;
+    },
+    async listAll() {
+      return [...campaigns.values()];
+    },
+    async listByCreator(createdBy: string) {
+      return [...campaigns.values()].filter((c) => c.createdBy === createdBy);
+    },
+    async updateStatus(id: string, status: CampaignRecord['status'], extra?: { sentAt?: string }) {
+      const c = campaigns.get(id);
+      if (!c) throw new Error('not found');
+      c.status = status;
+      if (extra?.sentAt !== undefined) c.sentAt = extra.sentAt;
+    },
+    async addRecipients(campaignId: string, input: Array<{ customerId: string; channel: CampaignRecord['channels'][number] }>) {
+      const created: CampaignRecipientRecord[] = [];
+      for (const r of input) {
+        recipientCounter += 1;
+        const record: CampaignRecipientRecord = {
+          id: `camprecip_${recipientCounter}`,
+          campaignId,
+          customerId: r.customerId,
+          channel: r.channel,
+          status: 'PENDING',
+          sentAt: null,
+          error: null,
+        };
+        recipients.set(record.id, record);
+        created.push(record);
+      }
+      return created;
+    },
+    async findRecipientsByCampaignId(campaignId: string) {
+      return [...recipients.values()].filter((r) => r.campaignId === campaignId);
+    },
+    async updateRecipientStatus(id: string, status: CampaignRecipientRecord['status'], extra?: { sentAt?: string; error?: string | null }) {
+      const r = recipients.get(id);
+      if (!r) throw new Error('not found');
+      r.status = status;
+      if (extra?.sentAt !== undefined) r.sentAt = extra.sentAt;
+      if (extra?.error !== undefined) r.error = extra.error;
+    },
+  };
+  return { repo, campaigns, recipients };
+}
+
+export function makeFakeCampaignDeps(seed: {
+  admins: AdminRecord[];
+  customers: CustomerRecord[];
+  assignments?: Array<{ adminId: string; customerId: string }>;
+}): CampaignDeps & {
+  auditLogEntries: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }>;
+  notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }>;
+  whatsappLog: Array<{ customerId: string; message: string }>;
+  campaignStore: Map<string, CampaignRecord>;
+  recipientStore: Map<string, CampaignRecipientRecord>;
+} {
+  const { repo: adminsRepo } = makeAdminRepo(seed.admins);
+  const { repo: customersRepo } = makeCustomerRepo(seed.customers);
+  const { repo: assignmentsRepo } = makeAssignmentRepo(seed.assignments ?? []);
+  const { repo: campaignsRepo, campaigns: campaignStore, recipients: recipientStore } = makeCampaignRepo();
+  const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
+  const notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }> = [];
+  const whatsappLog: Array<{ customerId: string; message: string }> = [];
+
+  return {
+    admins: adminsRepo,
+    customers: customersRepo,
+    adminAssignments: assignmentsRepo,
+    campaigns: campaignsRepo,
+    auditLog: auditLogRepo,
+    auditLogEntries,
+    notificationLog,
+    whatsappLog,
+    campaignStore,
+    recipientStore,
+    notifications: {
+      async send(customerId, event, message, subject) {
+        notificationLog.push({ customerId, event, message, subject });
+      },
+    },
+    whatsapp: {
+      async send(customerId, message) {
+        whatsappLog.push({ customerId, message });
       },
     },
   };

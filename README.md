@@ -38,6 +38,8 @@ src/lib/customers/
 src/lib/invoices/
   pdf.ts                                     generateInvoicePdf() — pdfkit, visually verified against real rendered output
   manage.ts                                    createAndSendReceiptInvoice() / createAndSendDueInvoice()
+src/lib/campaigns/manage.ts               createCampaign() / sendCampaign()
+src/lib/notifications/whatsapp.ts         sendWhatsAppMessage() — Meta Cloud API, one generic template, never throws
 src/lib/notifications/custom-email.ts   sendCustomEmail() — admin-composed message through the same Resend pipeline
 src/lib/billing/
   cycle.ts                              addBillingCycle() / addDays()
@@ -80,7 +82,7 @@ app/api/
   cron/railway-sync/route.ts             Railway sync (CRON_SECRET-protected)
   subscriptions/[id]/suspend/route.ts     Admin manual suspend — scoped to assignment
   subscriptions/[id]/restore/route.ts      Admin manual restore — scoped to assignment
-tests/                                208 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
+tests/                                224 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
 app/
   globals.css                          Design tokens (forest green/paper/clay — matches the spec's own branding request)
   layout.tsx                            Root layout, wraps everything in AuthProvider
@@ -195,6 +197,90 @@ before it can even be saved if someone tries to pair `MULTI_TENANT` with
   placeholder: hero with the logo, a features grid, and a closing CTA
   into `/login`. Static, no client-side state, matches the same design
   tokens as the dashboard (forest green / paper / clay accent).
+
+## WhatsApp integration and bulk campaigns
+
+### The constraint that shapes everything here
+
+Meta's WhatsApp Cloud API only allows free-form text to a customer
+within 24 hours of *them* messaging you first. Outside that window —
+which covers essentially every automated notification and every bulk
+campaign — Meta **requires** a pre-approved message template. Rather
+than needing five-plus separate templates approved (one per message
+type), every WhatsApp send in this codebase routes through **one
+generic utility template** with a single `{{1}}` body variable
+(`src/lib/notifications/whatsapp.ts`, `DEFAULT_TEMPLATE_NAME =
+'general_notification'`). Whatever text a caller wants to send just
+becomes that one variable.
+
+### What you need to do on Meta's side before ANY of this works
+
+None of this can be tested end-to-end until you've done the following —
+same relationship as the Resend DNS verification earlier in this
+project: the code is ready, the external setup isn't done yet.
+
+1. Create a Meta Business Account and a WhatsApp Business Account (WABA)
+   at business.facebook.com, and register a phone number for it.
+2. In Meta Business Manager, submit a message template named exactly
+   `general_notification`, language `en_US` (or your `WHATSAPP_...`
+   config, if you change these), category **Utility** (not Marketing —
+   Marketing templates face stricter review and require documented
+   opt-in), with a body of exactly `{{1}}`. Wait for approval (usually
+   hours to a couple of days).
+3. Generate a permanent access token and note your Phone Number ID from
+   the WhatsApp Cloud API dashboard.
+4. Set `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` in
+   Railway's Variables tab.
+
+Until all four are done, `sendWhatsAppMessage()` returns `{success:
+false}` for every attempt (same "unconfigured = not sent, never a
+crash" contract as `sendEmail()`) — nothing breaks, WhatsApp sends just
+silently don't happen, and everything still gets recorded as a
+`Notification` row for the audit trail either way.
+
+### What got built
+
+- **`src/lib/notifications/whatsapp.ts`** — the sender itself, never
+  throws, tested directly (5 tests: success, error status, network
+  failure, missing config, invalid phone number).
+- **Bulk campaigns** (`Campaign`/`CampaignRecipient` tables,
+  `src/lib/campaigns/manage.ts`) — an admin manually checks off
+  customers (per an explicit decision: **no saved segment/filter query,
+  just a checkbox list** — predictable over clever), picks EMAIL and/or
+  WHATSAPP, writes one message, and creates a `DRAFT`. Sending is a
+  separate, deliberate second step (`sendCampaign`) so a recipient list
+  can be reviewed before committing. Each (customer, channel) pair gets
+  its own `CampaignRecipient` row so delivery can be tracked per
+  channel — a customer on an `["EMAIL","WHATSAPP"]` campaign gets two
+  rows.
+- **Scope**: any admin can create/send a campaign, but every targeted
+  customer must be one they can already see — `SUPER_ADMIN` can target
+  anyone. Only the campaign's creator or `SUPER_ADMIN` can send it.
+- **Per-recipient failure isolation** — one recipient failing (bad
+  phone number, Resend down, whatever) never stops the rest of the list
+  and never un-sends recipients already sent. Tested directly.
+- **UI**: a new Campaigns page — create form with a scrollable customer
+  checkbox picker, and a detail page per campaign showing live delivery
+  status per recipient plus the Send button.
+- **A known scalability limit, stated rather than hidden**: campaign
+  sending is synchronous within the API request — there's no background
+  job queue in this codebase. Fine for a small-to-medium customer list;
+  a genuinely large one could hit a request timeout. Worth revisiting
+  if your customer count grows a lot.
+
+### What's deliberately NOT built this round
+
+- WhatsApp was **not** wired into any existing automated trigger
+  (birthday messages, payment-due reminders, suspension notices, etc.)
+  — those all still go out by email only. Adding WhatsApp there is a
+  small, natural follow-up once you've confirmed the template works,
+  not done here to keep this round's blast radius contained.
+- No segment/filter-based recipient selection (by website type, plan,
+  etc.) — manual checkboxes only, per your explicit answer.
+- No delivery receipts/read receipts from Meta (WhatsApp does support
+  webhook-based delivery status, but that's a separate integration not
+  built here — "SENT" here means "the Graph API accepted the request,"
+  not "the customer received or read it").
 
 ## Invoicing system (PDF receipts and due invoices)
 
@@ -514,8 +600,8 @@ every real customer.
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit — passes clean (prisma-repository.ts excluded, see below)
-npm test            # vitest — 208 tests, all green, no network/DB needed
-npm run build       # next build — verified working in this sandbox, produces all 29 API routes + 14 UI pages
+npm test            # vitest — 224 tests, all green, no network/DB needed
+npm run build       # next build — verified working in this sandbox, produces all 32 API routes + 16 UI pages
 ```
 
 ### One thing I still could NOT verify from this sandbox — be aware before you ship

@@ -18,6 +18,11 @@ import {
   InvoiceRecord,
   InvoiceType,
   InvoiceStatus,
+  CampaignRecord,
+  CampaignChannel,
+  CampaignStatus,
+  CampaignRecipientRecord,
+  CampaignRecipientStatus,
 } from '@/types/domain';
 
 /**
@@ -302,6 +307,30 @@ export interface InvoiceRepository {
   listAll(): Promise<InvoiceRecord[]>;
 }
 
+export interface CampaignRepository {
+  create(input: {
+    name: string;
+    channels: CampaignChannel[];
+    subject: string | null;
+    message: string;
+    createdBy: string;
+  }): Promise<CampaignRecord>;
+  findById(id: string): Promise<CampaignRecord | null>;
+  listAll(): Promise<CampaignRecord[]>;
+  listByCreator(createdBy: string): Promise<CampaignRecord[]>;
+  updateStatus(id: string, status: CampaignStatus, extra?: { sentAt?: string }): Promise<void>;
+  addRecipients(
+    campaignId: string,
+    recipients: Array<{ customerId: string; channel: CampaignChannel }>
+  ): Promise<CampaignRecipientRecord[]>;
+  findRecipientsByCampaignId(campaignId: string): Promise<CampaignRecipientRecord[]>;
+  updateRecipientStatus(
+    id: string,
+    status: CampaignRecipientStatus,
+    extra?: { sentAt?: string; error?: string | null }
+  ): Promise<void>;
+}
+
 export interface EngineDeps {
   subscriptions: SubscriptionRepository;
   customers: CustomerRepository;
@@ -367,5 +396,26 @@ export interface CustomEmailDeps {
   admins: AdminRepository;
   customers: CustomerRepository;
   notifications: NotificationSender;
+  auditLog: AuditLogRepository;
+}
+
+/** WhatsApp equivalent of NotificationSender — deliberately simpler
+ * (no subject/attachments, since every WhatsApp send routes through one
+ * generic template with a single body parameter — see
+ * src/lib/notifications/whatsapp.ts). Looks the customer up internally
+ * and records a Notification row (channel WHATSAPP), same
+ * record-first/best-effort-dispatch pattern as EmailNotificationSender.
+ */
+export interface WhatsAppSender {
+  send(customerId: string, message: string): Promise<void>;
+}
+
+export interface CampaignDeps {
+  admins: AdminRepository;
+  customers: CustomerRepository;
+  adminAssignments: AdminAssignmentRepository;
+  campaigns: CampaignRepository;
+  notifications: NotificationSender;
+  whatsapp: WhatsAppSender;
   auditLog: AuditLogRepository;
 }

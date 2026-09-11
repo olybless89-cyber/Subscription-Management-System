@@ -106,6 +106,32 @@ export interface InvoiceRecord {
   issuedAt: string;
 }
 
+export type CampaignChannel = 'EMAIL' | 'WHATSAPP';
+export type CampaignStatus = 'DRAFT' | 'SENDING' | 'SENT';
+export type CampaignRecipientStatus = 'PENDING' | 'SENT' | 'FAILED';
+
+export interface CampaignRecord {
+  id: string;
+  name: string;
+  channels: CampaignChannel[];
+  subject: string | null;
+  message: string;
+  status: CampaignStatus;
+  createdBy: string;
+  createdAt: string;
+  sentAt: string | null;
+}
+
+export interface CampaignRecipientRecord {
+  id: string;
+  campaignId: string;
+  customerId: string;
+  channel: CampaignChannel;
+  status: CampaignRecipientStatus;
+  sentAt: string | null;
+  error: string | null;
+}
+
 export interface DomainRecord {
   id: string;
   customerId: string;

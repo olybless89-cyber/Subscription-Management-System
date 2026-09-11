@@ -13,6 +13,8 @@ import {
   DomainRepository,
   AuditLogRepository,
   InvoiceRepository,
+  CampaignRepository,
+  WhatsAppSender,
 } from './ports';
 import {
   SubscriptionRecord,
@@ -23,7 +25,10 @@ import {
   DomainRecord,
   AdminRecord,
   InvoiceRecord,
+  CampaignRecord,
+  CampaignRecipientRecord,
 } from '@/types/domain';
+import { sendWhatsAppMessage } from '../notifications/whatsapp';
 import { sendEmail, subjectForEvent, renderBrandedEmailHtml } from '../notifications/email';
 
 /**
@@ -971,5 +976,138 @@ export class PrismaDomainRepository implements DomainRepository {
       railwayStatus: d.railwayStatus,
       createdAt: d.createdAt.toISOString(),
     };
+  }
+}
+
+export class PrismaCampaignRepository implements CampaignRepository {
+  constructor(private prisma: PrismaClient) {}
+
+  private mapCampaign(c: any): CampaignRecord { // eslint-disable-line @typescript-eslint/no-explicit-any
+    return {
+      id: c.id,
+      name: c.name,
+      channels: c.channels,
+      subject: c.subject,
+      message: c.message,
+      status: c.status,
+      createdBy: c.createdBy,
+      createdAt: c.createdAt.toISOString(),
+      sentAt: c.sentAt ? c.sentAt.toISOString() : null,
+    };
+  }
+
+  private mapRecipient(r: any): CampaignRecipientRecord { // eslint-disable-line @typescript-eslint/no-explicit-any
+    return {
+      id: r.id,
+      campaignId: r.campaignId,
+      customerId: r.customerId,
+      channel: r.channel,
+      status: r.status,
+      sentAt: r.sentAt ? r.sentAt.toISOString() : null,
+      error: r.error,
+    };
+  }
+
+  async create(input: {
+    name: string;
+    channels: CampaignRecord['channels'];
+    subject: string | null;
+    message: string;
+    createdBy: string;
+  }): Promise<CampaignRecord> {
+    const c = await this.prisma.campaign.create({
+      data: {
+        name: input.name,
+        channels: input.channels as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        subject: input.subject,
+        message: input.message,
+        createdBy: input.createdBy,
+      },
+    });
+    return this.mapCampaign(c);
+  }
+
+  async findById(id: string): Promise<CampaignRecord | null> {
+    const c = await this.prisma.campaign.findUnique({ where: { id } });
+    return c ? this.mapCampaign(c) : null;
+  }
+
+  async listAll(): Promise<CampaignRecord[]> {
+    const rows = await this.prisma.campaign.findMany({ orderBy: { createdAt: 'desc' } });
+    return rows.map((c: any) => this.mapCampaign(c)); // eslint-disable-line @typescript-eslint/no-explicit-any
+  }
+
+  async listByCreator(createdBy: string): Promise<CampaignRecord[]> {
+    const rows = await this.prisma.campaign.findMany({ where: { createdBy }, orderBy: { createdAt: 'desc' } });
+    return rows.map((c: any) => this.mapCampaign(c)); // eslint-disable-line @typescript-eslint/no-explicit-any
+  }
+
+  async updateStatus(id: string, status: CampaignRecord['status'], extra?: { sentAt?: string }): Promise<void> {
+    await this.prisma.campaign.update({
+      where: { id },
+      data: {
+        status: status as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        ...(extra?.sentAt !== undefined ? { sentAt: new Date(extra.sentAt) } : {}),
+      },
+    });
+  }
+
+  async addRecipients(
+    campaignId: string,
+    recipients: Array<{ customerId: string; channel: CampaignRecord['channels'][number] }>
+  ): Promise<CampaignRecipientRecord[]> {
+    await this.prisma.campaignRecipient.createMany({
+      data: recipients.map((r) => ({
+        campaignId,
+        customerId: r.customerId,
+        channel: r.channel as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+      })),
+    });
+    return this.findRecipientsByCampaignId(campaignId);
+  }
+
+  async findRecipientsByCampaignId(campaignId: string): Promise<CampaignRecipientRecord[]> {
+    const rows = await this.prisma.campaignRecipient.findMany({ where: { campaignId } });
+    return rows.map((r: any) => this.mapRecipient(r)); // eslint-disable-line @typescript-eslint/no-explicit-any
+  }
+
+  async updateRecipientStatus(
+    id: string,
+    status: CampaignRecipientRecord['status'],
+    extra?: { sentAt?: string; error?: string | null }
+  ): Promise<void> {
+    await this.prisma.campaignRecipient.update({
+      where: { id },
+      data: {
+        status: status as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        ...(extra?.sentAt !== undefined ? { sentAt: new Date(extra.sentAt) } : {}),
+        ...(extra?.error !== undefined ? { error: extra.error } : {}),
+      },
+    });
+  }
+}
+
+export class WhatsAppNotificationSender implements WhatsAppSender {
+  constructor(private prisma: PrismaClient) {}
+
+  async send(customerId: string, message: string): Promise<void> {
+    // Same record-first, best-effort-dispatch-on-top pattern as
+    // EmailNotificationSender — the Notification row is the audit trail
+    // of record regardless of whether the WhatsApp send itself succeeds.
+    const notification = await this.prisma.notification.create({
+      data: { customerId, channel: 'WHATSAPP', event: 'WHATSAPP_MESSAGE', message },
+    });
+
+    const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
+    if (!customer || !customer.phone) return; // no phone on file — nothing to send to.
+
+    const result = await sendWhatsAppMessage({ to: customer.phone, body: message });
+
+    if (result.success) {
+      await this.prisma.notification.update({
+        where: { id: notification.id },
+        data: { sentAt: new Date() },
+      });
+    }
   }
 }

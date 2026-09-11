@@ -151,6 +151,7 @@ model Customer {
   adminAssignments    AdminCustomerAssignment[]
   adminNotifications  AdminNotification[]
   invoices            Invoice[]
+  campaignRecipients  CampaignRecipient[]
 
   @@index([status])
 }
@@ -397,4 +398,55 @@ model AuditLog {
 
   @@index([action])
   @@index([createdAt])
+}
+
+// Bulk campaigns — an admin manually selects a set of customers and
+// sends one message to all of them, by email and/or WhatsApp. Recipient
+// selection is a flat list (CampaignRecipient rows), not a saved
+// "segment" — per an explicit decision to keep this predictable rather
+// than build a filter/segment query engine.
+enum CampaignChannel {
+  EMAIL
+  WHATSAPP
+}
+
+enum CampaignStatus {
+  DRAFT
+  SENDING
+  SENT
+}
+
+enum CampaignRecipientStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model Campaign {
+  id         String            @id @default(cuid())
+  name       String
+  channels   CampaignChannel[] // which channel(s) this campaign sends on — a native Postgres array since this project targets Postgres exclusively, no reason to fake it with a comma-separated string
+  subject    String? // email subject — required if EMAIL is one of the channels
+  message    String // body text: used as the email text/HTML, and as the single {{1}} parameter of the WhatsApp utility template
+  status     CampaignStatus    @default(DRAFT)
+  createdBy  String // AdminUser id
+  createdAt  DateTime          @default(now())
+  sentAt     DateTime?
+
+  recipients CampaignRecipient[]
+}
+
+model CampaignRecipient {
+  id         String                   @id @default(cuid())
+  campaignId String
+  campaign   Campaign                 @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   Customer                 @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  channel    CampaignChannel // one row per actual channel attempt — a customer on a "EMAIL,WHATSAPP" campaign gets two rows
+  status     CampaignRecipientStatus  @default(PENDING)
+  sentAt     DateTime?
+  error      String?
+
+  @@index([campaignId])
+  @@index([customerId])
 }
