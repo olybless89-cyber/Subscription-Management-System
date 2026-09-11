@@ -370,3 +370,180 @@ table.data-table tbody tr:hover {
     padding: 4.2em 1.2em 2em !important;
   }
 }
+
+/* ================================================================
+   Customer portal — a deliberately distinct visual system from both
+   the admin ops-tool (forest/paper) and the marketing site. Dark,
+   glassmorphic, neon-accented — a "control center" feel for the
+   customer's own resource/uptime monitoring, not the calm-and-boring
+   aesthetic that's correct for the admin side.
+   ================================================================ */
+
+:root {
+  --w3-bg: #060a14;
+  --w3-bg-deep: #030509;
+  --w3-panel: rgba(255, 255, 255, 0.035);
+  --w3-panel-border: rgba(56, 226, 255, 0.18);
+  --w3-cyan: #38e2ff;
+  --w3-violet: #b968ff;
+  --w3-magenta: #ff4ecb;
+  --w3-amber: #ffb648;
+  --w3-danger: #ff4d6d;
+  --w3-text: #e8f4ff;
+  --w3-text-soft: #8fa3bd;
+  --w3-font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.w3-shell {
+  min-height: 100vh;
+  background: var(--w3-bg);
+  color: var(--w3-text);
+  font-family: var(--w3-font-display);
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Faint animated grid + radial glow, evoking a HUD/control-center feel
+   without being distracting or slowing down low-end devices — pure
+   CSS, no canvas/WebGL. */
+.w3-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(56, 226, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 226, 255, 0.05) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.w3-shell::after {
+  content: '';
+  position: fixed;
+  top: -20%;
+  left: 50%;
+  width: 140%;
+  height: 60%;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at center, rgba(185, 104, 255, 0.14) 0%, transparent 65%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.w3-content {
+  position: relative;
+  z-index: 1;
+}
+
+.w3-panel {
+  background: var(--w3-panel);
+  border: 1px solid var(--w3-panel-border);
+  border-radius: 14px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  padding: 1.6em;
+  position: relative;
+  overflow: hidden;
+}
+
+.w3-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--w3-cyan), transparent);
+  opacity: 0.6;
+}
+
+.w3-label {
+  font-size: 0.72em;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w3-text-soft);
+  font-weight: 600;
+}
+
+.w3-stat-value {
+  font-size: 2.4em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  background: linear-gradient(120deg, var(--w3-cyan), var(--w3-violet));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  line-height: 1.1;
+}
+
+.w3-pulse-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  position: relative;
+}
+
+.w3-pulse-dot::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: inherit;
+  opacity: 0.5;
+  animation: w3-pulse 2s ease-out infinite;
+}
+
+@keyframes w3-pulse {
+  0% { transform: scale(0.8); opacity: 0.6; }
+  70% { transform: scale(2.2); opacity: 0; }
+  100% { opacity: 0; }
+}
+
+.w3-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.65em 1.3em;
+  border-radius: 10px;
+  border: 1px solid rgba(56, 226, 255, 0.4);
+  background: linear-gradient(135deg, rgba(56, 226, 255, 0.15), rgba(185, 104, 255, 0.15));
+  color: var(--w3-text);
+  font-weight: 600;
+  font-size: 0.92em;
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.15s ease;
+  text-decoration: none;
+}
+
+.w3-btn:hover {
+  border-color: var(--w3-cyan);
+  transform: translateY(-1px);
+}
+
+.w3-input {
+  width: 100%;
+  padding: 0.7em 0.9em;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--w3-text);
+  font-family: inherit;
+  font-size: 0.95em;
+}
+
+.w3-input:focus {
+  outline: none;
+  border-color: var(--w3-cyan);
+  box-shadow: 0 0 0 3px rgba(56, 226, 255, 0.15);
+}
+
+.w3-progress-ring-bg {
+  stroke: rgba(255, 255, 255, 0.08);
+}
+
+.w3-mono {
+  font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+}

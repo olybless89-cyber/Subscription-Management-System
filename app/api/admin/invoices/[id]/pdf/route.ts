@@ -2,11 +2,13 @@
 // Regenerates the PDF on demand from the stored Invoice row (same
 // generator used when the invoice was first emailed) rather than
 // storing the PDF binary anywhere — see src/lib/invoices/pdf.ts for why.
-// Scoped via canAccessCustomer, same as every other customer-linked
-// resource.
+// Scoped via canAccessCustomer, which already correctly handles BOTH an
+// admin session (assignment-scoped) and a customer session (only their
+// own invoice) — so this route serves both the admin dashboard and the
+// customer portal without duplicating the auth logic.
 
 import { buildWebhookDeps } from '../../../../../../src/lib/deps-factory';
-import { authenticateFromHeader, hasAdminRole, canAccessCustomer } from '../../../../../../src/lib/auth/authorize';
+import { authenticateFromHeader, canAccessCustomer } from '../../../../../../src/lib/auth/authorize';
 import { generateInvoicePdf } from '../../../../../../src/lib/invoices/pdf';
 
 export async function GET(
@@ -14,8 +16,8 @@ export async function GET(
   context: { params: { id: string } }
 ): Promise<Response> {
   const auth = authenticateFromHeader(request.headers.get('authorization'));
-  if (!auth.authenticated || !hasAdminRole(auth.session, ['ADMIN', 'SUPER_ADMIN'])) {
-    return new Response(JSON.stringify({ error: 'Admin access required' }), {
+  if (!auth.authenticated) {
+    return new Response(JSON.stringify({ error: 'Authentication required' }), {
       status: 403,
       headers: { 'Content-Type': 'application/json' },
     });

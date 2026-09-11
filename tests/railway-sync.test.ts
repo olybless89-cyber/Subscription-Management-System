@@ -3,6 +3,7 @@ import { syncRailwayResources, syncSingleRailwayResource } from '@/lib/cron/rail
 import { RailwayClient } from '@/lib/railway/client';
 import { RailwayResourceRepository } from '@/lib/db/ports';
 import { RailwayResourceRecord } from '@/types/domain';
+import { makeResourceStatusSnapshotRepo } from './fakes';
 
 function makeFakeResourceRepo(seed: RailwayResourceRecord[]): RailwayResourceRepository & {
   rows: Map<string, RailwayResourceRecord>;
@@ -128,6 +129,73 @@ describe('syncRailwayResources', () => {
     expect(result.checked).toBe(1);
     expect(railway.request).toHaveBeenCalledTimes(1);
     expect(repo.rows.get('res_mt')!.status).toBe('ACTIVE'); // untouched
+  });
+});
+
+describe('syncRailwayResources — status snapshot recording', () => {
+  it('records a snapshot on a successful check when a snapshot repo is provided', async () => {
+    const repo = makeFakeResourceRepo([dedicatedResource()]);
+    const { repo: snapshots, rows: snapshotRows } = makeResourceStatusSnapshotRepo();
+    const railway: RailwayClient = {
+      request: vi.fn(async (): Promise<any> => ({
+        deployments: { edges: [{ node: { status: 'SUCCESS' } }] },
+      })),
+    };
+
+    await syncRailwayResources(repo, railway, snapshots);
+
+    expect(snapshotRows).toHaveLength(1);
+    expect(snapshotRows[0]).toMatchObject({ railwayResourceId: 'res_1', status: 'ACTIVE' });
+  });
+
+  it('records an UNKNOWN snapshot when Railway is unreachable — never silently drops the data point', async () => {
+    const repo = makeFakeResourceRepo([dedicatedResource()]);
+    const { repo: snapshots, rows: snapshotRows } = makeResourceStatusSnapshotRepo();
+    const railway: RailwayClient = {
+      request: vi.fn(async () => {
+        throw new Error('network error');
+      }),
+    };
+
+    await syncRailwayResources(repo, railway, snapshots);
+
+    expect(snapshotRows).toHaveLength(1);
+    expect(snapshotRows[0].status).toBe('UNKNOWN');
+  });
+
+  it('never breaks the sync itself if writing a snapshot throws', async () => {
+    const repo = makeFakeResourceRepo([dedicatedResource()]);
+    const railway: RailwayClient = {
+      request: vi.fn(async (): Promise<any> => ({
+        deployments: { edges: [{ node: { status: 'SUCCESS' } }] },
+      })),
+    };
+    const brokenSnapshots = {
+      async create() {
+        throw new Error('simulated DB failure writing snapshot');
+      },
+      async findByResourceId() {
+        return [];
+      },
+    };
+
+    const result = await syncRailwayResources(repo, railway, brokenSnapshots);
+
+    expect(result.updated).toBe(1);
+    expect(repo.rows.get('res_1')!.status).toBe('ACTIVE');
+  });
+
+  it('works fine with no snapshot repo at all (optional parameter, backward compatible)', async () => {
+    const repo = makeFakeResourceRepo([dedicatedResource()]);
+    const railway: RailwayClient = {
+      request: vi.fn(async (): Promise<any> => ({
+        deployments: { edges: [{ node: { status: 'SUCCESS' } }] },
+      })),
+    };
+
+    const result = await syncRailwayResources(repo, railway);
+
+    expect(result.updated).toBe(1);
   });
 });
 

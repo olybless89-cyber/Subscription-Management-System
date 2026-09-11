@@ -15,6 +15,7 @@ import {
   InvoiceRepository,
   CampaignRepository,
   WhatsAppSender,
+  ResourceStatusSnapshotRepository,
 } from './ports';
 import {
   SubscriptionRecord,
@@ -27,6 +28,7 @@ import {
   InvoiceRecord,
   CampaignRecord,
   CampaignRecipientRecord,
+  StatusSnapshotRecord,
 } from '@/types/domain';
 import { sendWhatsAppMessage } from '../notifications/whatsapp';
 import { sendEmail, subjectForEvent, renderBrandedEmailHtml } from '../notifications/email';
@@ -1131,5 +1133,34 @@ export class WhatsAppNotificationSender implements WhatsAppSender {
         data: { sentAt: new Date() },
       });
     }
+  }
+}
+
+export class PrismaResourceStatusSnapshotRepository implements ResourceStatusSnapshotRepository {
+  constructor(private prisma: PrismaClient) {}
+
+  async create(input: { railwayResourceId: string; status: RailwayResourceRecord['status'] }): Promise<void> {
+    await this.prisma.resourceStatusSnapshot.create({
+      data: {
+        railwayResourceId: input.railwayResourceId,
+        status: input.status as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+      },
+    });
+  }
+
+  async findByResourceId(railwayResourceId: string, sinceIso?: string): Promise<StatusSnapshotRecord[]> {
+    const rows = await this.prisma.resourceStatusSnapshot.findMany({
+      where: {
+        railwayResourceId,
+        ...(sinceIso ? { checkedAt: { gte: new Date(sinceIso) } } : {}),
+      },
+      orderBy: { checkedAt: 'asc' },
+    });
+    return rows.map((r: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+      id: r.id,
+      railwayResourceId: r.railwayResourceId,
+      status: r.status,
+      checkedAt: r.checkedAt.toISOString(),
+    }));
   }
 }

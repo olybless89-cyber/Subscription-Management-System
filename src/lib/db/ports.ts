@@ -18,6 +18,7 @@ import {
   InvoiceRecord,
   InvoiceType,
   InvoiceStatus,
+  StatusSnapshotRecord,
   CampaignRecord,
   CampaignChannel,
   CampaignStatus,
@@ -261,6 +262,19 @@ export interface RailwayResourceRepository {
   }): Promise<RailwayResourceRecord>;
 }
 
+/** One row per periodic status check (written by syncRailwayResources,
+ * piggy-backing on the existing 30-min sync — no new cron needed). This
+ * is genuinely how uptime % gets computed: proportion of checks that
+ * came back ACTIVE, not continuous monitoring. See
+ * src/lib/monitoring/uptime.ts for the honest framing of what this
+ * number actually means. */
+export interface ResourceStatusSnapshotRepository {
+  create(input: { railwayResourceId: string; status: RailwayResourceStatus }): Promise<void>;
+  /** Most-recent-first is NOT required — callers compute aggregates
+   * over the whole set, order doesn't matter for that. */
+  findByResourceId(railwayResourceId: string, sinceIso?: string): Promise<StatusSnapshotRecord[]>;
+}
+
 export interface SuspensionEventRepository {
   create(event: SuspensionEventInput): Promise<void>;
 }
@@ -414,6 +428,18 @@ export interface CustomEmailDeps {
  */
 export interface WhatsAppSender {
   send(customerId: string, message: string): Promise<void>;
+}
+
+/** The customer-facing self-service portal — deliberately its own
+ * read-heavy deps bag, separate from anything admin-facing. */
+export interface CustomerPortalDeps {
+  customers: CustomerRepository;
+  subscriptions: SubscriptionRepository;
+  plans: PlanRepository;
+  railwayResources: RailwayResourceRepository;
+  statusSnapshots: ResourceStatusSnapshotRepository;
+  invoices: InvoiceRepository;
+  domains: DomainRepository;
 }
 
 export interface CampaignDeps {

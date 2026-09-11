@@ -85,7 +85,7 @@ app/api/
   cron/railway-sync/route.ts             Railway sync (CRON_SECRET-protected)
   subscriptions/[id]/suspend/route.ts     Admin manual suspend — scoped to assignment
   subscriptions/[id]/restore/route.ts      Admin manual restore — scoped to assignment
-tests/                                243 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
+tests/                                259 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
 app/
   globals.css                          Design tokens (forest green/paper/clay — matches the spec's own branding request)
   layout.tsx                            Root layout, wraps everything in AuthProvider
@@ -93,6 +93,9 @@ app/
   login/page.tsx                          Admin login form
 renew/[customerCode]/page.tsx           Public, unauthenticated "subscription expired, renew" page
 register/page.tsx                          Public, unauthenticated self-service signup page
+client/
+  login/page.tsx                             Customer portal login
+  dashboard/page.tsx                           Customer portal dashboard — web3 monitoring UI
   dashboard/
     layout.tsx                             Sidebar + auth guard (redirects to /login if not signed in)
     page.tsx                                 Overview
@@ -202,6 +205,72 @@ before it can even be saved if someone tries to pair `MULTI_TENANT` with
   placeholder: hero with the logo, a features grid, and a closing CTA
   into `/login`. Static, no client-side state, matches the same design
   tokens as the dashboard (forest green / paper / clay accent).
+
+## Customer portal: real uptime tracking + a futuristic monitoring dashboard
+
+### The honesty constraint that shaped this
+
+There was no real uptime-history tracking before this round — only
+current live status from Railway. Rather than show a fabricated
+percentage, the actual mechanism is:
+
+- **`ResourceStatusSnapshot`** — a new table, written every time the
+  existing 30-minute `syncRailwayResources` cron checks a resource (no
+  new cron job — this piggy-backs on work that already happens).
+  Snapshot writes are wrapped so a failure to record HISTORY can never
+  break the actual status sync.
+- **`computeUptimeStats()`** (`src/lib/monitoring/uptime.ts`) — the
+  percentage is only computed from `ACTIVE`/`STOPPED` checks.
+  `UNKNOWN`/`ERROR` (Railway unreachable, or an ambiguous mid-deploy
+  state) are excluded from the ratio entirely — "we couldn't check" is
+  not evidence of downtime. Returns `null`, never a fabricated `0%` or
+  `100%`, when there's no conclusive data yet. Reports the *real*
+  earliest snapshot found as the window start, not a claimed 30 days
+  that doesn't exist for a brand-new resource. 7 direct tests, including
+  one confirming a new resource's window genuinely starts at "now."
+- **What this number actually means, stated plainly**: it's the
+  proportion of periodic ~30-minute checks that came back ACTIVE — not
+  continuous, second-by-second monitoring. The dashboard shows real
+  counts ("42/45 checks up since Sep 3") rather than implying more
+  precision than a 30-minute polling interval can honestly provide.
+
+### The customer portal itself
+
+- **`/client/login`** and **`/client/dashboard`** — a customer logs in
+  with the account they created at `/register` (or one an admin set a
+  password for) and sees their own subscription status, resource
+  health, uptime, invoices, and domains. Entirely separate auth context
+  (`CustomerAuthProvider`) and localStorage key from the admin side —
+  deliberately not sharing state, so a customer's token can never
+  accidentally reach an admin-only route or vice versa.
+- **`GET /api/customer/dashboard`** — one aggregated call, keyed
+  entirely from the session token (`session.sub`), with no customerId
+  anywhere in the request — nothing to guess or tamper with. Rejects
+  anything that isn't a customer session, including a valid admin
+  token.
+- **The invoice PDF route now serves both audiences from one place**:
+  `canAccessCustomer()` already correctly handled a customer session
+  matching their own invoice (it was written that way from the start,
+  for the admin side's benefit) — this round just relaxed the route's
+  initial gate from "admin role required" to "any authenticated
+  session," and let the existing scope check do the real work. No
+  duplicate route, no duplicated auth logic.
+- **Visual design**: a deliberately distinct system from both the calm
+  admin ops-tool aesthetic (forest/paper) and the marketing site — dark
+  background, neon cyan/violet glassmorphic panels, a subtle animated
+  grid, pulsing status indicators, and an SVG uptime ring. Lives
+  entirely in its own CSS section (`.w3-*` classes in
+  `app/globals.css`) so it can't leak into or clash with either of the
+  other two visual languages already in this app.
+
+### What's not built
+
+- No email verification loop for self-registered accounts (already
+  flagged in an earlier round, still true).
+- No push/webhook-based real-time updates — the dashboard fetches once
+  on load; a manual refresh shows the latest data.
+- No customer-side password change/profile editing yet within the
+  portal itself.
 
 ## Self-service customer registration
 
@@ -711,8 +780,8 @@ every real customer.
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit — passes clean (prisma-repository.ts excluded, see below)
-npm test            # vitest — 243 tests, all green, no network/DB needed
-npm run build       # next build — verified working in this sandbox, produces all 35 API routes + 18 UI pages
+npm test            # vitest — 259 tests, all green, no network/DB needed
+npm run build       # next build — verified working in this sandbox, produces all 37 API routes + 20 UI pages
 ```
 
 ### One thing I still could NOT verify from this sandbox — be aware before you ship
@@ -805,6 +874,8 @@ themselves are thin, reviewed-by-eye wrappers around that logic.
 | A failed invoice generation can never undo a recorded payment or a due-status transition | Both `createAndSendReceiptInvoice()` (webhook) and `createAndSendDueInvoice()` (cron) are called inside try/catch at their respective call sites, same pattern as the notification-failure fix from an earlier round. Tested directly by simulating an invoice-creation crash in both the webhook and the cron, confirming the payment/subscription-status change still completes either way. |
 | The invoice PDF viewer can't silently fail via an unauthenticated link | A real bug caught during development, not after: the first draft of the Invoices page used a plain `<a href>` to the PDF route, which can't carry the login token — clicking it would have 403'd for every admin. Fixed by fetching the PDF as an authenticated blob and opening it from an object URL instead. |
 | The public checkout route can't be tricked into acting on an arbitrary subscription | `POST /api/public/renew/:code/checkout` is intentionally unauthenticated (a stranger paying on someone else's behalf is harmless), but it never trusts a subscriptionId from the request — it re-derives which subscription actually needs payment itself via the same `getRenewalInfo()` the page uses to render, then reuses `initiateCheckout`'s own existing safety checks (blocked statuses, https-only callback) unchanged. |
+| Uptime is never fabricated | `computeUptimeStats()` returns `null`, not `0%` or `100%`, when there's no conclusive check yet. `UNKNOWN`/`ERROR` checks (Railway unreachable) are structurally excluded from the ratio's denominator, not just filtered in the UI — "we couldn't check" can never silently count as either up or down. Tested directly, including the specific case of a resource whose every check so far has been inconclusive. |
+| A customer session can never reach an admin-only route, or vice versa | `CustomerAuthProvider` uses a completely separate React context and localStorage key from the admin `AuthProvider` — no shared state to leak between them. `GET /api/customer/dashboard` explicitly checks `session.type === 'customer'`, rejecting even a valid admin token. |
 | A failed or unconfigured email dispatch can never block a payment, suspension, or restoration | `sendEmail()` never throws — a missing `RESEND_API_KEY`, a Resend outage, or a bad address always returns `{ success: false }`, checked and tested directly (`tests/email.test.ts`) for the network-error, error-status, and unconfigured cases. Every caller (webhook, suspension engine, cron) has already done the thing that matters — recorded the payment, stopped/restored the deployment — before attempting to notify anyone. |
 | A delegated admin-manager can't spread scope beyond their own | `setCustomerAssignments()` now checks that a non-SUPER_ADMIN requester only assigns customers they can already see themselves — a real gap caught before shipping: without this, a delegated `canManageAdmins` admin could have granted a sub-admin visibility into a customer the delegator never had access to. SUPER_ADMIN is exempt (no scope to exceed). Tested directly (`tests/admin-management.test.ts`). |
 | Subscription status can never be set directly, bypassing verification | `UpdateSubscriptionInput` (the PATCH type) has no `status` field at all — a compile-time guarantee, not just a runtime check (see the `@ts-expect-error` test in `domains-and-subscription-editing.test.ts`). The PATCH route additionally rejects any request body containing `status` with an explicit 400, pointing at the right endpoint instead. |

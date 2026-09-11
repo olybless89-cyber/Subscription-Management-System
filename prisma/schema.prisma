@@ -255,8 +255,27 @@ model RailwayResource {
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
 
+  statusSnapshots    ResourceStatusSnapshot[]
+
   @@index([hostingMode])
   @@index([status])
+}
+
+// A snapshot of a RailwayResource's status at one point in time,
+// written every time syncRailwayResources checks it (piggy-backing on
+// the already-scheduled sync — no new cron needed). This is genuinely
+// how the "uptime %" shown to customers is computed: it's the
+// proportion of these periodic checks that came back ACTIVE, not
+// continuous second-by-second monitoring. Honest about that limitation
+// wherever it's displayed — see src/lib/monitoring/uptime.ts.
+model ResourceStatusSnapshot {
+  id                String                @id @default(cuid())
+  railwayResourceId String
+  railwayResource   RailwayResource       @relation(fields: [railwayResourceId], references: [id], onDelete: Cascade)
+  status            RailwayResourceStatus
+  checkedAt         DateTime              @default(now())
+
+  @@index([railwayResourceId, checkedAt])
 }
 
 model SuspensionEvent {

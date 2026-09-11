@@ -205,6 +205,13 @@ export interface RailwayResourceRecord {
   status: RailwayResourceStatus;
 }
 
+export interface StatusSnapshotRecord {
+  id: string;
+  railwayResourceId: string;
+  status: RailwayResourceStatus;
+  checkedAt: string;
+}
+
 export interface SuspensionEventInput {
   subscriptionId: string;
   action: SuspensionAction;

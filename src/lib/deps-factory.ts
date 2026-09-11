@@ -15,8 +15,9 @@ import {
   PrismaCampaignRepository,
   EmailNotificationSender,
   WhatsAppNotificationSender,
+  PrismaResourceStatusSnapshotRepository,
 } from './db/prisma-repository';
-import { WebhookDeps, AuthDeps, CronDeps, AdminManagementDeps, BillingSetupDeps, CustomEmailDeps, CampaignDeps, RegisterCustomerDeps } from './db/ports';
+import { WebhookDeps, AuthDeps, CronDeps, AdminManagementDeps, BillingSetupDeps, CustomEmailDeps, CampaignDeps, RegisterCustomerDeps, CustomerPortalDeps } from './db/ports';
 import { createRailwayClient } from './railway/client';
 import { createPaystackProvider } from './payments/paystack';
 
@@ -90,6 +91,10 @@ export function buildAuditLogRepository(): PrismaAuditLogRepository {
   return new PrismaAuditLogRepository(getPrisma());
 }
 
+export function buildResourceStatusSnapshotRepository(): PrismaResourceStatusSnapshotRepository {
+  return new PrismaResourceStatusSnapshotRepository(getPrisma());
+}
+
 export function buildCustomEmailDeps(): CustomEmailDeps {
   const client = getPrisma();
   return {
@@ -123,6 +128,19 @@ export function buildRegisterCustomerDeps(): RegisterCustomerDeps {
     adminNotifications: new PrismaAdminNotificationRepository(client),
     notifications: new EmailNotificationSender(client),
     auditLog: new PrismaAuditLogRepository(client),
+  };
+}
+
+export function buildCustomerPortalDeps(): CustomerPortalDeps {
+  const client = getPrisma();
+  return {
+    customers: new PrismaCustomerRepository(client),
+    subscriptions: new PrismaSubscriptionRepository(client),
+    plans: new PrismaPlanRepository(client),
+    railwayResources: new PrismaRailwayResourceRepository(client),
+    statusSnapshots: new PrismaResourceStatusSnapshotRepository(client),
+    invoices: new PrismaInvoiceRepository(client),
+    domains: new PrismaDomainRepository(client),
   };
 }
 

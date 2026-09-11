@@ -1,4 +1,4 @@
-import { EngineDeps, WebhookDeps, AuthDeps, AdminManagementDeps, BillingSetupDeps, CustomEmailDeps, CampaignDeps, RegisterCustomerDeps } from '@/lib/db/ports';
+import { EngineDeps, WebhookDeps, AuthDeps, AdminManagementDeps, BillingSetupDeps, CustomEmailDeps, CampaignDeps, RegisterCustomerDeps, CustomerPortalDeps } from '@/lib/db/ports';
 import {
   CustomerRecord,
   SubscriptionRecord,
@@ -11,6 +11,7 @@ import {
   InvoiceRecord,
   CampaignRecord,
   CampaignRecipientRecord,
+  StatusSnapshotRecord,
 } from '@/types/domain';
 
 // ---------- shared primitive stores, reused across the various fake-deps builders ----------
@@ -769,6 +770,104 @@ export function makeFakeRegisterCustomerDeps(seed: {
     notifications: {
       async send(customerId, event, message, subject) {
         notificationLog.push({ customerId, event, message, subject });
+      },
+    },
+  };
+}
+
+export function makeResourceStatusSnapshotRepo() {
+  const rows: StatusSnapshotRecord[] = [];
+  let counter = 0;
+  const repo = {
+    async create(input: { railwayResourceId: string; status: StatusSnapshotRecord['status'] }) {
+      counter += 1;
+      rows.push({ id: `snap_${counter}`, railwayResourceId: input.railwayResourceId, status: input.status, checkedAt: new Date().toISOString() });
+    },
+    async findByResourceId(railwayResourceId: string, sinceIso?: string) {
+      return rows.filter(
+        (r) => r.railwayResourceId === railwayResourceId && (!sinceIso || r.checkedAt >= sinceIso)
+      );
+    },
+  };
+  return { repo, rows };
+}
+
+export function makeFakeCustomerPortalDeps(seed: {
+  customers: CustomerRecord[];
+  subscriptions: SubscriptionRecord[];
+  plans: PlanRecord[];
+  railwayResources: RailwayResourceRecord[];
+  invoices?: InvoiceRecord[];
+  domains?: DomainRecord[];
+}): CustomerPortalDeps & {
+  snapshotRows: StatusSnapshotRecord[];
+} {
+  const { repo: customersRepo } = makeCustomerRepo(seed.customers);
+  const { repo: subscriptionsRepo } = makeSubscriptionRepo(seed.subscriptions);
+  const { repo: plansRepo } = makePlanRepo(seed.plans);
+  const { repo: snapshotsRepo, rows: snapshotRows } = makeResourceStatusSnapshotRepo();
+  const { repo: domainsRepo } = makeDomainRepo(seed.domains ?? []);
+
+  const railwayResources = [...seed.railwayResources];
+  const invoices = new Map((seed.invoices ?? []).map((i) => [i.id, { ...i }]));
+  let invoiceCounter = invoices.size;
+
+  return {
+    customers: customersRepo,
+    subscriptions: subscriptionsRepo,
+    plans: plansRepo,
+    statusSnapshots: snapshotsRepo,
+    snapshotRows,
+    domains: domainsRepo,
+    railwayResources: {
+      async findBySubscriptionId(subscriptionId: string) {
+        return railwayResources.filter((r) => r.subscriptionId === subscriptionId);
+      },
+      async findAll() {
+        return [...railwayResources];
+      },
+      async updateStatus(id: string, status: RailwayResourceRecord['status'], extra?: { deploymentId?: string | null }) {
+        const r = railwayResources.find((x) => x.id === id);
+        if (!r) throw new Error('not found');
+        r.status = status;
+        if (extra?.deploymentId !== undefined) r.deploymentId = extra.deploymentId ?? null;
+      },
+      async create(input: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+        const record: RailwayResourceRecord = {
+          id: `res_${railwayResources.length + 1}`,
+          subscriptionId: input.subscriptionId,
+          projectId: input.projectId,
+          environmentId: input.environmentId,
+          serviceId: input.serviceId,
+          deploymentId: input.deploymentId ?? null,
+          hostingMode: input.hostingMode,
+          suspensionStrategy: input.suspensionStrategy,
+          status: 'UNKNOWN',
+        };
+        railwayResources.push(record);
+        return record;
+      },
+    },
+    invoices: {
+      async create(input: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+        invoiceCounter += 1;
+        const record: InvoiceRecord = {
+          id: `inv_${invoiceCounter}`,
+          invoiceNumber: `INV-${String(invoiceCounter).padStart(6, '0')}`,
+          issuedAt: new Date().toISOString(),
+          ...input,
+        };
+        invoices.set(record.id, record);
+        return record;
+      },
+      async findById(id: string) {
+        return invoices.get(id) ?? null;
+      },
+      async findByCustomerId(customerId: string) {
+        return [...invoices.values()].filter((i) => i.customerId === customerId);
+      },
+      async listAll() {
+        return [...invoices.values()];
       },
     },
   };
