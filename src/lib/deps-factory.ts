@@ -10,9 +10,14 @@ import {
   PrismaAdminAssignmentRepository,
   PrismaAdminNotificationRepository,
   PrismaAuditLogRepository,
+  PrismaDomainRepository,
+  PrismaInvoiceRepository,
+  PrismaCampaignRepository,
   EmailNotificationSender,
+  WhatsAppNotificationSender,
+  PrismaResourceStatusSnapshotRepository,
 } from './db/prisma-repository';
-import { WebhookDeps, AuthDeps, CronDeps, AdminManagementDeps, BillingSetupDeps } from './db/ports';
+import { WebhookDeps, AuthDeps, CronDeps, AdminManagementDeps, BillingSetupDeps, CustomEmailDeps, CampaignDeps, RegisterCustomerDeps, CustomerPortalDeps } from './db/ports';
 import { createRailwayClient } from './railway/client';
 import { createPaystackProvider } from './payments/paystack';
 
@@ -34,6 +39,7 @@ export function buildWebhookDeps(): WebhookDeps {
     railwayResources: new PrismaRailwayResourceRepository(client),
     suspensionEvents: new PrismaSuspensionEventRepository(client),
     notifications: new EmailNotificationSender(client),
+    invoices: new PrismaInvoiceRepository(client),
     plans: new PrismaPlanRepository(client),
     payments: new PrismaPaymentRepository(client),
     admins: new PrismaAdminRepository(client),
@@ -63,6 +69,7 @@ export function buildAdminManagementDeps(): AdminManagementDeps {
     admins: new PrismaAdminRepository(client),
     customers: new PrismaCustomerRepository(client),
     adminAssignments: new PrismaAdminAssignmentRepository(client),
+    domains: new PrismaDomainRepository(client),
     auditLog: new PrismaAuditLogRepository(client),
   };
 }
@@ -75,12 +82,66 @@ export function buildBillingSetupDeps(): BillingSetupDeps {
     plans: new PrismaPlanRepository(client),
     subscriptions: new PrismaSubscriptionRepository(client),
     railwayResources: new PrismaRailwayResourceRepository(client),
+    domains: new PrismaDomainRepository(client),
     auditLog: new PrismaAuditLogRepository(client),
   };
 }
 
 export function buildAuditLogRepository(): PrismaAuditLogRepository {
   return new PrismaAuditLogRepository(getPrisma());
+}
+
+export function buildResourceStatusSnapshotRepository(): PrismaResourceStatusSnapshotRepository {
+  return new PrismaResourceStatusSnapshotRepository(getPrisma());
+}
+
+export function buildCustomEmailDeps(): CustomEmailDeps {
+  const client = getPrisma();
+  return {
+    admins: new PrismaAdminRepository(client),
+    customers: new PrismaCustomerRepository(client),
+    notifications: new EmailNotificationSender(client),
+    auditLog: new PrismaAuditLogRepository(client),
+  };
+}
+
+export function buildCampaignDeps(): CampaignDeps {
+  const client = getPrisma();
+  return {
+    admins: new PrismaAdminRepository(client),
+    customers: new PrismaCustomerRepository(client),
+    adminAssignments: new PrismaAdminAssignmentRepository(client),
+    campaigns: new PrismaCampaignRepository(client),
+    notifications: new EmailNotificationSender(client),
+    whatsapp: new WhatsAppNotificationSender(client),
+    auditLog: new PrismaAuditLogRepository(client),
+  };
+}
+
+export function buildRegisterCustomerDeps(): RegisterCustomerDeps {
+  const client = getPrisma();
+  return {
+    customers: new PrismaCustomerRepository(client),
+    domains: new PrismaDomainRepository(client),
+    admins: new PrismaAdminRepository(client),
+    adminAssignments: new PrismaAdminAssignmentRepository(client),
+    adminNotifications: new PrismaAdminNotificationRepository(client),
+    notifications: new EmailNotificationSender(client),
+    auditLog: new PrismaAuditLogRepository(client),
+  };
+}
+
+export function buildCustomerPortalDeps(): CustomerPortalDeps {
+  const client = getPrisma();
+  return {
+    customers: new PrismaCustomerRepository(client),
+    subscriptions: new PrismaSubscriptionRepository(client),
+    plans: new PrismaPlanRepository(client),
+    railwayResources: new PrismaRailwayResourceRepository(client),
+    statusSnapshots: new PrismaResourceStatusSnapshotRepository(client),
+    invoices: new PrismaInvoiceRepository(client),
+    domains: new PrismaDomainRepository(client),
+  };
 }
 
 export function buildPaystackProvider() {

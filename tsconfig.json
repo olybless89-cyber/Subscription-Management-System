@@ -18,9 +18,6 @@
     "paths": {
       "@/*": [
         "src/*"
-      ],
-      "@/components/*": [
-        "components/*"
       ]
     },
     "allowJs": true,

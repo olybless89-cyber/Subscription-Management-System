@@ -1,3 +1,9 @@
+// GET /api/admin/admins — list admins. Gated by canManageOtherAdmins()
+// (SUPER_ADMIN, or a plain ADMIN with canManageAdmins=true) — listing
+// every admin's email/role is sensitive in the same way creating one is,
+// so this checks the requester's FRESH canManageAdmins flag from the DB
+// (not the session token — that flag isn't in the token at all, on
+// purpose, so revoking it takes effect immediately).
 // POST /api/admin/admins
 // Creates a new admin. Gated by createAdmin()'s own permission check
 // (SUPER_ADMIN, or a plain ADMIN with canManageAdmins=true) — this route
@@ -6,7 +12,24 @@
 
 import { createAdmin } from '../../../../src/lib/admin/manage';
 import { buildAdminManagementDeps } from '../../../../src/lib/deps-factory';
-import { authenticateFromHeader, hasAdminRole } from '../../../../src/lib/auth/authorize';
+import { authenticateFromHeader, hasAdminRole, canManageOtherAdmins } from '../../../../src/lib/auth/authorize';
+
+export async function GET(request: Request): Promise<Response> {
+  const auth = authenticateFromHeader(request.headers.get('authorization'));
+  if (!auth.authenticated || !hasAdminRole(auth.session, ['ADMIN', 'SUPER_ADMIN'])) {
+    return json(403, { error: 'Admin access required' });
+  }
+
+  const deps = buildAdminManagementDeps();
+  const requester = await deps.admins.findById(auth.session.sub);
+  if (!requester || !canManageOtherAdmins(requester)) {
+    return json(403, { error: 'You do not have permission to view the admin list' });
+  }
+
+  const admins = await deps.admins.listAll();
+  const safe = admins.map(({ passwordHash, ...rest }) => rest);
+  return json(200, { admins: safe });
+}
 
 export async function POST(request: Request): Promise<Response> {
   const auth = authenticateFromHeader(request.headers.get('authorization'));

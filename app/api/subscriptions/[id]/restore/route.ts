@@ -1,5 +1,5 @@
 // POST /api/subscriptions/:id/restore
-// Admin-only, AND scoped to admin assignment (same rule as suspend) —
+// SUPER_ADMIN only — same policy as suspend, see that route's comment.
 // e.g. "customer paid via bank transfer, not through Paystack, restore
 // them manually." Passes paymentVerified: true only because a human
 // admin, not client input, is asserting it after (presumably) checking
@@ -8,30 +8,26 @@
 
 import { restoreCustomer } from '../../../../../src/lib/suspension/restoration';
 import { buildWebhookDeps, buildRailwayClient, buildAuditLogRepository } from '../../../../../src/lib/deps-factory';
-import { authenticateFromHeader, hasAdminRole, canAccessCustomer } from '../../../../../src/lib/auth/authorize';
+import { authenticateFromHeader, hasAdminRole } from '../../../../../src/lib/auth/authorize';
 import { recordAuditLog } from '../../../../../src/lib/audit/log';
 
 export async function POST(
   request: Request,
-  context: { params: Promise<{ id: string }> }
+  context: { params: { id: string } }
 ): Promise<Response> {
-  const { id } = await context.params;
   const auth = authenticateFromHeader(request.headers.get('authorization'));
-  if (!auth.authenticated || !hasAdminRole(auth.session, ['ADMIN', 'SUPER_ADMIN'])) {
-    return json(403, { error: 'Admin access required' });
+  if (!auth.authenticated || !hasAdminRole(auth.session, ['SUPER_ADMIN'])) {
+    return json(403, { error: 'Only the super admin can restore a subscription' });
   }
 
   const deps = buildWebhookDeps();
 
-  const subscription = await deps.subscriptions.findById(id);
+  const subscription = await deps.subscriptions.findById(context.params.id);
   if (!subscription) {
     return json(404, { error: 'Subscription not found' });
   }
-  if (!(await canAccessCustomer(auth.session, subscription.customerId, deps.adminAssignments))) {
-    return json(403, { error: 'This subscription is not assigned to you' });
-  }
 
-  const result = await restoreCustomer(deps, buildRailwayClient(), id, {
+  const result = await restoreCustomer(deps, buildRailwayClient(), context.params.id, {
     manual: true,
     paymentVerified: true,
     performedBy: auth.session.sub,
@@ -40,7 +36,7 @@ export async function POST(
   await recordAuditLog(buildAuditLogRepository(), {
     actor: auth.session.sub,
     action: 'CUSTOMER_RESTORED',
-    target: id,
+    target: context.params.id,
     metadata: { outcome: result.outcome },
     result: result.outcome === 'RESTORED' ? 'SUCCESS' : 'FAILED',
   });

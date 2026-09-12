@@ -9,7 +9,14 @@ function baseCustomer(overrides: Partial<CustomerRecord> = {}): CustomerRecord {
   return {
     id: 'cust_1',
     customerCode: 'WOH-000001',
+    name: 'Test Customer',
     email: 'customer@example.com',
+    notificationEmail: null,
+    phone: null,
+    dateOfBirth: null,
+    serviceStartDate: null,
+    serviceEndDate: null,
+    websiteType: null,
     passwordHash: null,
     paymentProvider: 'PAYSTACK',
     status: 'ACTIVE',
@@ -49,6 +56,50 @@ function dedicatedResource(overrides: Partial<RailwayResourceRecord> = {}): Rail
     ...overrides,
   };
 }
+
+describe('suspendCustomer — customer message includes a renewal link', () => {
+  it('the SUSPENDED notification includes a renewal URL keyed by the customer code', async () => {
+    process.env.APP_URL = 'https://example.com';
+    const deps = makeFakeDeps({
+      customers: [baseCustomer({ customerCode: 'WOH-000042' })],
+      subscriptions: [baseSubscription()],
+      railwayResources: [
+        dedicatedResource({ hostingMode: 'MULTI_TENANT', suspensionStrategy: 'APP_LEVEL' }),
+      ],
+    });
+    const railway: RailwayClient = { request: vi.fn() };
+
+    await suspendCustomer(deps, railway, 'sub_1', 'NON_PAYMENT', { manual: true });
+
+    expect(deps.notificationLog[0].message).toContain('https://example.com/renew/WOH-000042');
+  });
+});
+
+describe('suspendCustomer — notification failures never crash the response', () => {
+  it('still reports SUSPENDED even if deps.notifications.send() throws', async () => {
+    const deps = makeFakeDeps({
+      customers: [baseCustomer()],
+      subscriptions: [baseSubscription()],
+      railwayResources: [
+        dedicatedResource({ hostingMode: 'MULTI_TENANT', suspensionStrategy: 'APP_LEVEL' }),
+      ],
+    });
+    // Override the fake's notifications.send to throw, simulating a
+    // Prisma error or any other failure inside the notification pipeline.
+    deps.notifications.send = async () => {
+      throw new Error('simulated notification pipeline crash');
+    };
+    const railway: RailwayClient = { request: vi.fn() };
+
+    const result = await suspendCustomer(deps, railway, 'sub_1', 'NON_PAYMENT', { manual: true });
+
+    // The suspension itself still completed and was recorded — this is
+    // the whole point: a notification crash must never masquerade as a
+    // failed suspension, and must never bubble up as an unhandled 500.
+    expect(result.outcome).toBe('SUSPENDED');
+    expect((await deps.subscriptions.findById('sub_1'))!.status).toBe('SUSPENDED');
+  });
+});
 
 describe('suspendCustomer — DEDICATED / STOP_DEPLOYMENT', () => {
   it('stops the deployment and marks everything SUSPENDED on verified success', async () => {
@@ -278,6 +329,25 @@ describe('suspendCustomer — safety & idempotency', () => {
 });
 
 describe('restoreCustomer', () => {
+  it('still reports RESTORED even if deps.notifications.send() throws', async () => {
+    const deps = makeFakeDeps({
+      customers: [baseCustomer({ status: 'SUSPENDED' })],
+      subscriptions: [baseSubscription({ status: 'SUSPENDED' })],
+      railwayResources: [
+        dedicatedResource({ hostingMode: 'MULTI_TENANT', suspensionStrategy: 'APP_LEVEL', status: 'ACTIVE' }),
+      ],
+    });
+    deps.notifications.send = async () => {
+      throw new Error('simulated notification pipeline crash');
+    };
+    const railway: RailwayClient = { request: vi.fn() };
+
+    const result = await restoreCustomer(deps, railway, 'sub_1', { paymentVerified: true });
+
+    expect(result.outcome).toBe('RESTORED');
+    expect((await deps.subscriptions.findById('sub_1'))!.status).toBe('ACTIVE');
+  });
+
   it('refuses to restore without server-verified payment', async () => {
     const deps = makeFakeDeps({
       customers: [baseCustomer({ status: 'SUSPENDED' })],

@@ -9,7 +9,14 @@ function baseCustomer(overrides: Partial<CustomerRecord> = {}): CustomerRecord {
   return {
     id: 'cust_1',
     customerCode: 'WOH-000001',
+    name: 'Test Customer',
     email: 'customer@example.com',
+    notificationEmail: null,
+    phone: null,
+    dateOfBirth: null,
+    serviceStartDate: null,
+    serviceEndDate: null,
+    websiteType: null,
     passwordHash: null,
     paymentProvider: 'PAYSTACK',
     status: 'SUSPENDED',
@@ -225,6 +232,76 @@ describe('handlePaymentWebhook — verification', () => {
     expect(result.outcome).toBe('PAYMENT_NOT_SUCCESSFUL');
     const subscription = await deps.subscriptions.findById('sub_1');
     expect(subscription!.status).toBe('SUSPENDED');
+  });
+});
+
+describe('handlePaymentWebhook — notification failures never crash the webhook response', () => {
+  it('still returns PROCESSED even if deps.notifications.send() throws', async () => {
+    const deps = makeFakeWebhookDeps({
+      customers: [baseCustomer({ status: 'SUSPENDED' })],
+      subscriptions: [baseSubscription({ status: 'SUSPENDED' })],
+      railwayResources: [multiTenantResource()],
+      plans: [basePlan()],
+      payments: [basePayment()],
+    });
+    deps.notifications.send = async () => {
+      throw new Error('simulated notification pipeline crash');
+    };
+    const provider = fakeProvider();
+
+    const result = await handlePaymentWebhook(deps, provider, railway, chargeSuccessBody(), 'sig');
+
+    // The payment was still recorded and the subscription still
+    // restored — a notification crash must degrade silently, never
+    // surface as a failed/uncaught webhook response (which a payment
+    // provider could misinterpret and retry unnecessarily).
+    expect(result.outcome).toBe('PROCESSED');
+    expect(result.httpStatus).toBe(200);
+    const subscription = await deps.subscriptions.findById('sub_1');
+    expect(subscription!.status).toBe('ACTIVE');
+  });
+});
+
+describe('handlePaymentWebhook — receipt invoice', () => {
+  it('creates and sends a PAID receipt invoice on a successful payment', async () => {
+    const deps = makeFakeWebhookDeps({
+      customers: [baseCustomer({ status: 'SUSPENDED' })],
+      subscriptions: [baseSubscription({ status: 'SUSPENDED' })],
+      railwayResources: [multiTenantResource()],
+      plans: [basePlan()],
+      payments: [basePayment()],
+    });
+    const provider = fakeProvider();
+
+    const result = await handlePaymentWebhook(deps, provider, railway, chargeSuccessBody(), 'sig');
+
+    expect(result.outcome).toBe('PROCESSED');
+    const invoices = await deps.invoices.findByCustomerId('cust_1');
+    expect(invoices).toHaveLength(1);
+    expect(invoices[0].type).toBe('RECEIPT');
+    expect(invoices[0].status).toBe('PAID');
+    expect(invoices[0].subscriptionId).toBe('sub_1');
+  });
+
+  it('a failed invoice creation never undoes the payment or subscription restoration', async () => {
+    const deps = makeFakeWebhookDeps({
+      customers: [baseCustomer({ status: 'SUSPENDED' })],
+      subscriptions: [baseSubscription({ status: 'SUSPENDED' })],
+      railwayResources: [multiTenantResource()],
+      plans: [basePlan()],
+      payments: [basePayment()],
+    });
+    deps.invoices.create = async () => {
+      throw new Error('simulated invoice DB failure');
+    };
+    const provider = fakeProvider();
+
+    const result = await handlePaymentWebhook(deps, provider, railway, chargeSuccessBody(), 'sig');
+
+    expect(result.outcome).toBe('PROCESSED');
+    expect(result.httpStatus).toBe(200);
+    const subscription = await deps.subscriptions.findById('sub_1');
+    expect(subscription!.status).toBe('ACTIVE');
   });
 });
 

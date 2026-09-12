@@ -73,8 +73,10 @@ describe('authenticateAdmin', () => {
   async function seedAdmin(overrides: Partial<AdminRecord> = {}): Promise<AdminRecord> {
     return {
       id: 'admin_1',
+      name: 'Test Admin',
       email: 'jeffrey@digitalweboracleict.com',
       passwordHash: await hashPassword('correct-password'),
+      passwordChangedAt: null,
       role: 'SUPER_ADMIN',
       canManageAdmins: true,
       ...overrides,
@@ -125,7 +127,14 @@ describe('authenticateCustomer', () => {
     return {
       id: 'cust_1',
       customerCode: 'WOH-000001',
+      name: 'Test Customer',
       email: 'client@example.com',
+      notificationEmail: null,
+      phone: null,
+      dateOfBirth: null,
+      serviceStartDate: null,
+      serviceEndDate: null,
+      websiteType: null,
       passwordHash: await hashPassword('client-password'),
       status: 'ACTIVE',
       automaticSuspension: true,

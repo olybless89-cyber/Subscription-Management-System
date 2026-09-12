@@ -1,21 +1,40 @@
+// GET /api/admin/subscriptions/:id/railway-resource — view mappings, SUPER_ADMIN only
 // POST /api/admin/subscriptions/:id/railway-resource — spec section 12
-// The third, deliberately separate step: customer -> plan -> subscription
-// (all above) -> THIS maps that subscription to real Railway
-// infrastructure. Scoped to admin assignment, same as subscription
-// creation.
+// SUPER_ADMIN only — same policy as suspend/restore. Railway
+// infrastructure access belongs solely to the super admin; plain admins
+// (regardless of which customers are assigned to them) have no ability
+// to view or map Railway resources at all.
 
 import { buildBillingSetupDeps, buildWebhookDeps } from '../../../../../../src/lib/deps-factory';
-import { authenticateFromHeader, hasAdminRole, canAccessCustomer } from '../../../../../../src/lib/auth/authorize';
+import { authenticateFromHeader, hasAdminRole } from '../../../../../../src/lib/auth/authorize';
 import { mapRailwayResource } from '../../../../../../src/lib/railway/mapping';
+
+export async function GET(
+  request: Request,
+  context: { params: { id: string } }
+): Promise<Response> {
+  const auth = authenticateFromHeader(request.headers.get('authorization'));
+  if (!auth.authenticated || !hasAdminRole(auth.session, ['SUPER_ADMIN'])) {
+    return json(403, { error: 'Only the super admin can view Railway resource mappings' });
+  }
+
+  const deps = buildWebhookDeps();
+  const subscription = await deps.subscriptions.findById(context.params.id);
+  if (!subscription) {
+    return json(404, { error: 'Subscription not found' });
+  }
+
+  const resources = await deps.railwayResources.findBySubscriptionId(context.params.id);
+  return json(200, { resources });
+}
 
 export async function POST(
   request: Request,
-  context: { params: Promise<{ id: string }> }
+  context: { params: { id: string } }
 ): Promise<Response> {
-  const { id } = await context.params;
   const auth = authenticateFromHeader(request.headers.get('authorization'));
-  if (!auth.authenticated || !hasAdminRole(auth.session, ['ADMIN', 'SUPER_ADMIN'])) {
-    return json(403, { error: 'Admin access required' });
+  if (!auth.authenticated || !hasAdminRole(auth.session, ['SUPER_ADMIN'])) {
+    return json(403, { error: 'Only the super admin can map Railway resources' });
   }
 
   let body: {
@@ -39,16 +58,13 @@ export async function POST(
   }
 
   const scopeDeps = buildWebhookDeps();
-  const subscription = await scopeDeps.subscriptions.findById(id);
+  const subscription = await scopeDeps.subscriptions.findById(context.params.id);
   if (!subscription) {
     return json(404, { error: 'Subscription not found' });
   }
-  if (!(await canAccessCustomer(auth.session, subscription.customerId, scopeDeps.adminAssignments))) {
-    return json(403, { error: 'This subscription is not assigned to you' });
-  }
 
   const result = await mapRailwayResource(buildBillingSetupDeps(), auth.session.sub, {
-    subscriptionId: id,
+    subscriptionId: context.params.id,
     projectId: body.projectId,
     environmentId: body.environmentId,
     serviceId: body.serviceId,

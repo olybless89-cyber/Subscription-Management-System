@@ -38,7 +38,13 @@ export async function POST(request: Request): Promise<Response> {
   let body: {
     name?: string;
     email?: string;
+    notificationEmail?: string;
     phone?: string;
+    dateOfBirth?: string;
+    serviceStartDate?: string;
+    serviceEndDate?: string;
+    websiteType?: 'ONLINE_BANKING' | 'INVESTMENT' | 'ECOMMERCE' | 'DELIVERY' | 'SAAS' | 'WEB_APP' | 'CORPORATE' | 'OTHER';
+    domainName?: string;
     paymentProvider?: 'PAYSTACK' | 'FLUTTERWAVE';
     automaticSuspension?: boolean;
   };
@@ -55,7 +61,13 @@ export async function POST(request: Request): Promise<Response> {
   const result = await createCustomer(buildAdminManagementDeps(), auth.session.sub, {
     name: body.name,
     email: body.email,
+    notificationEmail: body.notificationEmail ?? null,
     phone: body.phone ?? null,
+    dateOfBirth: body.dateOfBirth ?? null,
+    serviceStartDate: body.serviceStartDate ?? null,
+    serviceEndDate: body.serviceEndDate ?? null,
+    websiteType: body.websiteType ?? null,
+    domainName: body.domainName ?? null,
     paymentProvider: body.paymentProvider,
     automaticSuspension: body.automaticSuspension,
   });

@@ -1,3 +1,6 @@
+// GET /api/admin/subscriptions — scoped listing (SUPER_ADMIN sees all,
+// plain ADMIN only sees subscriptions belonging to their assigned
+// customers)
 // POST /api/admin/subscriptions — spec sections 8-9
 // Scoped: a plain ADMIN can only create a subscription for a customer
 // assigned to them; SUPER_ADMIN can for anyone. Does NOT create Railway
@@ -5,8 +8,22 @@
 // /api/admin/subscriptions/:id/railway-resource route for that step.
 
 import { buildBillingSetupDeps, buildWebhookDeps } from '../../../../src/lib/deps-factory';
-import { authenticateFromHeader, hasAdminRole, canAccessCustomer } from '../../../../src/lib/auth/authorize';
+import { authenticateFromHeader, hasAdminRole, canAccessCustomer, listVisibleCustomerIds } from '../../../../src/lib/auth/authorize';
 import { createSubscription } from '../../../../src/lib/billing/manage';
+
+export async function GET(request: Request): Promise<Response> {
+  const auth = authenticateFromHeader(request.headers.get('authorization'));
+  if (!auth.authenticated || !hasAdminRole(auth.session, ['ADMIN', 'SUPER_ADMIN'])) {
+    return json(403, { error: 'Admin access required' });
+  }
+
+  const deps = buildWebhookDeps();
+  const visible = await listVisibleCustomerIds(auth.session, deps.adminAssignments);
+  const all = await deps.subscriptions.listAll();
+  const subscriptions = visible === 'ALL' ? all : all.filter((s) => visible.includes(s.customerId));
+
+  return json(200, { subscriptions });
+}
 
 export async function POST(request: Request): Promise<Response> {
   const auth = authenticateFromHeader(request.headers.get('authorization'));

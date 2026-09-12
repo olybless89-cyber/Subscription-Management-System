@@ -12,6 +12,18 @@ import {
   AdminRecord,
   AdminNotificationRecord,
   PaymentProviderName,
+  DomainRecord,
+  AuditLogRecord,
+  WebsiteType,
+  InvoiceRecord,
+  InvoiceType,
+  InvoiceStatus,
+  StatusSnapshotRecord,
+  CampaignRecord,
+  CampaignChannel,
+  CampaignStatus,
+  CampaignRecipientRecord,
+  CampaignRecipientStatus,
 } from '@/types/domain';
 
 /**
@@ -24,6 +36,9 @@ import {
 
 export interface SubscriptionRepository {
   findById(id: string): Promise<SubscriptionRecord | null>;
+  /** Used by the public renewal page — given a customer, find which
+   * subscription(s) they have so the page can show the right one. */
+  findByCustomerId(customerId: string): Promise<SubscriptionRecord[]>;
   updateStatus(
     id: string,
     status: SubscriptionStatus,
@@ -57,6 +72,19 @@ export interface SubscriptionRepository {
   /** Sets/clears the per-subscription dry-run override. Pass null to go
    * back to inheriting the global SUSPENSION_DRY_RUN env var. */
   setDryRunOverride(id: string, override: boolean | null): Promise<void>;
+  /** For admin dashboard listing — combined with listVisibleCustomerIds
+   * at the route layer for scoping, same pattern as CustomerRepository. */
+  listAll(): Promise<SubscriptionRecord[]>;
+  /**
+   * Edits a subscription's plan assignment or suspensionEnabled flag —
+   * the two fields safe to change without going through a verified
+   * engine. Deliberately does NOT accept `status`: status transitions
+   * must go through suspendCustomer/restoreCustomer (which verify
+   * against Railway before changing it) or the cron state machine —
+   * never a raw field write that could desync the database from what's
+   * actually running.
+   */
+  update(id: string, patch: { planId?: string; suspensionEnabled?: boolean }): Promise<void>;
 }
 
 export interface PlanRepository {
@@ -94,6 +122,9 @@ export interface PaymentRepository {
 export interface CustomerRepository {
   findById(id: string): Promise<CustomerRecord | null>;
   findByEmail(email: string): Promise<CustomerRecord | null>;
+  /** Used by the public renewal page — the URL is keyed by the
+   * human-facing customerCode (WOH-000001), not the internal id. */
+  findByCustomerCode(customerCode: string): Promise<CustomerRecord | null>;
   findByIds(ids: string[]): Promise<CustomerRecord[]>;
   listAll(): Promise<CustomerRecord[]>;
   updateStatus(id: string, status: CustomerStatus): Promise<void>;
@@ -103,10 +134,42 @@ export interface CustomerRepository {
   create(input: {
     name: string;
     email: string;
+    notificationEmail?: string | null;
     phone?: string | null;
+    dateOfBirth?: string | null;
+    serviceStartDate?: string | null;
+    serviceEndDate?: string | null;
+    websiteType?: WebsiteType | null;
     paymentProvider: PaymentProviderName;
     automaticSuspension: boolean;
   }): Promise<CustomerRecord>;
+  /** Admin edit of a customer's own fields — deliberately excludes
+   * `status` and `customerCode`, same reasoning as
+   * SubscriptionRepository.update(): status only ever changes through a
+   * verified engine, and customerCode is immutable by spec section 5. */
+  update(
+    id: string,
+    patch: {
+      name?: string;
+      notificationEmail?: string | null;
+      phone?: string | null;
+      dateOfBirth?: string | null;
+      serviceStartDate?: string | null;
+      serviceEndDate?: string | null;
+      websiteType?: WebsiteType | null;
+      paymentProvider?: PaymentProviderName;
+      automaticSuspension?: boolean;
+    }
+  ): Promise<CustomerRecord>;
+  /** All customers with a non-null dateOfBirth — for the daily birthday
+   * cron. The worker itself matches month/day against `now`; this just
+   * narrows to customers where there's anything to check. */
+  findWithBirthday(): Promise<CustomerRecord[]>;
+  /** Admin-triggered "forgot password" reset — sets a new password the
+   * admin has chosen/typed for the customer. No email verification loop
+   * here (no reset-link flow exists yet — see README); this is the
+   * "customer calls/messages support, support resets it" pattern. */
+  updatePassword(id: string, passwordHash: string): Promise<void>;
 }
 
 export interface AdminRepository {
@@ -115,6 +178,10 @@ export interface AdminRepository {
   /** Every SUPER_ADMIN — used to fan out admin notifications, since
    * super admins see every customer regardless of assignment. */
   listSuperAdmins(): Promise<AdminRecord[]>;
+  /** For the admin-management UI listing. Gated at the route layer to
+   * the same canManageOtherAdmins() check as createAdmin — listing every
+   * admin's email/role is sensitive in the same way creating one is. */
+  listAll(): Promise<AdminRecord[]>;
   create(input: {
     name: string;
     email: string;
@@ -122,6 +189,11 @@ export interface AdminRepository {
     role: 'SUPER_ADMIN' | 'ADMIN';
     canManageAdmins: boolean;
   }): Promise<AdminRecord>;
+  /** Updates password + passwordChangedAt together — used by both
+   * self-service change and a SUPER_ADMIN's reset-on-behalf-of. Callers
+   * (src/lib/admin/password.ts) are what distinguish "who did this and
+   * were they allowed to" — this method just performs the write. */
+  updatePassword(id: string, passwordHash: string): Promise<void>;
 }
 
 /** spec extension: which customers a given (non-super) admin is scoped
@@ -153,6 +225,18 @@ export interface AdminNotificationRepository {
   listForAdmin(adminId: string, limit?: number): Promise<AdminNotificationRecord[]>;
 }
 
+export interface DomainRepository {
+  findById(id: string): Promise<DomainRecord | null>;
+  findByCustomerId(customerId: string): Promise<DomainRecord[]>;
+  /** domainName is globally unique (spec/schema) — not just unique per
+   * customer. Used to catch a duplicate before hitting the DB
+   * constraint, so createDomain can return a clean ALREADY_EXISTS
+   * result instead of an unhandled Prisma error. */
+  findByDomainName(domainName: string): Promise<DomainRecord | null>;
+  listAll(): Promise<DomainRecord[]>;
+  create(input: { customerId: string; domainName: string; isPrimary: boolean }): Promise<DomainRecord>;
+}
+
 export interface RailwayResourceRepository {
   findBySubscriptionId(subscriptionId: string): Promise<RailwayResourceRecord[]>;
   /** All resources, for the periodic Railway sync worker (spec section 13). */
@@ -178,12 +262,37 @@ export interface RailwayResourceRepository {
   }): Promise<RailwayResourceRecord>;
 }
 
+/** One row per periodic status check (written by syncRailwayResources,
+ * piggy-backing on the existing 30-min sync — no new cron needed). This
+ * is genuinely how uptime % gets computed: proportion of checks that
+ * came back ACTIVE, not continuous monitoring. See
+ * src/lib/monitoring/uptime.ts for the honest framing of what this
+ * number actually means. */
+export interface ResourceStatusSnapshotRepository {
+  create(input: { railwayResourceId: string; status: RailwayResourceStatus }): Promise<void>;
+  /** Most-recent-first is NOT required — callers compute aggregates
+   * over the whole set, order doesn't matter for that. */
+  findByResourceId(railwayResourceId: string, sinceIso?: string): Promise<StatusSnapshotRecord[]>;
+}
+
 export interface SuspensionEventRepository {
   create(event: SuspensionEventInput): Promise<void>;
 }
 
 export interface NotificationSender {
-  send(customerId: string, event: string, message: string): Promise<void>;
+  /** subjectOverride lets a caller (the custom-email composer) supply
+   * its own subject instead of the automatic one derived from `event`
+   * via subjectForEvent(). Omit it for every automated notification —
+   * only the admin-composed custom-email path passes one.
+   * attachments is for the invoice PDF specifically — omit it for
+   * everything else. */
+  send(
+    customerId: string,
+    event: string,
+    message: string,
+    subjectOverride?: string,
+    attachments?: Array<{ filename: string; content: string }>
+  ): Promise<void>;
 }
 
 export interface AuditLogEntry {
@@ -197,6 +306,49 @@ export interface AuditLogEntry {
 
 export interface AuditLogRepository {
   create(entry: AuditLogEntry): Promise<void>;
+  /** Most-recent-first, for the SUPER_ADMIN activity-log view. */
+  listRecent(limit?: number): Promise<AuditLogRecord[]>;
+}
+
+export interface InvoiceRepository {
+  create(input: {
+    customerId: string;
+    subscriptionId: string | null;
+    type: InvoiceType;
+    status: InvoiceStatus;
+    amount: number;
+    currency: string;
+    description: string;
+    dueDate: string | null;
+    paidAt: string | null;
+  }): Promise<InvoiceRecord>;
+  findById(id: string): Promise<InvoiceRecord | null>;
+  findByCustomerId(customerId: string): Promise<InvoiceRecord[]>;
+  listAll(): Promise<InvoiceRecord[]>;
+}
+
+export interface CampaignRepository {
+  create(input: {
+    name: string;
+    channels: CampaignChannel[];
+    subject: string | null;
+    message: string;
+    createdBy: string;
+  }): Promise<CampaignRecord>;
+  findById(id: string): Promise<CampaignRecord | null>;
+  listAll(): Promise<CampaignRecord[]>;
+  listByCreator(createdBy: string): Promise<CampaignRecord[]>;
+  updateStatus(id: string, status: CampaignStatus, extra?: { sentAt?: string }): Promise<void>;
+  addRecipients(
+    campaignId: string,
+    recipients: Array<{ customerId: string; channel: CampaignChannel }>
+  ): Promise<CampaignRecipientRecord[]>;
+  findRecipientsByCampaignId(campaignId: string): Promise<CampaignRecipientRecord[]>;
+  updateRecipientStatus(
+    id: string,
+    status: CampaignRecipientStatus,
+    extra?: { sentAt?: string; error?: string | null }
+  ): Promise<void>;
 }
 
 export interface EngineDeps {
@@ -205,6 +357,7 @@ export interface EngineDeps {
   railwayResources: RailwayResourceRepository;
   suspensionEvents: SuspensionEventRepository;
   notifications: NotificationSender;
+  invoices: InvoiceRepository;
 }
 
 /** Superset of EngineDeps used by the payment webhook handler, which also
@@ -237,17 +390,81 @@ export interface AdminManagementDeps {
   admins: AdminRepository;
   customers: CustomerRepository;
   adminAssignments: AdminAssignmentRepository;
+  domains: DomainRepository;
   auditLog: AuditLogRepository;
 }
 
 /** Dependencies for creating plans, subscriptions, and mapping
  * subscriptions to Railway infrastructure — three deliberately separate
- * business-logic functions sharing one dependency bag. */
+ * business-logic functions sharing one dependency bag. Also covers
+ * domain attachment, which follows the same "admin creates a resource
+ * tied to a customer" shape. */
 export interface BillingSetupDeps {
   admins: AdminRepository;
   customers: CustomerRepository;
   plans: PlanRepository;
   subscriptions: SubscriptionRepository;
   railwayResources: RailwayResourceRepository;
+  domains: DomainRepository;
+  auditLog: AuditLogRepository;
+}
+
+/** Dependencies for the admin-composed custom-email feature and the
+ * daily birthday cron — both just need to read customers and dispatch
+ * through the same notification pipeline everything else uses. */
+export interface CustomEmailDeps {
+  admins: AdminRepository;
+  customers: CustomerRepository;
+  notifications: NotificationSender;
+  auditLog: AuditLogRepository;
+}
+
+/** WhatsApp equivalent of NotificationSender — deliberately simpler
+ * (no subject/attachments, since every WhatsApp send routes through one
+ * generic template with a single body parameter — see
+ * src/lib/notifications/whatsapp.ts). Looks the customer up internally
+ * and records a Notification row (channel WHATSAPP), same
+ * record-first/best-effort-dispatch pattern as EmailNotificationSender.
+ */
+export interface WhatsAppSender {
+  send(customerId: string, message: string): Promise<void>;
+}
+
+/** The customer-facing self-service portal — deliberately its own
+ * read-heavy deps bag, separate from anything admin-facing. */
+export interface CustomerPortalDeps {
+  customers: CustomerRepository;
+  subscriptions: SubscriptionRepository;
+  plans: PlanRepository;
+  railwayResources: RailwayResourceRepository;
+  statusSnapshots: ResourceStatusSnapshotRepository;
+  invoices: InvoiceRepository;
+  domains: DomainRepository;
+}
+
+export interface CampaignDeps {
+  admins: AdminRepository;
+  customers: CustomerRepository;
+  adminAssignments: AdminAssignmentRepository;
+  campaigns: CampaignRepository;
+  notifications: NotificationSender;
+  whatsapp: WhatsAppSender;
+  auditLog: AuditLogRepository;
+}
+
+/** Self-service customer registration — deliberately its own deps bag,
+ * not AdminManagementDeps, since there's no acting admin here at all.
+ * Needs adminAssignments/adminNotifications so the new registration can
+ * still notify every SUPER_ADMIN (a self-registered customer starts
+ * with NO admin assignment — notifyAdminsForCustomer's existing
+ * "every SUPER_ADMIN regardless of assignment" behavior is exactly
+ * right for this, no new fan-out logic needed). */
+export interface RegisterCustomerDeps {
+  customers: CustomerRepository;
+  domains: DomainRepository;
+  admins: AdminRepository;
+  adminAssignments: AdminAssignmentRepository;
+  adminNotifications: AdminNotificationRepository;
+  notifications: NotificationSender;
   auditLog: AuditLogRepository;
 }

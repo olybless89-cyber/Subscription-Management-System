@@ -2,6 +2,9 @@ import { CronDeps } from '../db/ports';
 import { RailwayClient } from '../railway/client';
 import { suspendCustomer } from '../suspension/engine';
 import { addDays } from '../billing/cycle';
+import { notifyAdminsForCustomer } from '../notifications/admin-notify';
+import { createAndSendDueInvoice } from '../invoices/manage';
+import { buildRenewalUrl } from '../customers/renewal-link';
 
 export interface SubscriptionCheckerOptions {
   now?: Date;
@@ -52,11 +55,45 @@ export async function runSubscriptionChecker(
           continue;
         }
         await deps.subscriptions.updateStatus(subscription.id, 'PAYMENT_DUE');
+        const customer = await deps.customers.findById(subscription.customerId);
         await deps.notifications.send(
           subscription.customerId,
           'PAYMENT_DUE',
-          'Your Web Oracle Host subscription is now due.'
+          `Your Web Oracle Host subscription is now due. Renew here: ${buildRenewalUrl(customer?.customerCode ?? '')}`
         );
+
+        // Auto-generate a DUE invoice and remind whichever admin(s) own
+        // this customer to follow up — both best-effort, same principle
+        // as everywhere else: neither can be allowed to undo the status
+        // transition that already happened above.
+        const plan = await deps.plans.findById(subscription.planId);
+        if (plan) {
+          const graceDays = plan.gracePeriodDays ?? 2;
+          const invoiceDueDate = addDays(now, graceDays).toISOString();
+          try {
+            await createAndSendDueInvoice(deps, {
+              customerId: subscription.customerId,
+              subscriptionId: subscription.id,
+              amount: plan.amount,
+              currency: plan.currency,
+              description: plan.name,
+              dueDate: invoiceDueDate,
+            });
+          } catch {
+            // Deliberately swallowed — see comment above.
+          }
+        }
+        try {
+          await notifyAdminsForCustomer(
+            deps,
+            subscription.customerId,
+            'PAYMENT_DUE',
+            `${customer?.customerCode ?? subscription.customerId}'s subscription is now due — follow up if needed.`
+          );
+        } catch {
+          // Deliberately swallowed — see comment above.
+        }
+
         result.movedToPaymentDue++;
         continue;
       }
@@ -70,10 +107,11 @@ export async function runSubscriptionChecker(
         const graceDays = plan?.gracePeriodDays ?? 2;
         const gracePeriodEnd = addDays(now, graceDays).toISOString();
         await deps.subscriptions.startGracePeriod(subscription.id, gracePeriodEnd);
+        const customer = await deps.customers.findById(subscription.customerId);
         await deps.notifications.send(
           subscription.customerId,
           'GRACE_PERIOD',
-          'Your hosting subscription is overdue. Please renew to avoid service interruption.'
+          `Your hosting subscription is overdue. Please renew to avoid service interruption: ${buildRenewalUrl(customer?.customerCode ?? '')}`
         );
         result.movedToGracePeriod++;
         continue;

@@ -3,7 +3,7 @@
 // user session.
 
 import { syncRailwayResources } from '../../../../src/lib/cron/railway-sync';
-import { buildCronDeps, buildRailwayClient } from '../../../../src/lib/deps-factory';
+import { buildCronDeps, buildRailwayClient, buildResourceStatusSnapshotRepository } from '../../../../src/lib/deps-factory';
 
 export async function POST(request: Request): Promise<Response> {
   const secret = request.headers.get('x-cron-secret');
@@ -12,7 +12,11 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const deps = buildCronDeps();
-  const result = await syncRailwayResources(deps.railwayResources, buildRailwayClient());
+  const result = await syncRailwayResources(
+    deps.railwayResources,
+    buildRailwayClient(),
+    buildResourceStatusSnapshotRepository()
+  );
 
   return new Response(JSON.stringify(result), {
     status: result.errors.length > 0 ? 207 : 200,
