@@ -25,14 +25,8 @@ export async function GET(): Promise<Response> {
   checks.railway = process.env.RAILWAY_API_TOKEN ? 'configured' : 'not_configured';
   checks.payments = process.env.PAYSTACK_SECRET_KEY ? 'configured' : 'not_configured';
   checks.cron = process.env.CRON_SECRET ? 'configured' : 'not_configured';
-  checks.email = process.env.RESEND_API_KEY && process.env.EMAIL_FROM ? 'configured' : 'not_configured';
 
-  if (
-    checks.railway === 'not_configured' ||
-    checks.payments === 'not_configured' ||
-    checks.cron === 'not_configured' ||
-    checks.email === 'not_configured'
-  ) {
+  if (checks.railway === 'not_configured' || checks.payments === 'not_configured' || checks.cron === 'not_configured') {
     healthy = false;
   }
 

@@ -1,4 +1,4 @@
-import { EngineDeps, WebhookDeps, AuthDeps, AdminManagementDeps, BillingSetupDeps, CustomEmailDeps, CampaignDeps, RegisterCustomerDeps, CustomerPortalDeps } from '@/lib/db/ports';
+import { EngineDeps, WebhookDeps, AuthDeps, AdminManagementDeps, BillingSetupDeps } from '@/lib/db/ports';
 import {
   CustomerRecord,
   SubscriptionRecord,
@@ -7,11 +7,6 @@ import {
   PlanRecord,
   PaymentRecord,
   AdminRecord,
-  DomainRecord,
-  InvoiceRecord,
-  CampaignRecord,
-  CampaignRecipientRecord,
-  StatusSnapshotRecord,
 } from '@/types/domain';
 
 // ---------- shared primitive stores, reused across the various fake-deps builders ----------
@@ -25,9 +20,6 @@ function makeCustomerRepo(seed: CustomerRecord[]) {
     },
     async findByEmail(email: string) {
       return [...byId.values()].find((c) => c.email === email) ?? null;
-    },
-    async findByCustomerCode(customerCode: string) {
-      return [...byId.values()].find((c) => c.customerCode === customerCode) ?? null;
     },
     async findByIds(ids: string[]) {
       return ids.map((id) => byId.get(id)).filter((c): c is CustomerRecord => !!c);
@@ -43,12 +35,7 @@ function makeCustomerRepo(seed: CustomerRecord[]) {
     async create(input: {
       name: string;
       email: string;
-      notificationEmail?: string | null;
       phone?: string | null;
-      dateOfBirth?: string | null;
-      serviceStartDate?: string | null;
-      serviceEndDate?: string | null;
-      websiteType?: CustomerRecord['websiteType'];
       paymentProvider: CustomerRecord['paymentProvider'];
       automaticSuspension: boolean;
     }) {
@@ -56,14 +43,7 @@ function makeCustomerRepo(seed: CustomerRecord[]) {
       const record: CustomerRecord = {
         id: `cust_${codeCounter}`,
         customerCode: `WOH-${String(codeCounter).padStart(6, '0')}`,
-        name: input.name,
         email: input.email,
-        notificationEmail: input.notificationEmail ?? null,
-        phone: input.phone ?? null,
-        dateOfBirth: input.dateOfBirth ?? null,
-        serviceStartDate: input.serviceStartDate ?? null,
-        serviceEndDate: input.serviceEndDate ?? null,
-        websiteType: input.websiteType ?? null,
         passwordHash: null,
         status: 'ACTIVE',
         automaticSuspension: input.automaticSuspension,
@@ -71,41 +51,6 @@ function makeCustomerRepo(seed: CustomerRecord[]) {
       };
       byId.set(record.id, record);
       return record;
-    },
-    async update(
-      id: string,
-      patch: {
-        name?: string;
-        notificationEmail?: string | null;
-        phone?: string | null;
-        dateOfBirth?: string | null;
-        serviceStartDate?: string | null;
-        serviceEndDate?: string | null;
-        websiteType?: CustomerRecord['websiteType'];
-        paymentProvider?: CustomerRecord['paymentProvider'];
-        automaticSuspension?: boolean;
-      }
-    ) {
-      const c = byId.get(id);
-      if (!c) throw new Error('not found');
-      if (patch.name !== undefined) c.name = patch.name;
-      if (patch.notificationEmail !== undefined) c.notificationEmail = patch.notificationEmail;
-      if (patch.phone !== undefined) c.phone = patch.phone;
-      if (patch.dateOfBirth !== undefined) c.dateOfBirth = patch.dateOfBirth;
-      if (patch.serviceStartDate !== undefined) c.serviceStartDate = patch.serviceStartDate;
-      if (patch.serviceEndDate !== undefined) c.serviceEndDate = patch.serviceEndDate;
-      if (patch.websiteType !== undefined) c.websiteType = patch.websiteType;
-      if (patch.paymentProvider !== undefined) c.paymentProvider = patch.paymentProvider;
-      if (patch.automaticSuspension !== undefined) c.automaticSuspension = patch.automaticSuspension;
-      return { ...c };
-    },
-    async findWithBirthday() {
-      return [...byId.values()].filter((c) => c.dateOfBirth !== null);
-    },
-    async updatePassword(id: string, passwordHash: string) {
-      const c = byId.get(id);
-      if (!c) throw new Error('not found');
-      c.passwordHash = passwordHash;
     },
   };
   return { repo, byId };
@@ -123,19 +68,10 @@ function makeAdminRepo(seed: AdminRecord[]) {
     async listSuperAdmins() {
       return [...byId.values()].filter((a) => a.role === 'SUPER_ADMIN');
     },
-    async listAll() {
-      return [...byId.values()];
-    },
     async create(input: Omit<AdminRecord, 'id'>) {
       const record: AdminRecord = { id: `admin_${byId.size + 1}`, ...input };
       byId.set(record.id, record);
       return record;
-    },
-    async updatePassword(id: string, passwordHash: string) {
-      const a = byId.get(id);
-      if (!a) throw new Error('not found');
-      a.passwordHash = passwordHash;
-      a.passwordChangedAt = new Date().toISOString();
     },
   };
   return { repo, byId };
@@ -169,13 +105,10 @@ function makeAssignmentRepo(seed: Array<{ adminId: string; customerId: string }>
 }
 
 function makeAdminNotificationRepo() {
-  const log: Array<{ id: string; adminId: string; customerId: string; event: string; message: string; sentAt: string | null; createdAt: string }> = [];
+  const log: Array<{ id: string; adminId: string; customerId: string; event: string; message: string; createdAt: string }> = [];
   const repo = {
     async create(input: { adminId: string; customerId: string; event: string; message: string }) {
-      // Fake never actually sends email (no network in tests) — sentAt
-      // stays null, matching the honest "not sent" signal the real
-      // repository uses when Resend is unconfigured or fails.
-      log.push({ id: `an_${log.length + 1}`, sentAt: null, createdAt: new Date().toISOString(), ...input });
+      log.push({ id: `an_${log.length + 1}`, createdAt: new Date().toISOString(), ...input });
     },
     async listForAdmin(adminId: string, limit = 50) {
       return log
@@ -214,9 +147,6 @@ function makeSubscriptionRepo(seed: SubscriptionRecord[]) {
   const repo = {
     async findById(id: string) {
       return byId.get(id) ?? null;
-    },
-    async findByCustomerId(customerId: string) {
-      return [...byId.values()].filter((s) => s.customerId === customerId);
     },
     async updateStatus(id: string, status: SubscriptionRecord['status'], extra?: { suspendedAt?: string | null }) {
       const s = byId.get(id);
@@ -278,76 +208,18 @@ function makeSubscriptionRepo(seed: SubscriptionRecord[]) {
       if (!s) throw new Error('not found');
       s.dryRunOverride = override;
     },
-    async listAll() {
-      return [...byId.values()];
-    },
-    async update(id: string, patch: { planId?: string; suspensionEnabled?: boolean }) {
-      const s = byId.get(id);
-      if (!s) throw new Error('not found');
-      if (patch.planId !== undefined) s.planId = patch.planId;
-      if (patch.suspensionEnabled !== undefined) s.suspensionEnabled = patch.suspensionEnabled;
-    },
   };
   return { repo, byId };
 }
 
 function makeAuditLogRepo() {
-  const log: Array<{ id: string; actor: string; action: string; target?: string; metadata?: unknown; result: string; createdAt: string }> = [];
+  const log: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }> = [];
   const repo = {
     async create(entry: { actor: string; action: string; target?: string; metadata?: unknown; result: 'SUCCESS' | 'FAILED' }) {
-      log.push({ id: `audit_${log.length + 1}`, createdAt: new Date().toISOString(), ...entry });
-    },
-    async listRecent(limit = 50) {
-      return log
-        .slice()
-        .reverse()
-        .slice(0, limit)
-        .map((e) => ({
-          id: e.id,
-          actor: e.actor,
-          action: e.action,
-          target: e.target ?? null,
-          ip: null,
-          metadata: e.metadata ? JSON.stringify(e.metadata) : null,
-          result: e.result,
-          createdAt: e.createdAt,
-        }));
+      log.push(entry);
     },
   };
   return { repo, log };
-}
-
-function makeDomainRepo(seed: DomainRecord[] = []) {
-  const byId = new Map(seed.map((d) => [d.id, { ...d }]));
-  let counter = seed.length;
-  const repo = {
-    async findById(id: string) {
-      return byId.get(id) ?? null;
-    },
-    async findByCustomerId(customerId: string) {
-      return [...byId.values()].filter((d) => d.customerId === customerId);
-    },
-    async findByDomainName(domainName: string) {
-      return [...byId.values()].find((d) => d.domainName === domainName) ?? null;
-    },
-    async listAll() {
-      return [...byId.values()];
-    },
-    async create(input: { customerId: string; domainName: string; isPrimary: boolean }) {
-      counter += 1;
-      const record: DomainRecord = {
-        id: `dom_${counter}`,
-        customerId: input.customerId,
-        domainName: input.domainName,
-        isPrimary: input.isPrimary,
-        railwayStatus: null,
-        createdAt: new Date().toISOString(),
-      };
-      byId.set(record.id, record);
-      return record;
-    },
-  };
-  return { repo, byId };
 }
 
 // ---------- composed fake-deps builders used by the test suites ----------
@@ -358,21 +230,17 @@ export function makeFakeDeps(seed: {
   railwayResources: RailwayResourceRecord[];
 }): EngineDeps & {
   events: SuspensionEventInput[];
-  notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }>;
-  invoiceStore: Map<string, InvoiceRecord>;
+  notificationLog: Array<{ customerId: string; event: string; message: string }>;
 } {
   const { repo: customersRepo } = makeCustomerRepo(seed.customers);
   const { repo: subscriptionsRepo } = makeSubscriptionRepo(seed.subscriptions);
   const resources = [...seed.railwayResources];
   const events: SuspensionEventInput[] = [];
-  const notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }> = [];
-  const invoiceStore = new Map<string, InvoiceRecord>();
-  let invoiceCounter = 0;
+  const notificationLog: Array<{ customerId: string; event: string; message: string }> = [];
 
   return {
     events,
     notificationLog,
-    invoiceStore,
     subscriptions: subscriptionsRepo,
     customers: customersRepo,
     railwayResources: {
@@ -410,30 +278,8 @@ export function makeFakeDeps(seed: {
       },
     },
     notifications: {
-      async send(customerId, event, message, subject) {
-        notificationLog.push({ customerId, event, message, subject });
-      },
-    },
-    invoices: {
-      async create(input) {
-        invoiceCounter += 1;
-        const record: InvoiceRecord = {
-          id: `inv_${invoiceCounter}`,
-          invoiceNumber: `INV-${String(invoiceCounter).padStart(6, '0')}`,
-          issuedAt: new Date().toISOString(),
-          ...input,
-        };
-        invoiceStore.set(record.id, record);
-        return record;
-      },
-      async findById(id) {
-        return invoiceStore.get(id) ?? null;
-      },
-      async findByCustomerId(customerId) {
-        return [...invoiceStore.values()].filter((i) => i.customerId === customerId);
-      },
-      async listAll() {
-        return [...invoiceStore.values()];
+      async send(customerId, event, message) {
+        notificationLog.push({ customerId, event, message });
       },
     },
   };
@@ -449,7 +295,7 @@ export function makeFakeWebhookDeps(seed: {
   assignments?: Array<{ adminId: string; customerId: string }>;
 }): WebhookDeps & {
   events: SuspensionEventInput[];
-  notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }>;
+  notificationLog: Array<{ customerId: string; event: string; message: string }>;
   paymentRows: Map<string, PaymentRecord>;
   adminNotificationLog: Array<{ adminId: string; customerId: string; event: string; message: string }>;
 } {
@@ -509,27 +355,22 @@ export function makeFakeAdminManagementDeps(seed: {
   admins: AdminRecord[];
   customers: CustomerRecord[];
   assignments?: Array<{ adminId: string; customerId: string }>;
-  domains?: DomainRecord[];
 }): AdminManagementDeps & {
   auditLogEntries: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }>;
   assignmentStore: Map<string, Set<string>>;
-  domainStore: Map<string, DomainRecord>;
 } {
   const { repo: adminsRepo } = makeAdminRepo(seed.admins);
   const { repo: customersRepo } = makeCustomerRepo(seed.customers);
   const { repo: assignmentsRepo, byAdmin } = makeAssignmentRepo(seed.assignments ?? []);
-  const { repo: domainsRepo, byId: domainStore } = makeDomainRepo(seed.domains ?? []);
   const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
 
   return {
     admins: adminsRepo,
     customers: customersRepo,
     adminAssignments: assignmentsRepo,
-    domains: domainsRepo,
     auditLog: auditLogRepo,
     auditLogEntries,
     assignmentStore: byAdmin,
-    domainStore,
   };
 }
 
@@ -539,20 +380,17 @@ export function makeFakeBillingSetupDeps(seed: {
   plans: PlanRecord[];
   subscriptions: SubscriptionRecord[];
   railwayResources: RailwayResourceRecord[];
-  domains?: DomainRecord[];
 }): BillingSetupDeps & {
   auditLogEntries: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }>;
   planStore: Map<string, PlanRecord>;
   subscriptionStore: Map<string, SubscriptionRecord>;
   railwayResourceStore: RailwayResourceRecord[];
-  domainStore: Map<string, DomainRecord>;
 } {
   const { repo: adminsRepo } = makeAdminRepo(seed.admins);
   const { repo: customersRepo } = makeCustomerRepo(seed.customers);
   const { repo: plansRepo, byId: planStore } = makePlanRepo(seed.plans);
   const { repo: subscriptionsRepo, byId: subscriptionStore } = makeSubscriptionRepo(seed.subscriptions);
   const railwayResourceStore = [...seed.railwayResources];
-  const { repo: domainsRepo, byId: domainStore } = makeDomainRepo(seed.domains ?? []);
   const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
 
   return {
@@ -560,7 +398,6 @@ export function makeFakeBillingSetupDeps(seed: {
     customers: customersRepo,
     plans: plansRepo,
     subscriptions: subscriptionsRepo,
-    domains: domainsRepo,
     railwayResources: {
       async findBySubscriptionId(subscriptionId: string) {
         return railwayResourceStore.filter((r) => r.subscriptionId === subscriptionId);
@@ -595,280 +432,5 @@ export function makeFakeBillingSetupDeps(seed: {
     planStore,
     subscriptionStore,
     railwayResourceStore,
-    domainStore,
-  };
-}
-
-export function makeFakeCustomEmailDeps(seed: {
-  admins: AdminRecord[];
-  customers: CustomerRecord[];
-}): CustomEmailDeps & {
-  auditLogEntries: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }>;
-  notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }>;
-} {
-  const { repo: adminsRepo } = makeAdminRepo(seed.admins);
-  const { repo: customersRepo } = makeCustomerRepo(seed.customers);
-  const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
-  const notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }> = [];
-
-  return {
-    admins: adminsRepo,
-    customers: customersRepo,
-    auditLog: auditLogRepo,
-    auditLogEntries,
-    notificationLog,
-    notifications: {
-      async send(customerId, event, message, subject) {
-        notificationLog.push({ customerId, event, message, subject });
-      },
-    },
-  };
-}
-
-function makeCampaignRepo() {
-  const campaigns = new Map<string, CampaignRecord>();
-  const recipients = new Map<string, CampaignRecipientRecord>();
-  let campaignCounter = 0;
-  let recipientCounter = 0;
-
-  const repo = {
-    async create(input: { name: string; channels: CampaignRecord['channels']; subject: string | null; message: string; createdBy: string }) {
-      campaignCounter += 1;
-      const record: CampaignRecord = {
-        id: `camp_${campaignCounter}`,
-        name: input.name,
-        channels: input.channels,
-        subject: input.subject,
-        message: input.message,
-        status: 'DRAFT',
-        createdBy: input.createdBy,
-        createdAt: new Date().toISOString(),
-        sentAt: null,
-      };
-      campaigns.set(record.id, record);
-      return record;
-    },
-    async findById(id: string) {
-      return campaigns.get(id) ?? null;
-    },
-    async listAll() {
-      return [...campaigns.values()];
-    },
-    async listByCreator(createdBy: string) {
-      return [...campaigns.values()].filter((c) => c.createdBy === createdBy);
-    },
-    async updateStatus(id: string, status: CampaignRecord['status'], extra?: { sentAt?: string }) {
-      const c = campaigns.get(id);
-      if (!c) throw new Error('not found');
-      c.status = status;
-      if (extra?.sentAt !== undefined) c.sentAt = extra.sentAt;
-    },
-    async addRecipients(campaignId: string, input: Array<{ customerId: string; channel: CampaignRecord['channels'][number] }>) {
-      const created: CampaignRecipientRecord[] = [];
-      for (const r of input) {
-        recipientCounter += 1;
-        const record: CampaignRecipientRecord = {
-          id: `camprecip_${recipientCounter}`,
-          campaignId,
-          customerId: r.customerId,
-          channel: r.channel,
-          status: 'PENDING',
-          sentAt: null,
-          error: null,
-        };
-        recipients.set(record.id, record);
-        created.push(record);
-      }
-      return created;
-    },
-    async findRecipientsByCampaignId(campaignId: string) {
-      return [...recipients.values()].filter((r) => r.campaignId === campaignId);
-    },
-    async updateRecipientStatus(id: string, status: CampaignRecipientRecord['status'], extra?: { sentAt?: string; error?: string | null }) {
-      const r = recipients.get(id);
-      if (!r) throw new Error('not found');
-      r.status = status;
-      if (extra?.sentAt !== undefined) r.sentAt = extra.sentAt;
-      if (extra?.error !== undefined) r.error = extra.error;
-    },
-  };
-  return { repo, campaigns, recipients };
-}
-
-export function makeFakeCampaignDeps(seed: {
-  admins: AdminRecord[];
-  customers: CustomerRecord[];
-  assignments?: Array<{ adminId: string; customerId: string }>;
-}): CampaignDeps & {
-  auditLogEntries: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }>;
-  notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }>;
-  whatsappLog: Array<{ customerId: string; message: string }>;
-  campaignStore: Map<string, CampaignRecord>;
-  recipientStore: Map<string, CampaignRecipientRecord>;
-} {
-  const { repo: adminsRepo } = makeAdminRepo(seed.admins);
-  const { repo: customersRepo } = makeCustomerRepo(seed.customers);
-  const { repo: assignmentsRepo } = makeAssignmentRepo(seed.assignments ?? []);
-  const { repo: campaignsRepo, campaigns: campaignStore, recipients: recipientStore } = makeCampaignRepo();
-  const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
-  const notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }> = [];
-  const whatsappLog: Array<{ customerId: string; message: string }> = [];
-
-  return {
-    admins: adminsRepo,
-    customers: customersRepo,
-    adminAssignments: assignmentsRepo,
-    campaigns: campaignsRepo,
-    auditLog: auditLogRepo,
-    auditLogEntries,
-    notificationLog,
-    whatsappLog,
-    campaignStore,
-    recipientStore,
-    notifications: {
-      async send(customerId, event, message, subject) {
-        notificationLog.push({ customerId, event, message, subject });
-      },
-    },
-    whatsapp: {
-      async send(customerId, message) {
-        whatsappLog.push({ customerId, message });
-      },
-    },
-  };
-}
-
-export function makeFakeRegisterCustomerDeps(seed: {
-  admins: AdminRecord[];
-  customers: CustomerRecord[];
-  domains?: DomainRecord[];
-}): RegisterCustomerDeps & {
-  auditLogEntries: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }>;
-  domainStore: Map<string, DomainRecord>;
-  notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }>;
-  adminNotificationLog: Array<{ adminId: string; customerId: string; event: string; message: string }>;
-} {
-  const { repo: customersRepo } = makeCustomerRepo(seed.customers);
-  const { repo: domainsRepo, byId: domainStore } = makeDomainRepo(seed.domains ?? []);
-  const { repo: adminsRepo } = makeAdminRepo(seed.admins);
-  const { repo: assignmentsRepo } = makeAssignmentRepo([]);
-  const { repo: adminNotificationRepo, log: adminNotificationLog } = makeAdminNotificationRepo();
-  const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
-  const notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }> = [];
-
-  return {
-    customers: customersRepo,
-    domains: domainsRepo,
-    admins: adminsRepo,
-    adminAssignments: assignmentsRepo,
-    adminNotifications: adminNotificationRepo,
-    auditLog: auditLogRepo,
-    auditLogEntries,
-    domainStore,
-    notificationLog,
-    adminNotificationLog,
-    notifications: {
-      async send(customerId, event, message, subject) {
-        notificationLog.push({ customerId, event, message, subject });
-      },
-    },
-  };
-}
-
-export function makeResourceStatusSnapshotRepo() {
-  const rows: StatusSnapshotRecord[] = [];
-  let counter = 0;
-  const repo = {
-    async create(input: { railwayResourceId: string; status: StatusSnapshotRecord['status'] }) {
-      counter += 1;
-      rows.push({ id: `snap_${counter}`, railwayResourceId: input.railwayResourceId, status: input.status, checkedAt: new Date().toISOString() });
-    },
-    async findByResourceId(railwayResourceId: string, sinceIso?: string) {
-      return rows.filter(
-        (r) => r.railwayResourceId === railwayResourceId && (!sinceIso || r.checkedAt >= sinceIso)
-      );
-    },
-  };
-  return { repo, rows };
-}
-
-export function makeFakeCustomerPortalDeps(seed: {
-  customers: CustomerRecord[];
-  subscriptions: SubscriptionRecord[];
-  plans: PlanRecord[];
-  railwayResources: RailwayResourceRecord[];
-  invoices?: InvoiceRecord[];
-  domains?: DomainRecord[];
-}): CustomerPortalDeps & {
-  snapshotRows: StatusSnapshotRecord[];
-} {
-  const { repo: customersRepo } = makeCustomerRepo(seed.customers);
-  const { repo: subscriptionsRepo } = makeSubscriptionRepo(seed.subscriptions);
-  const { repo: plansRepo } = makePlanRepo(seed.plans);
-  const { repo: snapshotsRepo, rows: snapshotRows } = makeResourceStatusSnapshotRepo();
-  const { repo: domainsRepo } = makeDomainRepo(seed.domains ?? []);
-
-  const railwayResources = [...seed.railwayResources];
-  const invoices = new Map((seed.invoices ?? []).map((i) => [i.id, { ...i }]));
-  let invoiceCounter = invoices.size;
-
-  return {
-    customers: customersRepo,
-    subscriptions: subscriptionsRepo,
-    plans: plansRepo,
-    statusSnapshots: snapshotsRepo,
-    snapshotRows,
-    domains: domainsRepo,
-    railwayResources: {
-      async findBySubscriptionId(subscriptionId: string) {
-        return railwayResources.filter((r) => r.subscriptionId === subscriptionId);
-      },
-      async findAll() {
-        return [...railwayResources];
-      },
-      async updateStatus(id: string, status: RailwayResourceRecord['status'], extra?: { deploymentId?: string | null }) {
-        const r = railwayResources.find((x) => x.id === id);
-        if (!r) throw new Error('not found');
-        r.status = status;
-        if (extra?.deploymentId !== undefined) r.deploymentId = extra.deploymentId ?? null;
-      },
-      async create(input: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
-        const record: RailwayResourceRecord = {
-          id: `res_${railwayResources.length + 1}`,
-          subscriptionId: input.subscriptionId,
-          projectId: input.projectId,
-          environmentId: input.environmentId,
-          serviceId: input.serviceId,
-          deploymentId: input.deploymentId ?? null,
-          hostingMode: input.hostingMode,
-          suspensionStrategy: input.suspensionStrategy,
-          status: 'UNKNOWN',
-        };
-        railwayResources.push(record);
-        return record;
-      },
-    },
-    invoices: {
-      async create(input: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
-        invoiceCounter += 1;
-        const record: InvoiceRecord = {
-          id: `inv_${invoiceCounter}`,
-          invoiceNumber: `INV-${String(invoiceCounter).padStart(6, '0')}`,
-          issuedAt: new Date().toISOString(),
-          ...input,
-        };
-        invoices.set(record.id, record);
-        return record;
-      },
-      async findById(id: string) {
-        return invoices.get(id) ?? null;
-      },
-      async findByCustomerId(customerId: string) {
-        return [...invoices.values()].filter((i) => i.customerId === customerId);
-      },
-      async listAll() {
-        return [...invoices.values()];
-      },
-    },
   };
 }

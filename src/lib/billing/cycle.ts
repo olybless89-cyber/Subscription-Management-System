@@ -16,12 +16,6 @@ export function addBillingCycle(from: Date, cycle: BillingCycle): Date {
     case 'QUARTERLY':
       next.setUTCMonth(next.getUTCMonth() + 3);
       return next;
-    case 'FOUR_MONTHS':
-      next.setUTCMonth(next.getUTCMonth() + 4);
-      return next;
-    case 'SEMI_ANNUAL':
-      next.setUTCMonth(next.getUTCMonth() + 6);
-      return next;
     case 'YEARLY':
       next.setUTCFullYear(next.getUTCFullYear() + 1);
       return next;

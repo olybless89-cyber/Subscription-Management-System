@@ -1,9 +1,7 @@
 // POST /api/subscriptions/:id/suspend
-// SUPER_ADMIN only. Per an explicit policy decision: Railway
-// infrastructure and the power to suspend a customer's service belong
-// solely to the super admin — plain admins (however many are created)
-// have no suspend/restore/Railway access at all, regardless of which
-// customers are assigned to them. Manual suspension bypasses the
+// Admin-only, AND scoped to admin assignment: a plain ADMIN can only
+// suspend a subscription belonging to a customer assigned to them;
+// SUPER_ADMIN can suspend anyone's. Manual suspension bypasses the
 // customer's automaticSuspension=false override (that override only
 // protects against the automated cron worker, not an admin who's
 // decided to suspend anyway) but still runs through the exact same
@@ -13,23 +11,27 @@
 
 import { suspendCustomer } from '../../../../../src/lib/suspension/engine';
 import { buildWebhookDeps, buildRailwayClient, buildAuditLogRepository } from '../../../../../src/lib/deps-factory';
-import { authenticateFromHeader, hasAdminRole } from '../../../../../src/lib/auth/authorize';
+import { authenticateFromHeader, hasAdminRole, canAccessCustomer } from '../../../../../src/lib/auth/authorize';
 import { recordAuditLog } from '../../../../../src/lib/audit/log';
 
 export async function POST(
   request: Request,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ): Promise<Response> {
+  const { id } = await context.params;
   const auth = authenticateFromHeader(request.headers.get('authorization'));
-  if (!auth.authenticated || !hasAdminRole(auth.session, ['SUPER_ADMIN'])) {
-    return json(403, { error: 'Only the super admin can suspend a subscription' });
+  if (!auth.authenticated || !hasAdminRole(auth.session, ['ADMIN', 'SUPER_ADMIN'])) {
+    return json(403, { error: 'Admin access required' });
   }
 
   const deps = buildWebhookDeps();
 
-  const subscription = await deps.subscriptions.findById(context.params.id);
+  const subscription = await deps.subscriptions.findById(id);
   if (!subscription) {
     return json(404, { error: 'Subscription not found' });
+  }
+  if (!(await canAccessCustomer(auth.session, subscription.customerId, deps.adminAssignments))) {
+    return json(403, { error: 'This subscription is not assigned to you' });
   }
 
   let body: { reason?: string };
@@ -40,7 +42,7 @@ export async function POST(
   }
   const reason = body.reason?.trim() || 'MANUAL_ADMIN_SUSPENSION';
 
-  const result = await suspendCustomer(deps, buildRailwayClient(), context.params.id, reason, {
+  const result = await suspendCustomer(deps, buildRailwayClient(), id, reason, {
     manual: true,
     performedBy: auth.session.sub,
   });
@@ -48,7 +50,7 @@ export async function POST(
   await recordAuditLog(buildAuditLogRepository(), {
     actor: auth.session.sub,
     action: 'CUSTOMER_SUSPENDED',
-    target: context.params.id,
+    target: id,
     metadata: { reason, outcome: result.outcome },
     result: result.outcome === 'SUSPENDED' ? 'SUCCESS' : 'FAILED',
   });

@@ -1,16 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { createCustomer, updateCustomer } from '@/lib/customers/manage';
-import { sendCustomEmail } from '@/lib/notifications/custom-email';
-import { makeFakeAdminManagementDeps, makeFakeCustomEmailDeps } from './fakes';
-import { AdminRecord, CustomerRecord } from '@/types/domain';
+import { createCustomer } from '@/lib/customers/manage';
+import { makeFakeAdminManagementDeps } from './fakes';
+import { AdminRecord } from '@/types/domain';
 
 function superAdmin(overrides: Partial<AdminRecord> = {}): AdminRecord {
   return {
     id: 'super_1',
-    name: 'Test Admin',
     email: 'super@dwo.example',
     passwordHash: 'x',
-    passwordChangedAt: null,
     role: 'SUPER_ADMIN',
     canManageAdmins: true,
     ...overrides,
@@ -20,32 +17,10 @@ function superAdmin(overrides: Partial<AdminRecord> = {}): AdminRecord {
 function plainAdmin(overrides: Partial<AdminRecord> = {}): AdminRecord {
   return {
     id: 'admin_1',
-    name: 'Test Admin',
     email: 'admin@dwo.example',
     passwordHash: 'x',
-    passwordChangedAt: null,
     role: 'ADMIN',
     canManageAdmins: false,
-    ...overrides,
-  };
-}
-
-function customer(overrides: Partial<CustomerRecord> = {}): CustomerRecord {
-  return {
-    id: 'cust_1',
-    customerCode: 'WOH-000001',
-    name: 'Test Customer',
-    email: 'customer@example.com',
-    notificationEmail: null,
-    phone: null,
-    dateOfBirth: null,
-    serviceStartDate: null,
-    serviceEndDate: null,
-    websiteType: null,
-    passwordHash: null,
-    status: 'ACTIVE',
-    automaticSuspension: true,
-    paymentProvider: 'PAYSTACK',
     ...overrides,
   };
 }
@@ -57,8 +32,6 @@ describe('createCustomer', () => {
     const result = await createCustomer(deps, 'super_1', {
       name: 'Chihap Grilled Fish Bar',
       email: 'chihap@example.com',
-      notificationEmail: 'notify@chihap.example.com',
-      domainName: 'chihap.com',
     });
 
     expect(result.outcome).toBe('CREATED');
@@ -73,8 +46,6 @@ describe('createCustomer', () => {
     const result = await createCustomer(deps, 'super_1', {
       name: 'Enterprise Client',
       email: 'enterprise@example.com',
-      notificationEmail: 'notify@enterprise.example.com',
-      domainName: 'enterprise.example.com',
       paymentProvider: 'FLUTTERWAVE',
       automaticSuspension: false,
     });
@@ -90,14 +61,7 @@ describe('createCustomer', () => {
         {
           id: 'cust_existing',
           customerCode: 'WOH-000001',
-          name: 'Test Customer',
           email: 'taken@example.com',
-          notificationEmail: null,
-          phone: null,
-          dateOfBirth: null,
-          serviceStartDate: null,
-          serviceEndDate: null,
-          websiteType: null,
           passwordHash: null,
           status: 'ACTIVE',
           automaticSuspension: true,
@@ -109,51 +73,19 @@ describe('createCustomer', () => {
     const result = await createCustomer(deps, 'super_1', {
       name: 'Dup',
       email: 'taken@example.com',
-      notificationEmail: 'notify@example.com',
-      domainName: 'dup.example.com',
     });
 
     expect(result.outcome).toBe('ALREADY_EXISTS');
   });
 
   it('rejects missing name/email', async () => {
-    const base = { notificationEmail: 'notify@example.com', domainName: 'example.com' };
     const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [] });
 
-    const noName = await createCustomer(deps, 'super_1', { name: '', email: 'x@example.com', ...base });
-    const badEmail = await createCustomer(deps, 'super_1', { name: 'X', email: 'not-an-email', ...base });
+    const noName = await createCustomer(deps, 'super_1', { name: '', email: 'x@example.com' });
+    const badEmail = await createCustomer(deps, 'super_1', { name: 'X', email: 'not-an-email' });
 
     expect(noName.outcome).toBe('INVALID_INPUT');
     expect(badEmail.outcome).toBe('INVALID_INPUT');
-  });
-
-  it('rejects a missing or invalid notificationEmail — required at onboarding', async () => {
-    const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [] });
-
-    const missing = await createCustomer(deps, 'super_1', { name: 'X', email: 'x@example.com', domainName: 'x.example.com' });
-    const invalid = await createCustomer(deps, 'super_1', {
-      name: 'X',
-      email: 'x2@example.com',
-      notificationEmail: 'not-an-email',
-      domainName: 'x2.example.com',
-    });
-
-    expect(missing.outcome).toBe('INVALID_INPUT');
-    expect(missing.message).toMatch(/notificationEmail/);
-    expect(invalid.outcome).toBe('INVALID_INPUT');
-  });
-
-  it('rejects a missing domainName — required at onboarding', async () => {
-    const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [] });
-
-    const result = await createCustomer(deps, 'super_1', {
-      name: 'X',
-      email: 'x@example.com',
-      notificationEmail: 'notify@example.com',
-    });
-
-    expect(result.outcome).toBe('INVALID_INPUT');
-    expect(result.message).toMatch(/domainName/);
   });
 
   it('auto-assigns a scoped (non-super) admin to the customer they created', async () => {
@@ -162,8 +94,6 @@ describe('createCustomer', () => {
     const result = await createCustomer(deps, 'admin_1', {
       name: 'Mabfaro Nigeria Limited',
       email: 'mabfaro@example.com',
-      notificationEmail: 'notify@mabfaro.example.com',
-      domainName: 'mabfaro.example.com',
     });
 
     expect(result.outcome).toBe('CREATED');
@@ -176,8 +106,6 @@ describe('createCustomer', () => {
     const result = await createCustomer(deps, 'super_1', {
       name: 'Some Customer',
       email: 'some@example.com',
-      notificationEmail: 'notify@some.example.com',
-      domainName: 'some.example.com',
     });
 
     expect(deps.assignmentStore.get('super_1')).toBeUndefined();
@@ -187,226 +115,8 @@ describe('createCustomer', () => {
   it('logs a CUSTOMER_CREATED audit entry', async () => {
     const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [] });
 
-    await createCustomer(deps, 'super_1', {
-      name: 'Audit Me',
-      email: 'audit@example.com',
-      notificationEmail: 'notify@audit.example.com',
-      domainName: 'audit.example.com',
-    });
+    await createCustomer(deps, 'super_1', { name: 'Audit Me', email: 'audit@example.com' });
 
     expect(deps.auditLogEntries.some((e) => e.action === 'CUSTOMER_CREATED')).toBe(true);
-  });
-
-  it('accepts notificationEmail, phone, dateOfBirth, serviceStartDate, serviceEndDate', async () => {
-    const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [] });
-
-    const result = await createCustomer(deps, 'super_1', {
-      name: 'Full Fields',
-      email: 'login@example.com',
-      notificationEmail: 'notify@example.com',
-      domainName: 'fullfields.example.com',
-      phone: '+2348012345678',
-      dateOfBirth: '1990-05-15',
-      serviceStartDate: '2026-01-01',
-      serviceEndDate: '2027-01-01',
-    });
-
-    expect(result.outcome).toBe('CREATED');
-    expect(result.customer?.notificationEmail).toBe('notify@example.com');
-    expect(result.customer?.phone).toBe('+2348012345678');
-    expect(result.customer?.dateOfBirth).toBe('1990-05-15');
-  });
-
-  it('rejects an unparseable date field', async () => {
-    const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [] });
-
-    const result = await createCustomer(deps, 'super_1', {
-      name: 'X',
-      email: 'x@example.com',
-      notificationEmail: 'notify@example.com',
-      domainName: 'x.example.com',
-      dateOfBirth: 'not-a-date',
-    });
-
-    expect(result.outcome).toBe('INVALID_INPUT');
-    expect(result.message).toMatch(/dateOfBirth/);
-  });
-
-  it('rejects serviceEndDate before serviceStartDate', async () => {
-    const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [] });
-
-    const result = await createCustomer(deps, 'super_1', {
-      name: 'X',
-      email: 'x@example.com',
-      notificationEmail: 'notify@example.com',
-      domainName: 'x.example.com',
-      serviceStartDate: '2027-01-01',
-      serviceEndDate: '2026-01-01',
-    });
-
-    expect(result.outcome).toBe('INVALID_INPUT');
-  });
-
-  it('accepts a valid websiteType', async () => {
-    const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [] });
-
-    const result = await createCustomer(deps, 'super_1', {
-      name: 'Bank Co',
-      email: 'bank@example.com',
-      notificationEmail: 'notify@bank.example.com',
-      domainName: 'bank.example.com',
-      websiteType: 'ONLINE_BANKING',
-    });
-
-    expect(result.outcome).toBe('CREATED');
-    expect(result.customer?.websiteType).toBe('ONLINE_BANKING');
-  });
-
-  it('rejects an invalid websiteType rather than passing it through to the DB', async () => {
-    const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [] });
-
-    const result = await createCustomer(deps, 'super_1', {
-      name: 'X',
-      email: 'x@example.com',
-      notificationEmail: 'notify@example.com',
-      domainName: 'x.example.com',
-      // @ts-expect-error deliberately invalid for this test
-      websiteType: 'CRYPTO_CASINO',
-    });
-
-    expect(result.outcome).toBe('INVALID_INPUT');
-  });
-
-  it('attaches the domain given at onboarding in the same call', async () => {
-    const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [] });
-
-    const result = await createCustomer(deps, 'super_1', {
-      name: 'Chihap',
-      email: 'chihap@example.com',
-      notificationEmail: 'notify@chihap.example.com',
-      domainName: 'chihap.com',
-    });
-
-    expect(result.outcome).toBe('CREATED');
-    expect(result.domainOutcome).toBe('ATTACHED');
-    const domains = [...deps.domainStore.values()];
-    expect(domains.some((d) => d.domainName === 'chihap.com' && d.customerId === result.customer!.id)).toBe(true);
-  });
-
-  it('still creates the customer even if the onboarding domain is already taken elsewhere', async () => {
-    const deps = makeFakeAdminManagementDeps({
-      admins: [superAdmin()],
-      customers: [],
-      domains: [{ id: 'dom_1', customerId: 'some_other_customer', domainName: 'taken.com', isPrimary: true, railwayStatus: null, createdAt: '2026-01-01T00:00:00.000Z' }],
-    });
-
-    const result = await createCustomer(deps, 'super_1', {
-      name: 'New Customer',
-      email: 'new@example.com',
-      notificationEmail: 'notify@new.example.com',
-      domainName: 'taken.com',
-    });
-
-    expect(result.outcome).toBe('CREATED'); // customer creation itself never fails for this
-    expect(result.domainOutcome).toBe('ALREADY_EXISTS');
-  });
-});
-
-describe('updateCustomer', () => {
-  it('updates the requested fields and leaves others untouched', async () => {
-    const deps = makeFakeAdminManagementDeps({
-      admins: [superAdmin()],
-      customers: [customer({ phone: '+1000' })],
-    });
-
-    const result = await updateCustomer(deps, 'super_1', 'cust_1', {
-      notificationEmail: 'new@example.com',
-    });
-
-    expect(result.outcome).toBe('UPDATED');
-    expect(result.customer?.notificationEmail).toBe('new@example.com');
-    expect(result.customer?.phone).toBe('+1000'); // untouched
-  });
-
-  it('rejects an unknown customer', async () => {
-    const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [] });
-
-    const result = await updateCustomer(deps, 'super_1', 'nope', { name: 'X' });
-
-    expect(result.outcome).toBe('NOT_FOUND');
-  });
-
-  it('returns NO_CHANGES for an empty patch rather than a false success', async () => {
-    const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [customer()] });
-
-    const result = await updateCustomer(deps, 'super_1', 'cust_1', {});
-
-    expect(result.outcome).toBe('NO_CHANGES');
-  });
-
-  it('rejects an invalid date on update the same as on create', async () => {
-    const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [customer()] });
-
-    const result = await updateCustomer(deps, 'super_1', 'cust_1', { serviceStartDate: 'garbage' });
-
-    expect(result.outcome).toBe('INVALID_INPUT');
-  });
-
-  it('logs a CUSTOMER_UPDATED audit entry naming which fields changed', async () => {
-    const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [customer()] });
-
-    await updateCustomer(deps, 'super_1', 'cust_1', { phone: '+2340000000' });
-
-    const entry = deps.auditLogEntries.find((e) => e.action === 'CUSTOMER_UPDATED');
-    expect(entry).toBeDefined();
-    expect((entry?.metadata as { fields: string[] })?.fields).toContain('phone');
-  });
-});
-
-describe('sendCustomEmail', () => {
-  it('sends through the notification pipeline with the admin-supplied subject', async () => {
-    const deps = makeFakeCustomEmailDeps({ admins: [plainAdmin()], customers: [customer()] });
-
-    const result = await sendCustomEmail(deps, 'admin_1', {
-      customerId: 'cust_1',
-      subject: 'Special offer just for you',
-      message: 'Renew this month and get 10% off.',
-    });
-
-    expect(result.outcome).toBe('SENT');
-    expect(deps.notificationLog).toHaveLength(1);
-    expect(deps.notificationLog[0]).toMatchObject({
-      customerId: 'cust_1',
-      event: 'CUSTOM',
-      message: 'Renew this month and get 10% off.',
-      subject: 'Special offer just for you',
-    });
-  });
-
-  it('rejects an empty subject or message', async () => {
-    const deps = makeFakeCustomEmailDeps({ admins: [plainAdmin()], customers: [customer()] });
-
-    const noSubject = await sendCustomEmail(deps, 'admin_1', { customerId: 'cust_1', subject: '  ', message: 'hi' });
-    const noMessage = await sendCustomEmail(deps, 'admin_1', { customerId: 'cust_1', subject: 'hi', message: '  ' });
-
-    expect(noSubject.outcome).toBe('INVALID_INPUT');
-    expect(noMessage.outcome).toBe('INVALID_INPUT');
-    expect(deps.notificationLog).toHaveLength(0);
-  });
-
-  it('rejects an unknown customer', async () => {
-    const deps = makeFakeCustomEmailDeps({ admins: [plainAdmin()], customers: [] });
-
-    const result = await sendCustomEmail(deps, 'admin_1', { customerId: 'nope', subject: 'hi', message: 'hi' });
-
-    expect(result.outcome).toBe('NOT_FOUND');
-  });
-
-  it('logs a CUSTOM_EMAIL_SENT audit entry', async () => {
-    const deps = makeFakeCustomEmailDeps({ admins: [plainAdmin()], customers: [customer()] });
-
-    await sendCustomEmail(deps, 'admin_1', { customerId: 'cust_1', subject: 'Hi', message: 'Hello there' });
-
-    expect(deps.auditLogEntries.some((e) => e.action === 'CUSTOM_EMAIL_SENT')).toBe(true);
   });
 });

@@ -11,22 +11,24 @@ import { authenticateFromHeader, hasAdminRole } from '../../../../../../src/lib/
 
 export async function GET(
   request: Request,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ): Promise<Response> {
+  const { id } = await context.params;
   const auth = authenticateFromHeader(request.headers.get('authorization'));
   if (!auth.authenticated || !hasAdminRole(auth.session, ['ADMIN', 'SUPER_ADMIN'])) {
     return json(403, { error: 'Admin access required' });
   }
 
   const deps = buildAdminManagementDeps();
-  const customerIds = await deps.adminAssignments.listCustomerIdsForAdmin(context.params.id);
-  return json(200, { adminId: context.params.id, customerIds });
+  const customerIds = await deps.adminAssignments.listCustomerIdsForAdmin(id);
+  return json(200, { adminId: id, customerIds });
 }
 
 export async function POST(
   request: Request,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ): Promise<Response> {
+  const { id } = await context.params;
   const auth = authenticateFromHeader(request.headers.get('authorization'));
   if (!auth.authenticated || !hasAdminRole(auth.session, ['ADMIN', 'SUPER_ADMIN'])) {
     return json(403, { error: 'Admin access required' });
@@ -45,14 +47,14 @@ export async function POST(
   const result = await setCustomerAssignments(
     buildAdminManagementDeps(),
     auth.session.sub,
-    context.params.id,
+    id,
     body.customerIds
   );
 
   const httpStatus =
     result.outcome === 'UPDATED'
       ? 200
-      : result.outcome === 'FORBIDDEN' || result.outcome === 'OUT_OF_SCOPE'
+      : result.outcome === 'FORBIDDEN'
         ? 403
         : result.outcome === 'NOT_FOUND'
           ? 404

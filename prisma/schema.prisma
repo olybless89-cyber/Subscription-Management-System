@@ -22,22 +22,6 @@ enum CustomerStatus {
   TERMINATED
 }
 
-// What kind of website/product this customer runs — captured at
-// onboarding specifically so the super admin knows what they're
-// configuring Railway infrastructure for later (a banking site and a
-// delivery app have very different hosting-mode/suspension-strategy
-// needs). OTHER covers anything that doesn't fit the presets.
-enum WebsiteType {
-  ONLINE_BANKING
-  INVESTMENT
-  ECOMMERCE
-  DELIVERY
-  SAAS
-  WEB_APP
-  CORPORATE
-  OTHER
-}
-
 enum SubscriptionStatus {
   TRIAL
   ACTIVE
@@ -51,8 +35,6 @@ enum SubscriptionStatus {
 enum BillingCycle {
   MONTHLY
   QUARTERLY
-  FOUR_MONTHS
-  SEMI_ANNUAL
   YEARLY
   CUSTOM
 }
@@ -106,19 +88,6 @@ enum AdminRole {
   ADMIN
 }
 
-// RECEIPT = auto-generated when a payment is verified/recorded, proof
-// of what was paid. DUE = auto-generated when a subscription moves to
-// PAYMENT_DUE, showing what's owed and by when.
-enum InvoiceType {
-  RECEIPT
-  DUE
-}
-
-enum InvoiceStatus {
-  PENDING
-  PAID
-}
-
 enum PaymentProviderName {
   PAYSTACK
   FLUTTERWAVE // routing/schema support exists; provider adapter not yet implemented — see src/lib/payments/registry.ts
@@ -130,14 +99,9 @@ model Customer {
   id                  String              @id @default(cuid())
   customerCode        String              @unique // WOH-000001
   name                String
-  email               String              @unique // login/account email
-  notificationEmail   String?             // where notifications actually go, if different from the login email — falls back to `email` when null
+  email               String              @unique
   passwordHash        String?             // customer portal login; null until they set one (e.g. invite flow)
   phone               String?
-  dateOfBirth         DateTime?           // used by the daily birthday-message cron — only month/day matter, year is stored but not checked
-  serviceStartDate     DateTime?           // manual contract/service dates — independent of subscription billing periods
-  serviceEndDate       DateTime?
-  websiteType          WebsiteType?        // what kind of site/product this is — informs Railway hosting-mode/suspension-strategy choices
   status              CustomerStatus      @default(ACTIVE)
   automaticSuspension Boolean             @default(true)
   automaticSuspensionOffReason String?
@@ -150,8 +114,6 @@ model Customer {
   notifications       Notification[]
   adminAssignments    AdminCustomerAssignment[]
   adminNotifications  AdminNotification[]
-  invoices            Invoice[]
-  campaignRecipients  CampaignRecipient[]
 
   @@index([status])
 }
@@ -201,7 +163,6 @@ model Subscription {
   payments            Payment[]
   railwayResources     RailwayResource[]
   suspensionEvents     SuspensionEvent[]
-  invoices             Invoice[]
 
   @@index([status])
   @@index([nextBillingDate])
@@ -255,27 +216,8 @@ model RailwayResource {
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
 
-  statusSnapshots    ResourceStatusSnapshot[]
-
   @@index([hostingMode])
   @@index([status])
-}
-
-// A snapshot of a RailwayResource's status at one point in time,
-// written every time syncRailwayResources checks it (piggy-backing on
-// the already-scheduled sync — no new cron needed). This is genuinely
-// how the "uptime %" shown to customers is computed: it's the
-// proportion of these periodic checks that came back ACTIVE, not
-// continuous second-by-second monitoring. Honest about that limitation
-// wherever it's displayed — see src/lib/monitoring/uptime.ts.
-model ResourceStatusSnapshot {
-  id                String                @id @default(cuid())
-  railwayResourceId String
-  railwayResource   RailwayResource       @relation(fields: [railwayResourceId], references: [id], onDelete: Cascade)
-  status            RailwayResourceStatus
-  checkedAt         DateTime              @default(now())
-
-  @@index([railwayResourceId, checkedAt])
 }
 
 model SuspensionEvent {
@@ -313,7 +255,6 @@ model AdminUser {
   name         String
   email        String    @unique
   passwordHash String
-  passwordChangedAt DateTime? // null = never changed since account creation; set on self-change AND super-admin reset
   role         AdminRole @default(ADMIN)
   canManageAdmins Boolean @default(false)
   createdAt    DateTime  @default(now())
@@ -353,7 +294,6 @@ model AdminNotification {
   customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
   event      String
   message    String
-  sentAt     DateTime?
   createdAt  DateTime  @default(now())
 
   @@index([adminId])
@@ -376,35 +316,6 @@ model CustomerCodeCounter {
   value Int @default(0)
 }
 
-// Same pattern as CustomerCodeCounter — sequential, never-reused
-// invoice numbers (INV-000001, ...) that survive even if an invoice
-// row is ever deleted.
-model InvoiceCounter {
-  id    Int @id @default(1)
-  value Int @default(0)
-}
-
-model Invoice {
-  id             String        @id @default(cuid())
-  invoiceNumber  String        @unique // INV-000001
-  customerId     String
-  customer       Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  subscriptionId String?
-  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-  type           InvoiceType
-  status         InvoiceStatus @default(PENDING)
-  amount         Int // minor units (kobo/cents)
-  currency       String
-  description    String // e.g. plan name + billing period, shown as the line item
-  dueDate        DateTime?
-  paidAt         DateTime?
-  issuedAt       DateTime      @default(now())
-  createdAt      DateTime      @default(now())
-
-  @@index([customerId])
-  @@index([subscriptionId])
-}
-
 model AuditLog {
   id        String   @id @default(cuid())
   actor     String // AdminUser id or "SYSTEM"
@@ -417,55 +328,4 @@ model AuditLog {
 
   @@index([action])
   @@index([createdAt])
-}
-
-// Bulk campaigns — an admin manually selects a set of customers and
-// sends one message to all of them, by email and/or WhatsApp. Recipient
-// selection is a flat list (CampaignRecipient rows), not a saved
-// "segment" — per an explicit decision to keep this predictable rather
-// than build a filter/segment query engine.
-enum CampaignChannel {
-  EMAIL
-  WHATSAPP
-}
-
-enum CampaignStatus {
-  DRAFT
-  SENDING
-  SENT
-}
-
-enum CampaignRecipientStatus {
-  PENDING
-  SENT
-  FAILED
-}
-
-model Campaign {
-  id         String            @id @default(cuid())
-  name       String
-  channels   CampaignChannel[] // which channel(s) this campaign sends on — a native Postgres array since this project targets Postgres exclusively, no reason to fake it with a comma-separated string
-  subject    String? // email subject — required if EMAIL is one of the channels
-  message    String // body text: used as the email text/HTML, and as the single {{1}} parameter of the WhatsApp utility template
-  status     CampaignStatus    @default(DRAFT)
-  createdBy  String // AdminUser id
-  createdAt  DateTime          @default(now())
-  sentAt     DateTime?
-
-  recipients CampaignRecipient[]
-}
-
-model CampaignRecipient {
-  id         String                   @id @default(cuid())
-  campaignId String
-  campaign   Campaign                 @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  customerId String
-  customer   Customer                 @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  channel    CampaignChannel // one row per actual channel attempt — a customer on a "EMAIL,WHATSAPP" campaign gets two rows
-  status     CampaignRecipientStatus  @default(PENDING)
-  sentAt     DateTime?
-  error      String?
-
-  @@index([campaignId])
-  @@index([customerId])
 }

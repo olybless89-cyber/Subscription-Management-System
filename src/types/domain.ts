@@ -28,33 +28,16 @@ export type SuspensionResult = 'SUCCESS' | 'FAILED' | 'SKIPPED';
 
 export type PaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'REFUNDED' | 'CANCELLED';
 
-export type BillingCycle = 'MONTHLY' | 'QUARTERLY' | 'FOUR_MONTHS' | 'SEMI_ANNUAL' | 'YEARLY' | 'CUSTOM';
+export type BillingCycle = 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'CUSTOM';
 
 export type AdminRole = 'SUPER_ADMIN' | 'ADMIN';
 
 export type PaymentProviderName = 'PAYSTACK' | 'FLUTTERWAVE';
 
-export type WebsiteType =
-  | 'ONLINE_BANKING'
-  | 'INVESTMENT'
-  | 'ECOMMERCE'
-  | 'DELIVERY'
-  | 'SAAS'
-  | 'WEB_APP'
-  | 'CORPORATE'
-  | 'OTHER';
-
 export interface CustomerRecord {
   id: string;
   customerCode: string;
-  name: string;
   email: string;
-  notificationEmail: string | null;
-  phone: string | null;
-  dateOfBirth: string | null;
-  serviceStartDate: string | null;
-  serviceEndDate: string | null;
-  websiteType: WebsiteType | null;
   passwordHash: string | null;
   status: CustomerStatus;
   automaticSuspension: boolean;
@@ -63,10 +46,8 @@ export interface CustomerRecord {
 
 export interface AdminRecord {
   id: string;
-  name: string;
   email: string;
   passwordHash: string;
-  passwordChangedAt: string | null;
   role: AdminRole;
   canManageAdmins: boolean;
 }
@@ -77,86 +58,13 @@ export interface AdminAssignmentRecord {
   customerId: string;
 }
 
-export interface AuditLogRecord {
-  id: string;
-  actor: string;
-  action: string;
-  target: string | null;
-  ip: string | null;
-  metadata: string | null;
-  result: string;
-  createdAt: string;
-}
-
-export type InvoiceType = 'RECEIPT' | 'DUE';
-export type InvoiceStatus = 'PENDING' | 'PAID';
-
-export interface InvoiceRecord {
-  id: string;
-  invoiceNumber: string;
-  customerId: string;
-  subscriptionId: string | null;
-  type: InvoiceType;
-  status: InvoiceStatus;
-  amount: number;
-  currency: string;
-  description: string;
-  dueDate: string | null;
-  paidAt: string | null;
-  issuedAt: string;
-}
-
-export type CampaignChannel = 'EMAIL' | 'WHATSAPP';
-export type CampaignStatus = 'DRAFT' | 'SENDING' | 'SENT';
-export type CampaignRecipientStatus = 'PENDING' | 'SENT' | 'FAILED';
-
-export interface CampaignRecord {
-  id: string;
-  name: string;
-  channels: CampaignChannel[];
-  subject: string | null;
-  message: string;
-  status: CampaignStatus;
-  createdBy: string;
-  createdAt: string;
-  sentAt: string | null;
-}
-
-export interface CampaignRecipientRecord {
-  id: string;
-  campaignId: string;
-  customerId: string;
-  channel: CampaignChannel;
-  status: CampaignRecipientStatus;
-  sentAt: string | null;
-  error: string | null;
-}
-
-export interface DomainRecord {
-  id: string;
-  customerId: string;
-  domainName: string;
-  isPrimary: boolean;
-  railwayStatus: string | null;
-  createdAt: string;
-}
-
 export interface AdminNotificationRecord {
   id: string;
   adminId: string;
   customerId: string;
   event: string;
   message: string;
-  sentAt: string | null;
   createdAt: string;
-}
-
-export interface DomainRecord {
-  id: string;
-  customerId: string;
-  domainName: string;
-  isPrimary: boolean;
-  railwayStatus: string | null;
 }
 
 export interface SubscriptionRecord {
@@ -203,13 +111,6 @@ export interface RailwayResourceRecord {
   hostingMode: HostingMode;
   suspensionStrategy: SuspensionStrategyValue;
   status: RailwayResourceStatus;
-}
-
-export interface StatusSnapshotRecord {
-  id: string;
-  railwayResourceId: string;
-  status: RailwayResourceStatus;
-  checkedAt: string;
 }
 
 export interface SuspensionEventInput {

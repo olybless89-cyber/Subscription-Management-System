@@ -10,12 +10,6 @@ import {
   AdminRepository,
   AdminAssignmentRepository,
   AdminNotificationRepository,
-  DomainRepository,
-  AuditLogRepository,
-  InvoiceRepository,
-  CampaignRepository,
-  WhatsAppSender,
-  ResourceStatusSnapshotRepository,
 } from './ports';
 import {
   SubscriptionRecord,
@@ -23,15 +17,7 @@ import {
   RailwayResourceRecord,
   PlanRecord,
   PaymentRecord,
-  DomainRecord,
-  AdminRecord,
-  InvoiceRecord,
-  CampaignRecord,
-  CampaignRecipientRecord,
-  StatusSnapshotRecord,
 } from '@/types/domain';
-import { sendWhatsAppMessage } from '../notifications/whatsapp';
-import { sendEmail, subjectForEvent, renderBrandedEmailHtml } from '../notifications/email';
 
 /**
  * Real Prisma-backed implementations of every port the engines/webhook
@@ -76,52 +62,8 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
     };
   }
 
-  async findByCustomerId(customerId: string): Promise<SubscriptionRecord[]> {
-    const rows = await this.prisma.subscription.findMany({ where: { customerId }, orderBy: { createdAt: 'desc' } });
-    return rows.map((s: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-      id: s.id,
-      customerId: s.customerId,
-      planId: s.planId,
-      status: s.status,
-      suspensionEnabled: s.suspensionEnabled,
-      suspendedAt: s.suspendedAt ? s.suspendedAt.toISOString() : null,
-      currentPeriodStart: s.currentPeriodStart.toISOString(),
-      currentPeriodEnd: s.currentPeriodEnd.toISOString(),
-      nextBillingDate: s.nextBillingDate.toISOString(),
-      gracePeriodEnd: s.gracePeriodEnd ? s.gracePeriodEnd.toISOString() : null,
-      dryRunOverride: s.dryRunOverride,
-    }));
-  }
-
   async setDryRunOverride(id: string, override: boolean | null): Promise<void> {
     await this.prisma.subscription.update({ where: { id }, data: { dryRunOverride: override } });
-  }
-
-  async listAll(): Promise<SubscriptionRecord[]> {
-    const rows = await this.prisma.subscription.findMany({ orderBy: { createdAt: 'desc' } });
-    return rows.map((s: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-      id: s.id,
-      customerId: s.customerId,
-      planId: s.planId,
-      status: s.status,
-      suspensionEnabled: s.suspensionEnabled,
-      suspendedAt: s.suspendedAt ? s.suspendedAt.toISOString() : null,
-      currentPeriodStart: s.currentPeriodStart.toISOString(),
-      currentPeriodEnd: s.currentPeriodEnd.toISOString(),
-      nextBillingDate: s.nextBillingDate.toISOString(),
-      gracePeriodEnd: s.gracePeriodEnd ? s.gracePeriodEnd.toISOString() : null,
-      dryRunOverride: s.dryRunOverride,
-    }));
-  }
-
-  async update(id: string, patch: { planId?: string; suspensionEnabled?: boolean }): Promise<void> {
-    await this.prisma.subscription.update({
-      where: { id },
-      data: {
-        ...(patch.planId !== undefined ? { planId: patch.planId } : {}),
-        ...(patch.suspensionEnabled !== undefined ? { suspensionEnabled: patch.suspensionEnabled } : {}),
-      },
-    });
   }
 
   async updateStatus(
@@ -218,18 +160,13 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
 export class PrismaCustomerRepository implements CustomerRepository {
   constructor(private prisma: PrismaClient) {}
 
-  private map(c: any): CustomerRecord { // eslint-disable-line @typescript-eslint/no-explicit-any
+  async findById(id: string): Promise<CustomerRecord | null> {
+    const c = await this.prisma.customer.findUnique({ where: { id } });
+    if (!c) return null;
     return {
       id: c.id,
       customerCode: c.customerCode,
-      name: c.name,
       email: c.email,
-      notificationEmail: c.notificationEmail,
-      phone: c.phone,
-      dateOfBirth: c.dateOfBirth ? c.dateOfBirth.toISOString() : null,
-      serviceStartDate: c.serviceStartDate ? c.serviceStartDate.toISOString() : null,
-      serviceEndDate: c.serviceEndDate ? c.serviceEndDate.toISOString() : null,
-      websiteType: c.websiteType,
       passwordHash: c.passwordHash,
       status: c.status,
       automaticSuspension: c.automaticSuspension,
@@ -237,54 +174,55 @@ export class PrismaCustomerRepository implements CustomerRepository {
     };
   }
 
-  async findById(id: string): Promise<CustomerRecord | null> {
-    const c = await this.prisma.customer.findUnique({ where: { id } });
-    return c ? this.map(c) : null;
-  }
-
   async findByEmail(email: string): Promise<CustomerRecord | null> {
     const c = await this.prisma.customer.findUnique({ where: { email } });
-    return c ? this.map(c) : null;
-  }
-
-  async findByCustomerCode(customerCode: string): Promise<CustomerRecord | null> {
-    const c = await this.prisma.customer.findUnique({ where: { customerCode } });
-    return c ? this.map(c) : null;
+    if (!c) return null;
+    return {
+      id: c.id,
+      customerCode: c.customerCode,
+      email: c.email,
+      passwordHash: c.passwordHash,
+      status: c.status,
+      automaticSuspension: c.automaticSuspension,
+      paymentProvider: c.paymentProvider,
+    };
   }
 
   async findByIds(ids: string[]): Promise<CustomerRecord[]> {
     if (ids.length === 0) return [];
     const rows = await this.prisma.customer.findMany({ where: { id: { in: ids } } });
-    return rows.map((c: any) => this.map(c)); // eslint-disable-line @typescript-eslint/no-explicit-any
+    return rows.map((c: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+      id: c.id,
+      customerCode: c.customerCode,
+      email: c.email,
+      passwordHash: c.passwordHash,
+      status: c.status,
+      automaticSuspension: c.automaticSuspension,
+      paymentProvider: c.paymentProvider,
+    }));
   }
 
   async listAll(): Promise<CustomerRecord[]> {
     const rows = await this.prisma.customer.findMany();
-    return rows.map((c: any) => this.map(c)); // eslint-disable-line @typescript-eslint/no-explicit-any
-  }
-
-  async findWithBirthday(): Promise<CustomerRecord[]> {
-    const rows = await this.prisma.customer.findMany({ where: { dateOfBirth: { not: null } } });
-    return rows.map((c: any) => this.map(c)); // eslint-disable-line @typescript-eslint/no-explicit-any
+    return rows.map((c: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+      id: c.id,
+      customerCode: c.customerCode,
+      email: c.email,
+      passwordHash: c.passwordHash,
+      status: c.status,
+      automaticSuspension: c.automaticSuspension,
+      paymentProvider: c.paymentProvider,
+    }));
   }
 
   async updateStatus(id: string, status: CustomerRecord['status']): Promise<void> {
     await this.prisma.customer.update({ where: { id }, data: { status } });
   }
 
-  async updatePassword(id: string, passwordHash: string): Promise<void> {
-    await this.prisma.customer.update({ where: { id }, data: { passwordHash } });
-  }
-
   async create(input: {
     name: string;
     email: string;
-    notificationEmail?: string | null;
     phone?: string | null;
-    dateOfBirth?: string | null;
-    serviceStartDate?: string | null;
-    serviceEndDate?: string | null;
-    websiteType?: CustomerRecord['websiteType'];
     paymentProvider: CustomerRecord['paymentProvider'];
     automaticSuspension: boolean;
   }): Promise<CustomerRecord> {
@@ -294,54 +232,20 @@ export class PrismaCustomerRepository implements CustomerRepository {
         customerCode,
         name: input.name,
         email: input.email,
-        notificationEmail: input.notificationEmail ?? undefined,
         phone: input.phone ?? undefined,
-        dateOfBirth: input.dateOfBirth ? new Date(input.dateOfBirth) : undefined,
-        serviceStartDate: input.serviceStartDate ? new Date(input.serviceStartDate) : undefined,
-        serviceEndDate: input.serviceEndDate ? new Date(input.serviceEndDate) : undefined,
-        websiteType: (input.websiteType ?? undefined) as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         paymentProvider: input.paymentProvider as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         automaticSuspension: input.automaticSuspension,
       },
     });
-    return this.map(c);
-  }
-
-  async update(
-    id: string,
-    patch: {
-      name?: string;
-      notificationEmail?: string | null;
-      phone?: string | null;
-      dateOfBirth?: string | null;
-      serviceStartDate?: string | null;
-      serviceEndDate?: string | null;
-      websiteType?: CustomerRecord['websiteType'];
-      paymentProvider?: CustomerRecord['paymentProvider'];
-      automaticSuspension?: boolean;
-    }
-  ): Promise<CustomerRecord> {
-    const c = await this.prisma.customer.update({
-      where: { id },
-      data: {
-        ...(patch.name !== undefined ? { name: patch.name } : {}),
-        ...(patch.notificationEmail !== undefined ? { notificationEmail: patch.notificationEmail } : {}),
-        ...(patch.phone !== undefined ? { phone: patch.phone } : {}),
-        ...(patch.dateOfBirth !== undefined
-          ? { dateOfBirth: patch.dateOfBirth ? new Date(patch.dateOfBirth) : null }
-          : {}),
-        ...(patch.serviceStartDate !== undefined
-          ? { serviceStartDate: patch.serviceStartDate ? new Date(patch.serviceStartDate) : null }
-          : {}),
-        ...(patch.serviceEndDate !== undefined
-          ? { serviceEndDate: patch.serviceEndDate ? new Date(patch.serviceEndDate) : null }
-          : {}),
-        ...(patch.websiteType !== undefined ? { websiteType: patch.websiteType as any } : {}), // eslint-disable-line @typescript-eslint/no-explicit-any
-        ...(patch.paymentProvider !== undefined ? { paymentProvider: patch.paymentProvider as any } : {}), // eslint-disable-line @typescript-eslint/no-explicit-any
-        ...(patch.automaticSuspension !== undefined ? { automaticSuspension: patch.automaticSuspension } : {}),
-      },
-    });
-    return this.map(c);
+    return {
+      id: c.id,
+      customerCode: c.customerCode,
+      email: c.email,
+      passwordHash: c.passwordHash,
+      status: c.status,
+      automaticSuspension: c.automaticSuspension,
+      paymentProvider: c.paymentProvider,
+    };
   }
 
   /** spec section 5: WOH-000001, WOH-000002, ... — atomic increment on a
@@ -362,116 +266,42 @@ export class PrismaCustomerRepository implements CustomerRepository {
   }
 }
 
-export class PrismaInvoiceRepository implements InvoiceRepository {
-  constructor(private prisma: PrismaClient) {}
-
-  private map(i: any): InvoiceRecord { // eslint-disable-line @typescript-eslint/no-explicit-any
-    return {
-      id: i.id,
-      invoiceNumber: i.invoiceNumber,
-      customerId: i.customerId,
-      subscriptionId: i.subscriptionId,
-      type: i.type,
-      status: i.status,
-      amount: i.amount,
-      currency: i.currency,
-      description: i.description,
-      dueDate: i.dueDate ? i.dueDate.toISOString() : null,
-      paidAt: i.paidAt ? i.paidAt.toISOString() : null,
-      issuedAt: i.issuedAt.toISOString(),
-    };
-  }
-
-  /** Same pattern as nextCustomerCode — atomic increment on a singleton
-   * counter row, never derived from COUNT(*), so the sequence survives
-   * even if an invoice is ever deleted. */
-  private async nextInvoiceNumber(): Promise<string> {
-    const row = await this.prisma.invoiceCounter.upsert({
-      where: { id: 1 },
-      create: { id: 1, value: 1 },
-      update: { value: { increment: 1 } },
-    });
-    return `INV-${String(row.value).padStart(6, '0')}`;
-  }
-
-  async create(input: {
-    customerId: string;
-    subscriptionId: string | null;
-    type: InvoiceRecord['type'];
-    status: InvoiceRecord['status'];
-    amount: number;
-    currency: string;
-    description: string;
-    dueDate: string | null;
-    paidAt: string | null;
-  }): Promise<InvoiceRecord> {
-    const invoiceNumber = await this.nextInvoiceNumber();
-    const i = await this.prisma.invoice.create({
-      data: {
-        invoiceNumber,
-        customerId: input.customerId,
-        subscriptionId: input.subscriptionId,
-        type: input.type as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-        status: input.status as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-        amount: input.amount,
-        currency: input.currency,
-        description: input.description,
-        dueDate: input.dueDate ? new Date(input.dueDate) : undefined,
-        paidAt: input.paidAt ? new Date(input.paidAt) : undefined,
-      },
-    });
-    return this.map(i);
-  }
-
-  async findById(id: string): Promise<InvoiceRecord | null> {
-    const i = await this.prisma.invoice.findUnique({ where: { id } });
-    return i ? this.map(i) : null;
-  }
-
-  async findByCustomerId(customerId: string): Promise<InvoiceRecord[]> {
-    const rows = await this.prisma.invoice.findMany({ where: { customerId }, orderBy: { issuedAt: 'desc' } });
-    return rows.map((i: any) => this.map(i)); // eslint-disable-line @typescript-eslint/no-explicit-any
-  }
-
-  async listAll(): Promise<InvoiceRecord[]> {
-    const rows = await this.prisma.invoice.findMany({ orderBy: { issuedAt: 'desc' } });
-    return rows.map((i: any) => this.map(i)); // eslint-disable-line @typescript-eslint/no-explicit-any
-  }
-}
-
 export class PrismaAdminRepository implements AdminRepository {
   constructor(private prisma: PrismaClient) {}
 
-  private map(a: any): AdminRecord { // eslint-disable-line @typescript-eslint/no-explicit-any
+  async findById(id: string) {
+    const a = await this.prisma.adminUser.findUnique({ where: { id } });
+    if (!a) return null;
     return {
       id: a.id,
-      name: a.name,
       email: a.email,
       passwordHash: a.passwordHash,
-      passwordChangedAt: a.passwordChangedAt ? a.passwordChangedAt.toISOString() : null,
       role: a.role,
       canManageAdmins: a.canManageAdmins,
     };
   }
 
-  async findById(id: string) {
-    const a = await this.prisma.adminUser.findUnique({ where: { id } });
-    return a ? this.map(a) : null;
-  }
-
   async findByEmail(email: string) {
     const a = await this.prisma.adminUser.findUnique({ where: { email } });
-    return a ? this.map(a) : null;
+    if (!a) return null;
+    return {
+      id: a.id,
+      email: a.email,
+      passwordHash: a.passwordHash,
+      role: a.role,
+      canManageAdmins: a.canManageAdmins,
+    };
   }
 
   async listSuperAdmins() {
     const rows = await this.prisma.adminUser.findMany({ where: { role: 'SUPER_ADMIN' } });
-    return rows.map((a: any) => this.map(a)); // eslint-disable-line @typescript-eslint/no-explicit-any
-  }
-
-  async listAll() {
-    const rows = await this.prisma.adminUser.findMany({ orderBy: { createdAt: 'asc' } });
-    return rows.map((a: any) => this.map(a)); // eslint-disable-line @typescript-eslint/no-explicit-any
+    return rows.map((a: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+      id: a.id,
+      email: a.email,
+      passwordHash: a.passwordHash,
+      role: a.role,
+      canManageAdmins: a.canManageAdmins,
+    }));
   }
 
   async create(input: {
@@ -490,14 +320,13 @@ export class PrismaAdminRepository implements AdminRepository {
         canManageAdmins: input.canManageAdmins,
       },
     });
-    return this.map(a);
-  }
-
-  async updatePassword(id: string, passwordHash: string): Promise<void> {
-    await this.prisma.adminUser.update({
-      where: { id },
-      data: { passwordHash, passwordChangedAt: new Date() },
-    });
+    return {
+      id: a.id,
+      email: a.email,
+      passwordHash: a.passwordHash,
+      role: a.role,
+      canManageAdmins: a.canManageAdmins,
+    };
   }
 }
 
@@ -562,12 +391,7 @@ export class PrismaAdminNotificationRepository implements AdminNotificationRepos
     event: string;
     message: string;
   }): Promise<void> {
-    // Same pattern as EmailNotificationSender: the row is the audit
-    // trail of record, written unconditionally; the real email is a
-    // best-effort layer on top that never affects the caller
-    // (notifyAdminsForCustomer, which is itself best-effort from the
-    // webhook's perspective — see webhook-handler.ts).
-    const notification = await this.prisma.adminNotification.create({
+    await this.prisma.adminNotification.create({
       data: {
         adminId: input.adminId,
         customerId: input.customerId,
@@ -575,24 +399,6 @@ export class PrismaAdminNotificationRepository implements AdminNotificationRepos
         message: input.message,
       },
     });
-
-    const admin = await this.prisma.adminUser.findUnique({ where: { id: input.adminId } });
-    if (!admin) return;
-
-    const subject = subjectForEvent(input.event);
-    const result = await sendEmail({
-      to: admin.email,
-      subject,
-      text: input.message,
-      html: renderBrandedEmailHtml({ subject, bodyText: input.message }),
-    });
-
-    if (result.success) {
-      await this.prisma.adminNotification.update({
-        where: { id: notification.id },
-        data: { sentAt: new Date() },
-      });
-    }
   }
 
   async listForAdmin(adminId: string, limit = 50) {
@@ -607,7 +413,6 @@ export class PrismaAdminNotificationRepository implements AdminNotificationRepos
       customerId: r.customerId,
       event: r.event,
       message: r.message,
-      sentAt: r.sentAt ? r.sentAt.toISOString() : null,
       createdAt: r.createdAt.toISOString(),
     }));
   }
@@ -851,50 +656,17 @@ export class PrismaPaymentRepository implements PaymentRepository {
 export class EmailNotificationSender implements NotificationSender {
   constructor(private prisma: PrismaClient) {}
 
-  async send(
-    customerId: string,
-    event: string,
-    message: string,
-    subjectOverride?: string,
-    attachments?: Array<{ filename: string; content: string }>
-  ): Promise<void> {
-    // Always record the Notification row first — this is the audit
-    // trail of record. Whether the real email actually goes out is a
-    // best-effort add-on layered on top: if Resend is unconfigured or
-    // down, the row still exists and the caller (payment webhook,
-    // suspension engine, cron) is never affected either way.
-    const notification = await this.prisma.notification.create({
+  async send(customerId: string, event: string, message: string): Promise<void> {
+    // Records the notification; actual email/WhatsApp/SMS dispatch is a
+    // separate adapter (lib/notifications/*) not yet built — this keeps
+    // the in-app/audit trail correct even before that's wired up.
+    await this.prisma.notification.create({
       data: { customerId, channel: 'EMAIL', event, message },
     });
-
-    const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
-    if (!customer) return; // FK integrity issue elsewhere — nothing to email.
-
-    const subject = subjectOverride ?? subjectForEvent(event);
-    const result = await sendEmail({
-      // notificationEmail (if the customer set one) takes priority over
-      // their login email — the two can legitimately differ (e.g. a
-      // shared login shared with a personal notification inbox).
-      to: customer.notificationEmail ?? customer.email,
-      subject,
-      text: message,
-      html: renderBrandedEmailHtml({ subject, bodyText: message }),
-      attachments,
-    });
-
-    if (result.success) {
-      await this.prisma.notification.update({
-        where: { id: notification.id },
-        data: { sentAt: new Date() },
-      });
-    }
-    // On failure, sentAt stays null — that's the visible signal (via
-    // the notification row itself) that dispatch didn't happen, without
-    // needing a separate error column.
   }
 }
 
-export class PrismaAuditLogRepository implements AuditLogRepository {
+export class PrismaAuditLogRepository {
   constructor(private prisma: PrismaClient) {}
 
   async create(entry: {
@@ -915,252 +687,5 @@ export class PrismaAuditLogRepository implements AuditLogRepository {
         result: entry.result,
       },
     });
-  }
-
-  async listRecent(limit = 50) {
-    const rows = await this.prisma.auditLog.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-    });
-    return rows.map((r: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-      id: r.id,
-      actor: r.actor,
-      action: r.action,
-      target: r.target,
-      ip: r.ip,
-      metadata: r.metadata,
-      result: r.result,
-      createdAt: r.createdAt.toISOString(),
-    }));
-  }
-}
-
-export class PrismaDomainRepository implements DomainRepository {
-  constructor(private prisma: PrismaClient) {}
-
-  async findById(id: string): Promise<DomainRecord | null> {
-    const d = await this.prisma.domain.findUnique({ where: { id } });
-    if (!d) return null;
-    return {
-      id: d.id,
-      customerId: d.customerId,
-      domainName: d.domainName,
-      isPrimary: d.isPrimary,
-      railwayStatus: d.railwayStatus,
-      createdAt: d.createdAt.toISOString(),
-    };
-  }
-
-  async findByCustomerId(customerId: string): Promise<DomainRecord[]> {
-    const rows = await this.prisma.domain.findMany({ where: { customerId } });
-    return rows.map((d: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-      id: d.id,
-      customerId: d.customerId,
-      domainName: d.domainName,
-      isPrimary: d.isPrimary,
-      railwayStatus: d.railwayStatus,
-      createdAt: d.createdAt.toISOString(),
-    }));
-  }
-
-  async findByDomainName(domainName: string): Promise<DomainRecord | null> {
-    const d = await this.prisma.domain.findUnique({ where: { domainName } });
-    if (!d) return null;
-    return {
-      id: d.id,
-      customerId: d.customerId,
-      domainName: d.domainName,
-      isPrimary: d.isPrimary,
-      railwayStatus: d.railwayStatus,
-      createdAt: d.createdAt.toISOString(),
-    };
-  }
-
-  async listAll(): Promise<DomainRecord[]> {
-    const rows = await this.prisma.domain.findMany({ orderBy: { createdAt: 'desc' } });
-    return rows.map((d: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-      id: d.id,
-      customerId: d.customerId,
-      domainName: d.domainName,
-      isPrimary: d.isPrimary,
-      railwayStatus: d.railwayStatus,
-      createdAt: d.createdAt.toISOString(),
-    }));
-  }
-
-  async create(input: { customerId: string; domainName: string; isPrimary: boolean }): Promise<DomainRecord> {
-    const d = await this.prisma.domain.create({
-      data: { customerId: input.customerId, domainName: input.domainName, isPrimary: input.isPrimary },
-    });
-    return {
-      id: d.id,
-      customerId: d.customerId,
-      domainName: d.domainName,
-      isPrimary: d.isPrimary,
-      railwayStatus: d.railwayStatus,
-      createdAt: d.createdAt.toISOString(),
-    };
-  }
-}
-
-export class PrismaCampaignRepository implements CampaignRepository {
-  constructor(private prisma: PrismaClient) {}
-
-  private mapCampaign(c: any): CampaignRecord { // eslint-disable-line @typescript-eslint/no-explicit-any
-    return {
-      id: c.id,
-      name: c.name,
-      channels: c.channels,
-      subject: c.subject,
-      message: c.message,
-      status: c.status,
-      createdBy: c.createdBy,
-      createdAt: c.createdAt.toISOString(),
-      sentAt: c.sentAt ? c.sentAt.toISOString() : null,
-    };
-  }
-
-  private mapRecipient(r: any): CampaignRecipientRecord { // eslint-disable-line @typescript-eslint/no-explicit-any
-    return {
-      id: r.id,
-      campaignId: r.campaignId,
-      customerId: r.customerId,
-      channel: r.channel,
-      status: r.status,
-      sentAt: r.sentAt ? r.sentAt.toISOString() : null,
-      error: r.error,
-    };
-  }
-
-  async create(input: {
-    name: string;
-    channels: CampaignRecord['channels'];
-    subject: string | null;
-    message: string;
-    createdBy: string;
-  }): Promise<CampaignRecord> {
-    const c = await this.prisma.campaign.create({
-      data: {
-        name: input.name,
-        channels: input.channels as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-        subject: input.subject,
-        message: input.message,
-        createdBy: input.createdBy,
-      },
-    });
-    return this.mapCampaign(c);
-  }
-
-  async findById(id: string): Promise<CampaignRecord | null> {
-    const c = await this.prisma.campaign.findUnique({ where: { id } });
-    return c ? this.mapCampaign(c) : null;
-  }
-
-  async listAll(): Promise<CampaignRecord[]> {
-    const rows = await this.prisma.campaign.findMany({ orderBy: { createdAt: 'desc' } });
-    return rows.map((c: any) => this.mapCampaign(c)); // eslint-disable-line @typescript-eslint/no-explicit-any
-  }
-
-  async listByCreator(createdBy: string): Promise<CampaignRecord[]> {
-    const rows = await this.prisma.campaign.findMany({ where: { createdBy }, orderBy: { createdAt: 'desc' } });
-    return rows.map((c: any) => this.mapCampaign(c)); // eslint-disable-line @typescript-eslint/no-explicit-any
-  }
-
-  async updateStatus(id: string, status: CampaignRecord['status'], extra?: { sentAt?: string }): Promise<void> {
-    await this.prisma.campaign.update({
-      where: { id },
-      data: {
-        status: status as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-        ...(extra?.sentAt !== undefined ? { sentAt: new Date(extra.sentAt) } : {}),
-      },
-    });
-  }
-
-  async addRecipients(
-    campaignId: string,
-    recipients: Array<{ customerId: string; channel: CampaignRecord['channels'][number] }>
-  ): Promise<CampaignRecipientRecord[]> {
-    await this.prisma.campaignRecipient.createMany({
-      data: recipients.map((r) => ({
-        campaignId,
-        customerId: r.customerId,
-        channel: r.channel as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-      })),
-    });
-    return this.findRecipientsByCampaignId(campaignId);
-  }
-
-  async findRecipientsByCampaignId(campaignId: string): Promise<CampaignRecipientRecord[]> {
-    const rows = await this.prisma.campaignRecipient.findMany({ where: { campaignId } });
-    return rows.map((r: any) => this.mapRecipient(r)); // eslint-disable-line @typescript-eslint/no-explicit-any
-  }
-
-  async updateRecipientStatus(
-    id: string,
-    status: CampaignRecipientRecord['status'],
-    extra?: { sentAt?: string; error?: string | null }
-  ): Promise<void> {
-    await this.prisma.campaignRecipient.update({
-      where: { id },
-      data: {
-        status: status as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-        ...(extra?.sentAt !== undefined ? { sentAt: new Date(extra.sentAt) } : {}),
-        ...(extra?.error !== undefined ? { error: extra.error } : {}),
-      },
-    });
-  }
-}
-
-export class WhatsAppNotificationSender implements WhatsAppSender {
-  constructor(private prisma: PrismaClient) {}
-
-  async send(customerId: string, message: string): Promise<void> {
-    // Same record-first, best-effort-dispatch-on-top pattern as
-    // EmailNotificationSender — the Notification row is the audit trail
-    // of record regardless of whether the WhatsApp send itself succeeds.
-    const notification = await this.prisma.notification.create({
-      data: { customerId, channel: 'WHATSAPP', event: 'WHATSAPP_MESSAGE', message },
-    });
-
-    const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
-    if (!customer || !customer.phone) return; // no phone on file — nothing to send to.
-
-    const result = await sendWhatsAppMessage({ to: customer.phone, body: message });
-
-    if (result.success) {
-      await this.prisma.notification.update({
-        where: { id: notification.id },
-        data: { sentAt: new Date() },
-      });
-    }
-  }
-}
-
-export class PrismaResourceStatusSnapshotRepository implements ResourceStatusSnapshotRepository {
-  constructor(private prisma: PrismaClient) {}
-
-  async create(input: { railwayResourceId: string; status: RailwayResourceRecord['status'] }): Promise<void> {
-    await this.prisma.resourceStatusSnapshot.create({
-      data: {
-        railwayResourceId: input.railwayResourceId,
-        status: input.status as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-      },
-    });
-  }
-
-  async findByResourceId(railwayResourceId: string, sinceIso?: string): Promise<StatusSnapshotRecord[]> {
-    const rows = await this.prisma.resourceStatusSnapshot.findMany({
-      where: {
-        railwayResourceId,
-        ...(sinceIso ? { checkedAt: { gte: new Date(sinceIso) } } : {}),
-      },
-      orderBy: { checkedAt: 'asc' },
-    });
-    return rows.map((r: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-      id: r.id,
-      railwayResourceId: r.railwayResourceId,
-      status: r.status,
-      checkedAt: r.checkedAt.toISOString(),
-    }));
   }
 }

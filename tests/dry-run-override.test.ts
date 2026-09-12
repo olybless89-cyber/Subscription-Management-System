@@ -6,10 +6,8 @@ import { AdminRecord, CustomerRecord, PlanRecord } from '@/types/domain';
 function admin(overrides: Partial<AdminRecord> = {}): AdminRecord {
   return {
     id: 'admin_1',
-    name: 'Test Admin',
     email: 'admin@dwo.example',
     passwordHash: 'x',
-    passwordChangedAt: null,
     role: 'ADMIN',
     canManageAdmins: false,
     ...overrides,
@@ -20,14 +18,7 @@ function customer(): CustomerRecord {
   return {
     id: 'cust_1',
     customerCode: 'WOH-000001',
-    name: 'Test Customer',
     email: 'c@example.com',
-    notificationEmail: null,
-    phone: null,
-    dateOfBirth: null,
-    serviceStartDate: null,
-    serviceEndDate: null,
-    websiteType: null,
     passwordHash: null,
     status: 'ACTIVE',
     automaticSuspension: true,

@@ -101,17 +101,11 @@ export async function restoreCustomer(
     dryRun: false,
   });
 
-  // Same principle as suspendCustomer: a notification failure must never
-  // take down a restoration that already succeeded and was recorded.
-  try {
-    await deps.notifications.send(
-      customer.id,
-      'RESTORED',
-      'Your Web Oracle Host service has been successfully restored.'
-    );
-  } catch {
-    // Deliberately swallowed — see comment above.
-  }
+  await deps.notifications.send(
+    customer.id,
+    'RESTORED',
+    'Your Web Oracle Host service has been successfully restored.'
+  );
 
   return { outcome: 'RESTORED', reason: 'Payment verified — service restored', resourceResults };
 }

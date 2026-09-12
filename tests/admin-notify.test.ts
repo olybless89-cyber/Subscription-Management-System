@@ -7,14 +7,7 @@ function customer(id: string): CustomerRecord {
   return {
     id,
     customerCode: `WOH-${id}`,
-    name: 'Test Customer',
     email: `${id}@example.com`,
-    notificationEmail: null,
-    phone: null,
-    dateOfBirth: null,
-    serviceStartDate: null,
-    serviceEndDate: null,
-    websiteType: null,
     passwordHash: null,
     status: 'ACTIVE',
     automaticSuspension: true,
@@ -25,10 +18,8 @@ function customer(id: string): CustomerRecord {
 function admin(overrides: Partial<AdminRecord>): AdminRecord {
   return {
     id: 'a',
-    name: 'Test Admin',
     email: 'a@dwo.example',
     passwordHash: 'x',
-    passwordChangedAt: null,
     role: 'ADMIN',
     canManageAdmins: false,
     ...overrides,

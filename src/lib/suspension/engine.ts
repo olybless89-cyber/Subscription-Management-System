@@ -3,7 +3,6 @@ import { stopDeployment } from '../railway/deployments';
 import { EngineDeps } from '../db/ports';
 import { assertStrategyAutomatable, ForbiddenSuspensionActionError } from './safety';
 import { RailwayResourceRecord, SuspensionResult, SubscriptionRecord } from '@/types/domain';
-import { buildRenewalUrl } from '../customers/renewal-link';
 
 export interface SuspendCustomerOptions {
   /** Who triggered this. Omit for the automated worker. */
@@ -168,23 +167,12 @@ export async function suspendCustomer(
     dryRun: false,
   });
 
-  // 14. Notify customer. A failed/erroring notification must never take
-  // down the suspension response itself — the suspension already
-  // succeeded and was recorded above; losing the notification is a
-  // degraded outcome, not a failed one. (This mirrors how sendEmail()
-  // itself never throws — this is the same principle one level up, for
-  // the case where the notification pipeline fails before even reaching
-  // sendEmail, e.g. a database error writing the Notification row.)
-  try {
-    await deps.notifications.send(
-      customer.id,
-      'SUSPENDED',
-      `Your hosting service has been temporarily suspended due to non-payment. Renew here to restore it immediately: ${buildRenewalUrl(customer.customerCode)}`
-    );
-  } catch {
-    // Deliberately swallowed — see comment above. The suspension itself
-    // is not affected by a notification failure.
-  }
+  // 14. Notify customer.
+  await deps.notifications.send(
+    customer.id,
+    'SUSPENDED',
+    'Your hosting service has been temporarily suspended due to non-payment.'
+  );
 
   return { outcome: 'SUSPENDED', reason, resourceResults };
 }
