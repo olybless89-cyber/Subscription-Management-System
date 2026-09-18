@@ -107,7 +107,7 @@ export async function restoreCustomer(
     await deps.notifications.send(
       customer.id,
       'RESTORED',
-      'Your Web Oracle Host service has been successfully restored.'
+      'Your service has been successfully restored.'
     );
   } catch {
     // Deliberately swallowed — see comment above.

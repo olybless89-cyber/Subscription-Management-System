@@ -193,7 +193,7 @@ export default function ClientDashboardPage() {
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.6em', flexWrap: 'wrap', gap: '0.8em' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.8em' }}>
-            <img src="/dwo-logo.jpg" alt="Web Oracle Host" style={{ height: 28, width: 'auto', borderRadius: 5 }} />
+            <img src="/dwo-logo.jpg" alt="Digital WebOracle" style={{ height: 28, width: 'auto', borderRadius: 5 }} />
             <div>
               <div style={{ fontWeight: 700, fontSize: '1.05em' }}>{data.customer.name}</div>
               <div className="w3-mono" style={{ fontSize: '0.78em', color: 'var(--w3-text-soft)' }}>{data.customer.customerCode}</div>

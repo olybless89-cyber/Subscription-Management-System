@@ -59,7 +59,7 @@ export async function runSubscriptionChecker(
         await deps.notifications.send(
           subscription.customerId,
           'PAYMENT_DUE',
-          `Your Web Oracle Host subscription is now due. Renew here: ${buildRenewalUrl(customer?.customerCode ?? '')}`
+          `Your subscription is now due. Renew here: ${buildRenewalUrl(customer?.customerCode ?? '')}`
         );
 
         // Auto-generate a DUE invoice and remind whichever admin(s) own

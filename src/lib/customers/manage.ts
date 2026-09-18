@@ -405,7 +405,7 @@ export async function registerCustomer(
     await deps.notifications.send(
       customer.id,
       'WELCOME',
-      `Welcome to Web Oracle Host, ${customer.name}! Your account (${customer.customerCode}) has been created. Our team will be in touch to finish setting up your hosting.`
+      `Welcome, ${customer.name}! Your account (${customer.customerCode}) has been created. Our team will be in touch to finish setting things up.`
     );
   } catch {
     // Deliberately swallowed — see comment above.

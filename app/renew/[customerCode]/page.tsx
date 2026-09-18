@@ -69,7 +69,7 @@ export default function RenewPage({ params }: { params: { customerCode: string }
       }}
     >
       <div className="card" style={{ width: '100%', maxWidth: 460, background: 'var(--paper-raised)', textAlign: 'center' }}>
-        <img src="/dwo-logo.jpg" alt="Web Oracle Host" style={{ height: 40, width: 'auto', margin: '0 auto 1.4em', display: 'block' }} />
+        <img src="/dwo-logo.jpg" alt="Digital WebOracle" style={{ height: 40, width: 'auto', margin: '0 auto 1.4em', display: 'block' }} />
 
         {loadError && (
           <>

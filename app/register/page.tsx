@@ -81,7 +81,7 @@ export default function RegisterPage() {
       }}
     >
       <div className="card" style={{ width: '100%', maxWidth: 460, background: 'var(--paper-raised)' }}>
-        <img src="/dwo-logo.jpg" alt="Web Oracle Host" style={{ height: 40, width: 'auto', margin: '0 auto 1.2em', display: 'block' }} />
+        <img src="/dwo-logo.jpg" alt="Digital WebOracle" style={{ height: 40, width: 'auto', margin: '0 auto 1.2em', display: 'block' }} />
 
         {successCode ? (
           <div style={{ textAlign: 'center' }}>
@@ -102,7 +102,7 @@ export default function RegisterPage() {
               Create your account
             </h1>
             <p style={{ color: 'var(--ink-soft)', fontSize: '0.9em', textAlign: 'center', margin: '0 0 1.4em' }}>
-              Get started with Web Oracle Host — takes about a minute.
+              Get started — takes about a minute.
             </p>
 
             <form onSubmit={handleSubmit}>

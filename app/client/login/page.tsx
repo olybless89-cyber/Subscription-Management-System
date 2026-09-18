@@ -30,7 +30,7 @@ export default function ClientLoginPage() {
       <div className="w3-content" style={{ width: '100%', maxWidth: 420 }}>
         <div className="w3-panel">
           <div style={{ textAlign: 'center', marginBottom: '1.6em' }}>
-            <img src="/dwo-logo.jpg" alt="Web Oracle Host" style={{ height: 34, width: 'auto', margin: '0 auto 1em', display: 'block', borderRadius: 6 }} />
+            <img src="/dwo-logo.jpg" alt="Digital WebOracle" style={{ height: 34, width: 'auto', margin: '0 auto 1em', display: 'block', borderRadius: 6 }} />
             <div className="w3-label" style={{ marginBottom: '0.3em' }}>CLIENT PORTAL</div>
             <h1 style={{ fontSize: '1.3em', fontWeight: 700, margin: 0 }}>Sign in to your dashboard</h1>
           </div>

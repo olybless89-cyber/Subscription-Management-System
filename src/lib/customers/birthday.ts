@@ -49,8 +49,8 @@ export async function runBirthdayMessages(
       await deps.notifications.send(
         customer.id,
         'BIRTHDAY',
-        `Happy Birthday, ${customer.name}! 🎉 Wishing you a great year ahead, from all of us at Web Oracle Host.`,
-        'Happy Birthday from Web Oracle Host! 🎂'
+        `Happy Birthday, ${customer.name}! 🎉 Wishing you a great year ahead, from all of us at Digital Web Oracle ICT.`,
+        'Happy Birthday from Digital Web Oracle ICT! 🎂'
       );
       result.sent++;
     } catch (err) {

@@ -383,7 +383,7 @@ table.data-table tbody tr:hover {
    aesthetic that's correct for the admin side.
    ================================================================ */
 
-/* Repointed to the Web Oracle Host brand palette (rebrand, 2026) —
+/* Repointed brand palette (rebrand, 2026) —
    same variable names as before on purpose, so every component below
    (customer portal) picks up the new colors with zero markup changes.
    --w3-violet/--w3-magenta are kept as distinct accent colors for

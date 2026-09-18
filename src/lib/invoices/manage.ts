@@ -90,8 +90,8 @@ async function sendInvoiceEmail(deps: EngineDeps, invoice: InvoiceRecord): Promi
   const majorAmount = (invoice.amount / 100).toLocaleString();
   const subject =
     invoice.type === 'RECEIPT'
-      ? `Receipt ${invoice.invoiceNumber} — Web Oracle Host`
-      : `Invoice ${invoice.invoiceNumber} due — Web Oracle Host`;
+      ? `Receipt ${invoice.invoiceNumber}`
+      : `Invoice ${invoice.invoiceNumber} due`;
   const message =
     invoice.type === 'RECEIPT'
       ? `Thank you — we've received your payment of ${invoice.currency} ${majorAmount}. Your receipt is attached.`

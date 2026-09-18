@@ -61,7 +61,7 @@ export function Sidebar() {
       >
         <div style={{ marginBottom: '2em' }}>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8em', opacity: 0.7, letterSpacing: '0.02em' }}>
-            WEB ORACLE HOST
+            SUBSCRIPTION MANAGER
           </div>
         </div>
 

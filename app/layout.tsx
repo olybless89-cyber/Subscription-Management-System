@@ -12,19 +12,19 @@ const appUrl = process.env.APP_URL || 'http://localhost:3000';
 
 export const metadata = {
   metadataBase: new URL(appUrl),
-  title: 'Web Oracle Host',
-  description: 'The billing and infrastructure control plane for modern hosting providers.',
+  title: 'Subscription Manager',
+  description: 'Subscription and billing management by Digital Web Oracle ICT.',
   openGraph: {
-    title: 'Web Oracle Host',
-    description: 'The billing and infrastructure control plane for modern hosting providers.',
-    siteName: 'Web Oracle Host',
+    title: 'Subscription Manager',
+    description: 'Subscription and billing management by Digital Web Oracle ICT.',
+    siteName: 'Subscription Manager',
     type: 'website',
-    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'Web Oracle Host' }],
+    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'Subscription Manager' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Web Oracle Host',
-    description: 'The billing and infrastructure control plane for modern hosting providers.',
+    title: 'Subscription Manager',
+    description: 'Subscription and billing management by Digital Web Oracle ICT.',
     images: ['/og-image.png'],
   },
 };

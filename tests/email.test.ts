@@ -85,7 +85,7 @@ describe('subjectForEvent', () => {
   });
 
   it('falls back to a generic subject for an unknown event rather than an empty string', () => {
-    expect(subjectForEvent('SOME_FUTURE_EVENT')).toBe('Web Oracle Host notification');
+    expect(subjectForEvent('SOME_FUTURE_EVENT')).toBe('Notification');
   });
 });
 
@@ -111,7 +111,7 @@ describe('renderBrandedEmailHtml', () => {
     const html = renderBrandedEmailHtml({ subject: 'Test', bodyText: 'Hello there.' });
 
     expect(html).not.toContain('<img');
-    expect(html).toContain('WEB ORACLE HOST');
+    expect(html).toContain('DIGITAL WEB ORACLE ICT');
   });
 
   it('splits the body into paragraphs and escapes HTML special characters', () => {

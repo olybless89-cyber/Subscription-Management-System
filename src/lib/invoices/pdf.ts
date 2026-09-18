@@ -51,10 +51,10 @@ export function generateInvoicePdf(input: InvoicePdfInput): Promise<Buffer> {
         if (fs.existsSync(logoPath)) {
           doc.image(logoPath, 50, 45, { width: 110 });
         } else {
-          doc.fillColor(forest).fontSize(16).font('Helvetica-Bold').text('WEB ORACLE HOST', 50, 50);
+          doc.fillColor(forest).fontSize(16).font('Helvetica-Bold').text('DIGITAL WEB ORACLE ICT', 50, 50);
         }
       } catch {
-        doc.fillColor(forest).fontSize(16).font('Helvetica-Bold').text('WEB ORACLE HOST', 50, 50);
+        doc.fillColor(forest).fontSize(16).font('Helvetica-Bold').text('DIGITAL WEB ORACLE ICT', 50, 50);
       }
 
       doc
@@ -104,7 +104,7 @@ export function generateInvoicePdf(input: InvoicePdfInput): Promise<Buffer> {
         .fillColor(inkSoft)
         .fontSize(9)
         .font('Helvetica')
-        .text('Web Oracle Host — Digital Web Oracle ICT (DWO), Abuja, Nigeria.', 50, 740, { align: 'center', width: 495 });
+        .text('Digital Web Oracle ICT (DWO), Abuja, Nigeria.', 50, 740, { align: 'center', width: 495 });
 
       doc.end();
     } catch (err) {

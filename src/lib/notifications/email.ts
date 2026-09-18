@@ -109,7 +109,7 @@ export function renderBrandedEmailHtml(input: { subject: string; bodyText: strin
           <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#fbf9f3;border:1px solid rgba(20,35,28,0.14);border-radius:4px;overflow:hidden;">
             <tr>
               <td align="center" style="background:#16352a;padding:28px 24px;">
-                ${logoUrl ? `<img src="${logoUrl}" alt="Web Oracle Host" width="120" style="display:block;max-width:120px;height:auto;" />` : `<div style="color:#ffffff;font-size:20px;font-weight:700;">WEB ORACLE HOST</div>`}
+                ${logoUrl ? `<img src="${logoUrl}" alt="Digital WebOracle" width="120" style="display:block;max-width:120px;height:auto;" />` : `<div style="color:#ffffff;font-size:20px;font-weight:700;">DIGITAL WEB ORACLE ICT</div>`}
               </td>
             </tr>
             <tr>
@@ -120,7 +120,7 @@ export function renderBrandedEmailHtml(input: { subject: string; bodyText: strin
             <tr>
               <td style="padding:20px 28px;border-top:1px solid rgba(20,35,28,0.14);">
                 <p style="margin:0;color:#4b5b52;font-size:12px;line-height:1.5;">
-                  Web Oracle Host — Digital Web Oracle ICT (DWO), Abuja, Nigeria.<br />
+                  Digital Web Oracle ICT (DWO), Abuja, Nigeria.<br />
                   This is an automated message from your hosting management account.
                 </p>
               </td>
@@ -143,18 +143,18 @@ export function renderBrandedEmailHtml(input: { subject: string; bodyText: strin
 export function subjectForEvent(event: string): string {
   switch (event) {
     case 'PAYMENT_DUE':
-      return 'Your Web Oracle Host subscription is due';
+      return 'Your subscription is due';
     case 'GRACE_PERIOD':
       return 'Action needed: your hosting subscription is overdue';
     case 'SUSPENDED':
       return 'Your hosting service has been suspended';
     case 'PAYMENT_RECEIVED':
-      return 'Payment received — Web Oracle Host';
+      return 'Payment received';
     case 'RESTORED':
       return 'Your hosting service has been restored';
     case 'SYSTEM_ERROR':
-      return 'Web Oracle Host — system notice';
+      return 'System notice';
     default:
-      return 'Web Oracle Host notification';
+      return 'Notification';
   }
 }

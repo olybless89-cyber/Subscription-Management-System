@@ -45,7 +45,7 @@ export default function LoginPage() {
               letterSpacing: '0.02em',
             }}
           >
-            WEB ORACLE HOST
+            SUBSCRIPTION MANAGER
           </div>
           <h1 style={{ fontSize: '1.3em', margin: '0.2em 0 0', fontWeight: 700 }}>
             Admin sign in
