@@ -151,3 +151,10 @@ export function buildPaystackProvider() {
 export function buildRailwayClient() {
   return createRailwayClient();
 }
+
+/** Direct Prisma access for read paths that need a join no repository
+ * port exposes yet (e.g. the super-admin services overview). Prefer a
+ * proper repository method for anything beyond a one-off scoped read. */
+export function buildPrisma(): PrismaClient {
+  return getPrisma();
+}

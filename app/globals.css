@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   --ink: #14231c;
   --ink-soft: #4b5b52;
@@ -379,19 +383,25 @@ table.data-table tbody tr:hover {
    aesthetic that's correct for the admin side.
    ================================================================ */
 
+/* Repointed to the Web Oracle Host brand palette (rebrand, 2026) —
+   same variable names as before on purpose, so every component below
+   (customer portal) picks up the new colors with zero markup changes.
+   --w3-violet/--w3-magenta are kept as distinct accent colors for
+   things that shouldn't compete with the primary green (e.g. gradients),
+   not as leftover naming. */
 :root {
-  --w3-bg: #060a14;
-  --w3-bg-deep: #030509;
+  --w3-bg: #040a08;
+  --w3-bg-deep: #020605;
   --w3-panel: rgba(255, 255, 255, 0.035);
-  --w3-panel-border: rgba(56, 226, 255, 0.18);
-  --w3-cyan: #38e2ff;
-  --w3-violet: #b968ff;
-  --w3-magenta: #ff4ecb;
+  --w3-panel-border: rgba(42, 245, 152, 0.18);
+  --w3-cyan: #2af598;
+  --w3-violet: #0f9e63;
+  --w3-magenta: #6ee7b7;
   --w3-amber: #ffb648;
   --w3-danger: #ff4d6d;
-  --w3-text: #e8f4ff;
-  --w3-text-soft: #8fa3bd;
-  --w3-font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --w3-text: #f6f9f8;
+  --w3-text-soft: #8aa39a;
+  --w3-font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .w3-shell {
@@ -411,8 +421,8 @@ table.data-table tbody tr:hover {
   position: fixed;
   inset: 0;
   background-image:
-    linear-gradient(rgba(56, 226, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(56, 226, 255, 0.05) 1px, transparent 1px);
+    linear-gradient(rgba(42, 245, 152, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(42, 245, 152, 0.05) 1px, transparent 1px);
   background-size: 42px 42px;
   mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%);
   pointer-events: none;
@@ -427,7 +437,7 @@ table.data-table tbody tr:hover {
   width: 140%;
   height: 60%;
   transform: translateX(-50%);
-  background: radial-gradient(ellipse at center, rgba(185, 104, 255, 0.14) 0%, transparent 65%);
+  background: radial-gradient(ellipse at center, rgba(15, 158, 99, 0.16) 0%, transparent 65%);
   pointer-events: none;
   z-index: 0;
 }
@@ -508,8 +518,8 @@ table.data-table tbody tr:hover {
   gap: 0.5em;
   padding: 0.65em 1.3em;
   border-radius: 10px;
-  border: 1px solid rgba(56, 226, 255, 0.4);
-  background: linear-gradient(135deg, rgba(56, 226, 255, 0.15), rgba(185, 104, 255, 0.15));
+  border: 1px solid rgba(42, 245, 152, 0.4);
+  background: linear-gradient(135deg, rgba(42, 245, 152, 0.15), rgba(15, 158, 99, 0.15));
   color: var(--w3-text);
   font-weight: 600;
   font-size: 0.92em;
@@ -537,7 +547,7 @@ table.data-table tbody tr:hover {
 .w3-input:focus {
   outline: none;
   border-color: var(--w3-cyan);
-  box-shadow: 0 0 0 3px rgba(56, 226, 255, 0.15);
+  box-shadow: 0 0 0 3px rgba(42, 245, 152, 0.15);
 }
 
 .w3-progress-ring-bg {
