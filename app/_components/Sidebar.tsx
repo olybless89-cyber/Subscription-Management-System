@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from './AuthProvider';
+import { authFetch, ApiError } from '../_lib/api';
 
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard' },
@@ -13,11 +14,21 @@ const NAV_ITEMS = [
   { href: '/dashboard/invoices', label: 'Invoices' },
   { href: '/dashboard/campaigns', label: 'Campaigns' },
   { href: '/dashboard/domains', label: 'Domains' },
-  { href: '/dashboard/admins', label: 'Admins' },
   { href: '/dashboard/settings', label: 'Settings' },
 ];
 
+const ADMINS_NAV_ITEM = { href: '/dashboard/admins', label: 'Admins' };
+
+// Admins is gated by actual permission (canManageOtherAdmins — SUPER_ADMIN,
+// or a plain ADMIN explicitly delegated canManageAdmins: true), NOT just
+// role, since a plain admin CAN legitimately have that delegation. That
+// flag deliberately isn't in the session token (see authorize.ts — so
+// revoking it takes effect immediately), so a SUPER_ADMIN always passes
+// and a plain ADMIN's access is checked live against
+// GET /api/admin/admins below rather than assumed from role alone.
+
 const SUPER_ADMIN_ONLY_NAV_ITEMS = [
+  ADMINS_NAV_ITEM,
   { href: '/dashboard/hosting-accounts', label: 'Hosting Accounts' },
   { href: '/dashboard/railway-import', label: 'Import Railway services' },
   { href: '/dashboard/activity', label: 'Activity' },
@@ -38,11 +49,37 @@ export function Sidebar() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
+  // Defaults to hidden (fail closed) until the live permission check
+  // below resolves — a plain admin without delegation never sees a
+  // sidebar link to a page that just 403s on them.
+  const [canManageAdmins, setCanManageAdmins] = useState(false);
+
+  useEffect(() => {
+    if (!session || session.role !== 'ADMIN') return;
+    let cancelled = false;
+    authFetch(session.token, '/api/admin/admins')
+      .then(() => {
+        if (!cancelled) setCanManageAdmins(true);
+      })
+      .catch((err) => {
+        // A 403 means no delegation — stays hidden. Any other error
+        // (network blip, etc.) also stays hidden rather than risk
+        // showing a link that might not work; the admin can still be
+        // reached directly by URL if delegation is confirmed elsewhere.
+        if (!cancelled && !(err instanceof ApiError && err.status === 403)) {
+          setCanManageAdmins(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
   const navItems =
     session?.role === 'SUPER_ADMIN'
       ? [...NAV_ITEMS, ...SUPER_ADMIN_ONLY_NAV_ITEMS]
       : session?.role === 'ADMIN'
-        ? [...NAV_ITEMS, ...ADMIN_ONLY_NAV_ITEMS]
+        ? [...NAV_ITEMS, ...ADMIN_ONLY_NAV_ITEMS, ...(canManageAdmins ? [ADMINS_NAV_ITEM] : [])]
         : NAV_ITEMS;
 
   function handleLogout() {
