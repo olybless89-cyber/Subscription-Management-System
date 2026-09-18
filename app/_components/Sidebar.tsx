@@ -17,7 +17,10 @@ const NAV_ITEMS = [
   { href: '/dashboard/settings', label: 'Settings' },
 ];
 
-const SUPER_ADMIN_ONLY_NAV_ITEMS = [{ href: '/dashboard/activity', label: 'Activity' }];
+const SUPER_ADMIN_ONLY_NAV_ITEMS = [
+  { href: '/dashboard/railway-import', label: 'Import Railway services' },
+  { href: '/dashboard/activity', label: 'Activity' },
+];
 
 export function Sidebar() {
   const pathname = usePathname();
