@@ -287,7 +287,12 @@ export interface RegisterCustomerInput {
   phone?: string | null;
   dateOfBirth?: string | null;
   websiteType?: string | null;
-  domainName: string;
+  /** Optional at public signup, per an explicit policy decision — a
+   * self-registering customer may not know their domain yet, or may
+   * not be signing up for a domain-hosted subscription at all. When
+   * omitted, no Domain row is created here; whichever admin ends up
+   * assigned to this customer adds it later via the Domains page. */
+  domainName?: string | null;
   paymentProvider?: PaymentProviderName;
 }
 
@@ -323,8 +328,11 @@ const MIN_REGISTRATION_PASSWORD_LENGTH = 12;
  *   assigns them to a specific plain admin (matches "the admin sees
  *   it, the super admin adds it to Railway infrastructure" exactly:
  *   nothing here silently hands a new signup to a random admin).
- * - domainName stays REQUIRED, same policy as admin-created customers
- *   — the super admin needs it to actually do that Railway step.
+ * - domainName is OPTIONAL here — unlike admin-created customers, a
+ *   self-registering customer may not know their domain yet (or may
+ *   not want domain-hosted subscription at all). When omitted, no
+ *   Domain row is created; the admin later assigned to this customer
+ *   attaches it themselves via the Domains page.
  * - serviceStartDate defaults to today — the one date field that's
  *   unambiguous at signup (unlike admin-created customers, who might
  *   backdate/forward-date it for a specific business reason).
@@ -345,10 +353,7 @@ export async function registerCustomer(
     return { outcome: 'INVALID_INPUT', message: `Password must be at least ${MIN_REGISTRATION_PASSWORD_LENGTH} characters` };
   }
 
-  const domainName = input.domainName?.trim().toLowerCase();
-  if (!domainName) {
-    return { outcome: 'INVALID_INPUT', message: 'domainName is required' };
-  }
+  const domainName = input.domainName?.trim().toLowerCase() || null;
 
   const websiteType = input.websiteType == null ? null : input.websiteType.trim();
   const websiteTypeError = validateWebsiteType(websiteType);
@@ -390,15 +395,17 @@ export async function registerCustomer(
 
   const result: RegisterCustomerResult = { outcome: 'REGISTERED', message: 'Account created', customer };
 
-  const existingDomain = await deps.domains.findByDomainName(domainName);
-  if (existingDomain) {
-    result.domainOutcome = 'ALREADY_EXISTS';
-    result.domainMessage =
-      'This domain is already attached to a different customer — our team will follow up to resolve it.';
-  } else {
-    await deps.domains.create({ customerId: customer.id, domainName, isPrimary: true });
-    result.domainOutcome = 'ATTACHED';
-    result.domainMessage = `${domainName} attached`;
+  if (domainName) {
+    const existingDomain = await deps.domains.findByDomainName(domainName);
+    if (existingDomain) {
+      result.domainOutcome = 'ALREADY_EXISTS';
+      result.domainMessage =
+        'This domain is already attached to a different customer — our team will follow up to resolve it.';
+    } else {
+      await deps.domains.create({ customerId: customer.id, domainName, isPrimary: true });
+      result.domainOutcome = 'ATTACHED';
+      result.domainMessage = `${domainName} attached`;
+    }
   }
 
   // Best-effort: welcome the customer, and tell whichever admin(s) need

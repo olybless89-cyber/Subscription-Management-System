@@ -37,7 +37,21 @@ describe('registerCustomer', () => {
     expect(result.outcome).toBe('INVALID_INPUT');
   });
 
-  it('rejects a missing domainName', async () => {
+  it('registers successfully with no domainName at all — the admin adds it later', async () => {
+    const deps = makeFakeRegisterCustomerDeps({ admins: [superAdmin()], customers: [] });
+
+    const result = await registerCustomer(deps, {
+      name: 'X',
+      email: 'x@example.com',
+      password: 'a-real-password-123',
+    });
+
+    expect(result.outcome).toBe('REGISTERED');
+    expect(result.domainOutcome).toBeUndefined();
+    expect(deps.domainStore.size).toBe(0);
+  });
+
+  it('registers successfully with an empty-string domainName the same as omitting it', async () => {
     const deps = makeFakeRegisterCustomerDeps({ admins: [superAdmin()], customers: [] });
 
     const result = await registerCustomer(deps, {
@@ -47,7 +61,8 @@ describe('registerCustomer', () => {
       domainName: '',
     });
 
-    expect(result.outcome).toBe('INVALID_INPUT');
+    expect(result.outcome).toBe('REGISTERED');
+    expect(result.domainOutcome).toBeUndefined();
   });
 
   it('rejects a duplicate email', async () => {

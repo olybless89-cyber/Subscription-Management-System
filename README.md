@@ -301,8 +301,12 @@ register themselves.
     assignments UI — matches "the admin sees it, the super admin adds
     it to Railway infrastructure" exactly: nothing here silently hands
     a new signup to a random admin.
-  - `domainName` stays **required**, same policy as admin-created
-    customers — the super admin needs it for the Railway step.
+  - `domainName` is **optional** here, unlike admin-created customers —
+    a self-registering customer may not know their domain yet, or may
+    not be signing up for a domain-hosted subscription at all. When
+    omitted, no `Domain` row is created at signup; whichever admin ends
+    up assigned to the customer attaches it later via the Domains page.
+    The public registration form no longer asks for it at all.
   - `serviceStartDate` defaults to today automatically (the one
     onboarding date field that's genuinely unambiguous at signup).
 - **`POST /api/public/register`** — unauthenticated, as it has to be.
@@ -640,15 +644,23 @@ afterward:
   recognize and display those with friendly labels for backward
   compatibility, and editing one of those customers shows the raw value
   in the "Other" text box so it can be updated to the new wording.
-- **`domainName`** — optional at creation. If provided, `createCustomer`
-  composes a second step internally: it attaches the domain (via the
-  same global-uniqueness-checked path as the standalone Domains page)
-  right after the customer is created. **A failed domain attach never
-  undoes the customer creation** — if the domain's already claimed by a
-  different customer, the customer is still `CREATED`, and the response
-  carries a separate `domainOutcome`/`domainMessage` so the admin knows
-  to sort out the domain manually via the Domains page. Tested directly
-  for both the success and already-taken cases.
+- **`domainName`** — **required** in `createCustomer()` (the admin
+  "New customer" form), **optional** in `registerCustomer()` (the
+  public self-registration page, which no longer even shows a domain
+  field — a self-registering customer may not know their domain yet,
+  or may not be signing up for a domain-hosted subscription at all).
+  Either way, when a domain name is provided, the function composes a
+  second step internally: it attaches the domain (via the same
+  global-uniqueness-checked path as the standalone Domains page) right
+  after the customer is created. **A failed domain attach never undoes
+  the customer creation** — if the domain's already claimed by a
+  different customer, the customer is still `CREATED`/`REGISTERED`, and
+  the response carries a separate `domainOutcome`/`domainMessage` so
+  the admin knows to sort out the domain manually via the Domains page.
+  When `registerCustomer()` gets no domain at all, `domainOutcome` is
+  simply left `undefined` — whichever admin is later assigned the
+  customer attaches a domain themselves. Tested directly for the
+  success, already-taken, and omitted-domain cases.
 
 The customer detail page now shows any attached domain(s) directly
 (fetched via the new `?customerId=` filter on `GET /api/admin/domains`),

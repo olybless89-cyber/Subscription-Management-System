@@ -24,11 +24,9 @@ export default function RegisterPage() {
   const [phone, setPhone] = useState('');
   const [websiteType, setWebsiteType] = useState('');
   const [websiteTypeOther, setWebsiteTypeOther] = useState('');
-  const [domainName, setDomainName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successCode, setSuccessCode] = useState<string | null>(null);
-  const [domainNotice, setDomainNotice] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -58,7 +56,6 @@ export default function RegisterPage() {
           password,
           phone: phone || undefined,
           websiteType: websiteType === 'OTHER' ? websiteTypeOther.trim() : websiteType || undefined,
-          domainName,
         }),
       });
       const data = await res.json();
@@ -66,9 +63,6 @@ export default function RegisterPage() {
         throw new Error(data.message ?? data.error ?? 'Registration failed');
       }
       setSuccessCode(data.customer?.customerCode ?? null);
-      if (data.domainOutcome === 'ALREADY_EXISTS') {
-        setDomainNotice(data.domainMessage ?? null);
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {
@@ -99,9 +93,6 @@ export default function RegisterPage() {
               Thanks for signing up! Our team will review your details and get your hosting set up
               shortly.
             </p>
-            {domainNotice && (
-              <p style={{ color: 'var(--clay)', fontSize: '0.85em', marginTop: '1em' }}>{domainNotice}</p>
-            )}
           </div>
         ) : (
           <>
@@ -167,19 +158,6 @@ export default function RegisterPage() {
                   />
                 )}
               </div>
-              <div className="field">
-                <label htmlFor="reg-domain">Domain name</label>
-                <input
-                  id="reg-domain"
-                  required
-                  value={domainName}
-                  onChange={(e) => setDomainName(e.target.value)}
-                  placeholder="example.com"
-                />
-                <p style={{ fontSize: '0.78em', color: 'var(--ink-soft)', margin: '0.3em 0 0' }}>
-                  The domain you want hosted with us.
-                </p>
-              </div>
 
               {error && <p className="error-text">{error}</p>}
 
@@ -189,7 +167,7 @@ export default function RegisterPage() {
             </form>
 
             <p style={{ fontSize: '0.85em', color: 'var(--ink-soft)', textAlign: 'center', marginTop: '1.2em', marginBottom: 0 }}>
-              Already have hosting with us? <a href="/login" style={{ color: 'var(--forest-bright)' }}>Admin sign in</a>
+              <a href="/login" style={{ color: 'var(--forest-bright)' }}>Sign in</a>
             </p>
           </>
         )}

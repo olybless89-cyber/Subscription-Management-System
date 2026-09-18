@@ -22,8 +22,8 @@ export async function POST(request: Request): Promise<Response> {
     return json(400, { error: 'Malformed JSON body' });
   }
 
-  if (!body.name || !body.email || !body.password || !body.domainName) {
-    return json(400, { error: 'name, email, password, and domainName are all required' });
+  if (!body.name || !body.email || !body.password) {
+    return json(400, { error: 'name, email, and password are all required' });
   }
 
   const result = await registerCustomer(buildRegisterCustomerDeps(), {
@@ -33,7 +33,7 @@ export async function POST(request: Request): Promise<Response> {
     phone: body.phone ?? null,
     dateOfBirth: body.dateOfBirth ?? null,
     websiteType: body.websiteType?.trim() || null,
-    domainName: body.domainName,
+    domainName: body.domainName ?? null,
   });
 
   const httpStatus = result.outcome === 'REGISTERED' ? 201 : result.outcome === 'ALREADY_EXISTS' ? 409 : 400;
