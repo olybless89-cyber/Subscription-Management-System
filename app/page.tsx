@@ -2,7 +2,7 @@ import Header from '../components/marketing/Header';
 import Hero from '../components/marketing/Hero';
 import TrustedTechnologies from '../components/marketing/TrustedTechnologies';
 import Features from '../components/marketing/Features';
-import DashboardShowcase from '../components/marketing/DashboardShowcase';
+import HowItWorks from '../components/marketing/HowItWorks';
 import FinalCTA from '../components/marketing/FinalCTA';
 import Footer from '../components/marketing/Footer';
 
@@ -13,7 +13,7 @@ export default function HomePage() {
       <Hero />
       <TrustedTechnologies />
       <Features />
-      <DashboardShowcase />
+      <HowItWorks />
       <FinalCTA />
       <Footer />
     </main>

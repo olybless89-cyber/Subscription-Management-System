@@ -1,6 +1,10 @@
 import Link from 'next/link';
 
-const NAV_ITEMS = ['Products', 'Solutions', 'Pricing', 'Developers', 'Resources', 'Company'];
+const NAV_ITEMS = [
+  { label: 'Features', href: '#features' },
+  { label: 'How it works', href: '#how-it-works' },
+  { label: 'Company', href: '#' },
+];
 
 export default function Header() {
   return (
@@ -13,7 +17,7 @@ export default function Header() {
           <span className="flex flex-col leading-none">
             <span className="text-[15px] font-bold tracking-tight text-white">Web Oracle Host</span>
             <span className="text-[9px] font-medium tracking-[0.2em] text-wo-muted">
-              CLOUD BEYOND LIMITS
+              SUBSCRIPTION &amp; BILLING CONTROL PLANE
             </span>
           </span>
         </Link>
@@ -21,11 +25,11 @@ export default function Header() {
         <nav className="hidden items-center gap-8 lg:flex" aria-label="Primary">
           {NAV_ITEMS.map((item) => (
             <Link
-              key={item}
-              href="#"
+              key={item.label}
+              href={item.href}
               className="text-[14px] font-medium text-white/70 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-wo-green/60 rounded"
             >
-              {item}
+              {item.label}
             </Link>
           ))}
         </nav>

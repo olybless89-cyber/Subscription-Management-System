@@ -1,4 +1,4 @@
-const NAV = ['Product', 'Solutions', 'Developers', 'Resources', 'Company'];
+const NAV = ['Product', 'Pricing', 'Company'];
 const LEGAL = ['Privacy', 'Terms', 'Contact'];
 
 export default function Footer() {
@@ -12,7 +12,7 @@ export default function Footer() {
             </span>
             <span className="text-[13px] font-bold text-white">Web Oracle Host</span>
           </div>
-          <p className="mt-1 text-[11px] tracking-wide text-white/40">Cloud Beyond Limits</p>
+          <p className="mt-1 text-[11px] tracking-wide text-white/40">Subscription &amp; infrastructure management for hosting providers</p>
         </div>
 
         <nav className="flex flex-wrap gap-x-6 gap-y-2 text-[13px] text-white/60">
