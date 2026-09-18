@@ -14,7 +14,7 @@
 // individually, exactly as intended.
 
 import { runSubscriptionChecker } from '../../../../src/lib/cron/subscription-checker';
-import { buildCronDeps, buildRailwayClient } from '../../../../src/lib/deps-factory';
+import { buildCronDeps } from '../../../../src/lib/deps-factory';
 
 export async function POST(request: Request): Promise<Response> {
   const secret = request.headers.get('x-cron-secret');
@@ -22,7 +22,7 @@ export async function POST(request: Request): Promise<Response> {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
   }
 
-  const result = await runSubscriptionChecker(buildCronDeps(), buildRailwayClient());
+  const result = await runSubscriptionChecker(buildCronDeps());
 
   return new Response(JSON.stringify(result), {
     status: result.errors.length > 0 ? 207 : 200, // 207: partial success, check errors[]

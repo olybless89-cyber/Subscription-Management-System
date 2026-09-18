@@ -1,7 +1,8 @@
-import { RailwayResourceRepository, ResourceStatusSnapshotRepository } from '../db/ports';
-import { RailwayClient, RailwayApiError } from '../railway/client';
+import { RailwayResourceRepository, ResourceStatusSnapshotRepository, RailwayClientResolver } from '../db/ports';
+import { RailwayApiError } from '../railway/client';
 import { getServiceStatus } from '../railway/services';
 import { RailwayResourceRecord } from '@/types/domain';
+import { HostingAccountResolutionError } from '../hosting/account-client';
 
 export interface RailwaySyncResult {
   checked: number;
@@ -25,7 +26,7 @@ export interface RailwaySyncResult {
  */
 export async function syncRailwayResources(
   resources: RailwayResourceRepository,
-  railway: RailwayClient,
+  resolveRailwayClient: RailwayClientResolver,
   statusSnapshots?: ResourceStatusSnapshotRepository
 ): Promise<RailwaySyncResult> {
   const all = await resources.findAll();
@@ -36,6 +37,9 @@ export async function syncRailwayResources(
     result.checked++;
 
     try {
+      // Resolved PER RESOURCE — different resources can belong to
+      // different connected hosting accounts.
+      const railway = await resolveRailwayClient(resource.hostingAccountId);
       const status = await getServiceStatus(railway, resource.serviceId, resource.environmentId);
       await resources.updateStatus(resource.id, status, { lastError: null });
       result.updated++;
@@ -45,7 +49,13 @@ export async function syncRailwayResources(
       // and equally, never assume it FAILED just because we couldn't
       // reach the API. UNKNOWN is the honest status when we can't tell.
       const message =
-        err instanceof RailwayApiError ? err.message : err instanceof Error ? err.message : 'Unknown error';
+        err instanceof HostingAccountResolutionError
+          ? err.message
+          : err instanceof RailwayApiError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : 'Unknown error';
       await resources.updateStatus(resource.id, 'UNKNOWN', { lastError: message });
       result.errors.push({ resourceId: resource.id, message });
       await recordSnapshot(statusSnapshots, resource.id, 'UNKNOWN');
@@ -74,7 +84,7 @@ async function recordSnapshot(
  * "Sync now" button on one customer's detail page). */
 export async function syncSingleRailwayResource(
   resources: RailwayResourceRepository,
-  railway: RailwayClient,
+  resolveRailwayClient: RailwayClientResolver,
   resource: RailwayResourceRecord,
   statusSnapshots?: ResourceStatusSnapshotRepository
 ): Promise<{ status: RailwayResourceRecord['status']; error?: string }> {
@@ -82,6 +92,7 @@ export async function syncSingleRailwayResource(
     return { status: resource.status };
   }
   try {
+    const railway = await resolveRailwayClient(resource.hostingAccountId);
     const status = await getServiceStatus(railway, resource.serviceId, resource.environmentId);
     await resources.updateStatus(resource.id, status, { lastError: null });
     await recordSnapshot(statusSnapshots, resource.id, status);

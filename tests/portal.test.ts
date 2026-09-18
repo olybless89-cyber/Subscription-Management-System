@@ -63,6 +63,7 @@ function resource(overrides: Partial<RailwayResourceRecord> = {}): RailwayResour
     hostingMode: 'DEDICATED',
     suspensionStrategy: 'STOP_DEPLOYMENT',
     status: 'ACTIVE',
+    hostingAccountId: 'hacct_1',
     ...overrides,
   };
 }

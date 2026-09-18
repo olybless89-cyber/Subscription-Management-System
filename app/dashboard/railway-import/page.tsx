@@ -27,6 +27,13 @@ interface PlanOption {
   isActive: boolean;
 }
 
+interface HostingAccountOption {
+  id: string;
+  provider: 'RAILWAY' | 'DIGITALOCEAN' | 'AWS' | 'VERCEL';
+  label: string;
+  isActive: boolean;
+}
+
 interface DiscoveredService {
   projectId: string;
   projectName: string;
@@ -85,6 +92,8 @@ export default function RailwayImportPage() {
   const { session } = useAuth();
   const isSuperAdmin = session?.role === 'SUPER_ADMIN';
 
+  const [hostingAccounts, setHostingAccounts] = useState<HostingAccountOption[] | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [services, setServices] = useState<DiscoveredService[] | null>(null);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [plans, setPlans] = useState<PlanOption[]>([]);
@@ -97,14 +106,33 @@ export default function RailwayImportPage() {
   const [mappingKey, setMappingKey] = useState<string | null>(null);
   const [rowError, setRowError] = useState<Record<string, string>>({});
 
-  const load = useCallback(async () => {
+  const loadAccounts = useCallback(async () => {
     if (!session || !isSuperAdmin) return;
+    try {
+      const data = await authFetch<{ accounts: HostingAccountOption[] }>(session.token, '/api/admin/hosting-accounts');
+      const railwayAccounts = data.accounts.filter((a) => a.provider === 'RAILWAY');
+      setHostingAccounts(railwayAccounts);
+      setSelectedAccountId((prev) => {
+        if (prev && railwayAccounts.some((a) => a.id === prev)) return prev;
+        return railwayAccounts.find((a) => a.isActive)?.id ?? railwayAccounts[0]?.id ?? '';
+      });
+    } catch (err) {
+      setLoadError(err instanceof ApiError ? err.message : 'Failed to load connected hosting accounts.');
+    }
+  }, [session, isSuperAdmin]);
+
+  useEffect(() => {
+    loadAccounts();
+  }, [loadAccounts]);
+
+  const load = useCallback(async () => {
+    if (!session || !isSuperAdmin || !selectedAccountId) return;
     setLoadError(null);
     try {
       const [data, planData] = await Promise.all([
         authFetch<{ services: DiscoveredService[]; customers: CustomerOption[] }>(
           session.token,
-          '/api/admin/railway/services'
+          `/api/admin/railway/services?accountId=${encodeURIComponent(selectedAccountId)}`
         ),
         authFetch<{ plans: PlanOption[] }>(session.token, '/api/admin/plans').catch(() => ({ plans: [] })),
       ]);
@@ -136,9 +164,13 @@ export default function RailwayImportPage() {
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : 'Could not reach Railway.');
     }
-  }, [session, isSuperAdmin]);
+  }, [session, isSuperAdmin, selectedAccountId]);
 
   useEffect(() => {
+    // Reset the previous account's service list immediately on switch,
+    // rather than briefly showing stale services from a different
+    // Railway account while the new list loads.
+    setServices(null);
     load();
   }, [load]);
 
@@ -220,6 +252,7 @@ export default function RailwayImportPage() {
       await authFetch(session.token, `/api/admin/subscriptions/${subscriptionId}/railway-resource`, {
         method: 'POST',
         body: JSON.stringify({
+          hostingAccountId: selectedAccountId,
           projectId: svc.projectId,
           environmentId: sel.environmentId,
           serviceId: svc.serviceId,
@@ -253,25 +286,53 @@ export default function RailwayImportPage() {
     <div>
       <h1 style={{ fontSize: '1.5em', fontWeight: 700, marginBottom: '0.2em' }}>Import Railway services</h1>
       <p style={{ color: 'var(--ink-soft)', marginTop: 0, maxWidth: 640 }}>
-        Every project and service visible to your <code className="mono">RAILWAY_API_TOKEN</code>, pulled live —
-        no more copying project/service IDs by hand. Railway has no idea which customer owns which service: a
-        likely match is pre-selected when one of their domains matches the service name, and every other row
-        defaults to <strong>creating a new placeholder customer named after the service</strong> — click Map to
-        proceed as-is, then rename it properly on the Customers page whenever you get to it.
+        Every project and service visible to the connected Railway account below, pulled live — no more copying
+        project/service IDs by hand. Railway has no idea which customer owns which service: a likely match is
+        pre-selected when one of their domains matches the service name, and every other row defaults to{' '}
+        <strong>creating a new placeholder customer named after the service</strong> — click Map to proceed
+        as-is, then rename it properly on the Customers page whenever you get to it.
       </p>
+
+      {hostingAccounts !== null && hostingAccounts.length === 0 && (
+        <div className="card" style={{ marginTop: '1em', borderColor: 'var(--danger)' }}>
+          <p className="error-text" style={{ margin: 0 }}>No Railway accounts are connected yet.</p>
+          <p style={{ fontSize: '0.85em', color: 'var(--ink-soft)', marginTop: '0.5em', marginBottom: 0 }}>
+            Connect one on the{' '}
+            <a href="/dashboard/hosting-accounts" style={{ color: 'var(--forest-bright)' }}>Hosting Accounts</a>{' '}
+            page first, then come back here to browse its projects and services.
+          </p>
+        </div>
+      )}
+
+      {hostingAccounts !== null && hostingAccounts.length > 0 && (
+        <div className="field" style={{ maxWidth: 360, marginTop: '1em' }}>
+          <label htmlFor="ri-account">Railway account</label>
+          <select id="ri-account" value={selectedAccountId} onChange={(e) => setSelectedAccountId(e.target.value)}>
+            {hostingAccounts.map((a) => (
+              <option key={a.id} value={a.id} disabled={!a.isActive}>
+                {a.label}
+                {a.isActive ? '' : ' (disconnected)'}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {loadError && (
         <div className="card" style={{ marginTop: '1em', borderColor: 'var(--danger)' }}>
           <p className="error-text" style={{ margin: 0 }}>{loadError}</p>
           <p style={{ fontSize: '0.85em', color: 'var(--ink-soft)', marginTop: '0.5em', marginBottom: 0 }}>
-            Make sure <code className="mono">RAILWAY_API_TOKEN</code> is set on this app&apos;s own Railway
-            service (Variables tab) — it needs to be a personal account token, not a project-scoped one, or
-            this list will come back empty.
+            Double-check the token stored for this account on the{' '}
+            <a href="/dashboard/hosting-accounts" style={{ color: 'var(--forest-bright)' }}>Hosting Accounts</a>{' '}
+            page (its &quot;Test connection&quot; button confirms it works) — it needs to be a personal account
+            token, not a project-scoped one, or this list will come back empty.
           </p>
         </div>
       )}
 
-      {!loadError && services === null && <p style={{ color: 'var(--ink-soft)' }}>Loading from Railway…</p>}
+      {!loadError && selectedAccountId && services === null && (
+        <p style={{ color: 'var(--ink-soft)' }}>Loading from Railway…</p>
+      )}
 
       {services !== null && !placeholderPlan && (
         <div className="card" style={{ marginTop: '1em', borderColor: 'var(--danger)' }}>

@@ -1,9 +1,9 @@
-import { RailwayClient } from '../railway/client';
 import { stopDeployment } from '../railway/deployments';
 import { EngineDeps } from '../db/ports';
 import { assertStrategyAutomatable, ForbiddenSuspensionActionError } from './safety';
 import { RailwayResourceRecord, SuspensionResult, SubscriptionRecord } from '@/types/domain';
 import { buildRenewalUrl } from '../customers/renewal-link';
+import { HostingAccountResolutionError } from '../hosting/account-client';
 
 export interface SuspendCustomerOptions {
   /** Who triggered this. Omit for the automated worker. */
@@ -49,7 +49,6 @@ function isDryRun(opts: SuspendCustomerOptions | undefined, subscription: Subscr
  */
 export async function suspendCustomer(
   deps: EngineDeps,
-  railway: RailwayClient,
   subscriptionId: string,
   reason: string,
   opts: SuspendCustomerOptions = {}
@@ -113,7 +112,7 @@ export async function suspendCustomer(
     }
 
     // 9-10. Execute the safe action for this hosting mode, then verify.
-    const outcome = await executeSuspensionForResource(railway, resource);
+    const outcome = await executeSuspensionForResource(deps, resource);
     resourceResults.push(outcome);
 
     // 11. Reflect verified Railway state locally — never assume success.
@@ -195,7 +194,7 @@ export async function suspendCustomer(
  * ever calls stopDeployment — never a delete/teardown mutation.
  */
 async function executeSuspensionForResource(
-  railway: RailwayClient,
+  deps: EngineDeps,
   resource: RailwayResourceRecord
 ): Promise<{ resourceId: string; result: SuspensionResult; detail: string }> {
   switch (resource.hostingMode) {
@@ -216,6 +215,10 @@ async function executeSuspensionForResource(
         };
       }
       try {
+        // Resolved PER RESOURCE, not once for the whole suspendCustomer
+        // call — a customer's resources can live in different connected
+        // hosting accounts (see src/lib/hosting/account-client.ts).
+        const railway = await deps.resolveRailwayClient(resource.hostingAccountId);
         const { success, status } = await stopDeployment(railway, resource.deploymentId);
         return {
           resourceId: resource.id,
@@ -226,7 +229,12 @@ async function executeSuspensionForResource(
         return {
           resourceId: resource.id,
           result: 'FAILED',
-          detail: err instanceof Error ? err.message : 'Unknown Railway error',
+          detail:
+            err instanceof HostingAccountResolutionError
+              ? err.message
+              : err instanceof Error
+                ? err.message
+                : 'Unknown Railway error',
         };
       }
     }

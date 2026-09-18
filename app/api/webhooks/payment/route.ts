@@ -15,7 +15,6 @@ import { handlePaymentWebhook } from '../../../../src/lib/payments/webhook-handl
 import {
   buildWebhookDeps,
   buildPaystackProvider,
-  buildRailwayClient,
 } from '../../../../src/lib/deps-factory';
 
 export async function POST(request: Request): Promise<Response> {
@@ -25,7 +24,6 @@ export async function POST(request: Request): Promise<Response> {
   const result = await handlePaymentWebhook(
     buildWebhookDeps(),
     buildPaystackProvider(),
-    buildRailwayClient(),
     rawBody,
     signatureHeader
   );

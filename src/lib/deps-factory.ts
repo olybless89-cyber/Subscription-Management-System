@@ -16,10 +16,11 @@ import {
   EmailNotificationSender,
   WhatsAppNotificationSender,
   PrismaResourceStatusSnapshotRepository,
+  PrismaHostingAccountRepository,
 } from './db/prisma-repository';
 import { WebhookDeps, AuthDeps, CronDeps, AdminManagementDeps, BillingSetupDeps, CustomEmailDeps, CampaignDeps, RegisterCustomerDeps, CustomerPortalDeps } from './db/ports';
-import { createRailwayClient } from './railway/client';
 import { createPaystackProvider } from './payments/paystack';
+import { resolveRailwayClientForAccount } from './hosting/account-client';
 
 let prisma: PrismaClient | null = null;
 
@@ -33,10 +34,12 @@ function getPrisma(): PrismaClient {
  * itself is memoized so we don't open a new pool per invocation. */
 export function buildWebhookDeps(): WebhookDeps {
   const client = getPrisma();
+  const hostingAccountRepo = new PrismaHostingAccountRepository(client);
   return {
     subscriptions: new PrismaSubscriptionRepository(client),
     customers: new PrismaCustomerRepository(client),
     railwayResources: new PrismaRailwayResourceRepository(client),
+    resolveRailwayClient: (hostingAccountId) => resolveRailwayClientForAccount(hostingAccountRepo, hostingAccountId),
     suspensionEvents: new PrismaSuspensionEventRepository(client),
     notifications: new EmailNotificationSender(client),
     invoices: new PrismaInvoiceRepository(client),
@@ -82,9 +85,14 @@ export function buildBillingSetupDeps(): BillingSetupDeps {
     plans: new PrismaPlanRepository(client),
     subscriptions: new PrismaSubscriptionRepository(client),
     railwayResources: new PrismaRailwayResourceRepository(client),
+    hostingAccounts: new PrismaHostingAccountRepository(client),
     domains: new PrismaDomainRepository(client),
     auditLog: new PrismaAuditLogRepository(client),
   };
+}
+
+export function buildHostingAccountRepository(): PrismaHostingAccountRepository {
+  return new PrismaHostingAccountRepository(getPrisma());
 }
 
 export function buildAuditLogRepository(): PrismaAuditLogRepository {
@@ -146,10 +154,6 @@ export function buildCustomerPortalDeps(): CustomerPortalDeps {
 
 export function buildPaystackProvider() {
   return createPaystackProvider();
-}
-
-export function buildRailwayClient() {
-  return createRailwayClient();
 }
 
 /** Direct Prisma access for read paths that need a join no repository

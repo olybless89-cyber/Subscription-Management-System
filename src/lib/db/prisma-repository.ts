@@ -16,6 +16,7 @@ import {
   CampaignRepository,
   WhatsAppSender,
   ResourceStatusSnapshotRepository,
+  HostingAccountRepository,
 } from './ports';
 import {
   SubscriptionRecord,
@@ -29,9 +30,11 @@ import {
   CampaignRecord,
   CampaignRecipientRecord,
   StatusSnapshotRecord,
+  HostingAccountRecord,
 } from '@/types/domain';
 import { sendWhatsAppMessage } from '../notifications/whatsapp';
 import { sendEmail, subjectForEvent, renderBrandedEmailHtml } from '../notifications/email';
+import { encryptSecret, decryptSecret } from '../hosting/crypto';
 
 /**
  * Real Prisma-backed implementations of every port the engines/webhook
@@ -638,37 +641,37 @@ export class PrismaAdminNotificationRepository implements AdminNotificationRepos
   }
 }
 
+function mapRailwayResource(r: any): RailwayResourceRecord { // eslint-disable-line @typescript-eslint/no-explicit-any
+  return {
+    id: r.id,
+    subscriptionId: r.subscriptionId,
+    hostingAccountId: r.hostingAccountId ?? null,
+    projectId: r.projectId,
+    environmentId: r.environmentId,
+    serviceId: r.serviceId,
+    deploymentId: r.deploymentId,
+    hostingMode: r.hostingMode,
+    suspensionStrategy: r.suspensionStrategy,
+    status: r.status,
+  };
+}
+
 export class PrismaRailwayResourceRepository implements RailwayResourceRepository {
   constructor(private prisma: PrismaClient) {}
 
   async findBySubscriptionId(subscriptionId: string): Promise<RailwayResourceRecord[]> {
     const rows = await this.prisma.railwayResource.findMany({ where: { subscriptionId } });
-    return rows.map((r: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-      id: r.id,
-      subscriptionId: r.subscriptionId,
-      projectId: r.projectId,
-      environmentId: r.environmentId,
-      serviceId: r.serviceId,
-      deploymentId: r.deploymentId,
-      hostingMode: r.hostingMode,
-      suspensionStrategy: r.suspensionStrategy,
-      status: r.status,
-    }));
+    return rows.map(mapRailwayResource);
   }
 
   async findAll(): Promise<RailwayResourceRecord[]> {
     const rows = await this.prisma.railwayResource.findMany();
-    return rows.map((r: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-      id: r.id,
-      subscriptionId: r.subscriptionId,
-      projectId: r.projectId,
-      environmentId: r.environmentId,
-      serviceId: r.serviceId,
-      deploymentId: r.deploymentId,
-      hostingMode: r.hostingMode,
-      suspensionStrategy: r.suspensionStrategy,
-      status: r.status,
-    }));
+    return rows.map(mapRailwayResource);
+  }
+
+  async findByHostingAccountId(hostingAccountId: string): Promise<RailwayResourceRecord[]> {
+    const rows = await this.prisma.railwayResource.findMany({ where: { hostingAccountId } });
+    return rows.map(mapRailwayResource);
   }
 
   async updateStatus(
@@ -689,6 +692,7 @@ export class PrismaRailwayResourceRepository implements RailwayResourceRepositor
 
   async create(input: {
     subscriptionId: string;
+    hostingAccountId: string;
     projectId: string;
     environmentId: string;
     serviceId: string;
@@ -699,6 +703,7 @@ export class PrismaRailwayResourceRepository implements RailwayResourceRepositor
     const r = await this.prisma.railwayResource.create({
       data: {
         subscriptionId: input.subscriptionId,
+        hostingAccountId: input.hostingAccountId,
         projectId: input.projectId,
         environmentId: input.environmentId,
         serviceId: input.serviceId,
@@ -708,17 +713,75 @@ export class PrismaRailwayResourceRepository implements RailwayResourceRepositor
         status: 'UNKNOWN', // honest starting state — nothing has synced against Railway yet
       },
     });
-    return {
-      id: r.id,
-      subscriptionId: r.subscriptionId,
-      projectId: r.projectId,
-      environmentId: r.environmentId,
-      serviceId: r.serviceId,
-      deploymentId: r.deploymentId,
-      hostingMode: r.hostingMode,
-      suspensionStrategy: r.suspensionStrategy,
-      status: r.status,
-    };
+    return mapRailwayResource(r);
+  }
+}
+
+function mapHostingAccount(a: any): HostingAccountRecord { // eslint-disable-line @typescript-eslint/no-explicit-any
+  return {
+    id: a.id,
+    provider: a.provider,
+    label: a.label,
+    apiUrl: a.apiUrl ?? null,
+    isActive: a.isActive,
+    createdAt: a.createdAt.toISOString(),
+  };
+}
+
+export class PrismaHostingAccountRepository implements HostingAccountRepository {
+  constructor(private prisma: PrismaClient) {}
+
+  async findById(id: string): Promise<HostingAccountRecord | null> {
+    const row = await this.prisma.hostingAccount.findUnique({ where: { id } });
+    return row ? mapHostingAccount(row) : null;
+  }
+
+  async findByIdWithCredentials(id: string): Promise<(HostingAccountRecord & { apiToken: string }) | null> {
+    const row = await this.prisma.hostingAccount.findUnique({ where: { id } });
+    if (!row) return null;
+    return { ...mapHostingAccount(row), apiToken: decryptSecret(row.encryptedApiToken) };
+  }
+
+  async listAll(): Promise<HostingAccountRecord[]> {
+    const rows = await this.prisma.hostingAccount.findMany({ orderBy: { createdAt: 'asc' } });
+    return rows.map(mapHostingAccount);
+  }
+
+  async create(input: {
+    provider: HostingAccountRecord['provider'];
+    label: string;
+    apiToken: string;
+    apiUrl?: string | null;
+  }): Promise<HostingAccountRecord> {
+    const row = await this.prisma.hostingAccount.create({
+      data: {
+        provider: input.provider as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        label: input.label,
+        apiUrl: input.apiUrl ?? undefined,
+        encryptedApiToken: encryptSecret(input.apiToken),
+      },
+    });
+    return mapHostingAccount(row);
+  }
+
+  async update(
+    id: string,
+    patch: { label?: string; apiToken?: string; apiUrl?: string | null; isActive?: boolean }
+  ): Promise<HostingAccountRecord> {
+    const row = await this.prisma.hostingAccount.update({
+      where: { id },
+      data: {
+        ...(patch.label !== undefined ? { label: patch.label } : {}),
+        ...(patch.apiUrl !== undefined ? { apiUrl: patch.apiUrl } : {}),
+        ...(patch.isActive !== undefined ? { isActive: patch.isActive } : {}),
+        ...(patch.apiToken !== undefined ? { encryptedApiToken: encryptSecret(patch.apiToken) } : {}),
+      },
+    });
+    return mapHostingAccount(row);
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.prisma.hostingAccount.delete({ where: { id } });
   }
 }
 

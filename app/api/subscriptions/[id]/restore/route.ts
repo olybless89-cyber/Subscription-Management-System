@@ -7,7 +7,7 @@
 // spec section 20 anticipates alongside the payment-webhook-driven path.
 
 import { restoreCustomer } from '../../../../../src/lib/suspension/restoration';
-import { buildWebhookDeps, buildRailwayClient, buildAuditLogRepository } from '../../../../../src/lib/deps-factory';
+import { buildWebhookDeps, buildAuditLogRepository } from '../../../../../src/lib/deps-factory';
 import { authenticateFromHeader, hasAdminRole } from '../../../../../src/lib/auth/authorize';
 import { recordAuditLog } from '../../../../../src/lib/audit/log';
 
@@ -27,7 +27,7 @@ export async function POST(
     return json(404, { error: 'Subscription not found' });
   }
 
-  const result = await restoreCustomer(deps, buildRailwayClient(), context.params.id, {
+  const result = await restoreCustomer(deps, context.params.id, {
     manual: true,
     paymentVerified: true,
     performedBy: auth.session.sub,

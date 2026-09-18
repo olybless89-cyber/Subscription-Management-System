@@ -1,5 +1,4 @@
 import { CronDeps } from '../db/ports';
-import { RailwayClient } from '../railway/client';
 import { suspendCustomer } from '../suspension/engine';
 import { addDays } from '../billing/cycle';
 import { notifyAdminsForCustomer } from '../notifications/admin-notify';
@@ -32,7 +31,6 @@ export interface SubscriptionCheckerResult {
  */
 export async function runSubscriptionChecker(
   deps: CronDeps,
-  railway: RailwayClient,
   opts: SubscriptionCheckerOptions = {}
 ): Promise<SubscriptionCheckerResult> {
   const now = opts.now ?? new Date();
@@ -122,7 +120,7 @@ export async function runSubscriptionChecker(
           result.skipped++;
           continue;
         }
-        const suspension = await suspendCustomer(deps, railway, subscription.id, 'NON_PAYMENT', {
+        const suspension = await suspendCustomer(deps, subscription.id, 'NON_PAYMENT', {
           dryRun: opts.dryRun,
         });
         if (suspension.outcome === 'SUSPENDED' || suspension.outcome === 'DRY_RUN') {

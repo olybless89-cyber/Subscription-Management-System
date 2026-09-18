@@ -1,7 +1,7 @@
-import { RailwayClient } from '../railway/client';
 import { redeployService, verifyDeploymentReachesStatus, DEPLOYMENT_RUNNING_STATUSES } from '../railway/deployments';
 import { EngineDeps } from '../db/ports';
 import { RailwayResourceRecord, SuspensionResult } from '@/types/domain';
+import { HostingAccountResolutionError } from '../hosting/account-client';
 
 export interface RestoreCustomerOptions {
   performedBy?: string | null;
@@ -24,7 +24,6 @@ export interface RestoreCustomerResult {
  */
 export async function restoreCustomer(
   deps: EngineDeps,
-  railway: RailwayClient,
   subscriptionId: string,
   opts: RestoreCustomerOptions
 ): Promise<RestoreCustomerResult> {
@@ -58,7 +57,7 @@ export async function restoreCustomer(
   const resourceResults: RestoreCustomerResult['resourceResults'] = [];
 
   for (const resource of resources) {
-    const outcome = await executeRestorationForResource(railway, resource);
+    const outcome = await executeRestorationForResource(deps, resource);
     resourceResults.push(outcome);
 
     await deps.railwayResources.updateStatus(
@@ -117,7 +116,7 @@ export async function restoreCustomer(
 }
 
 async function executeRestorationForResource(
-  railway: RailwayClient,
+  deps: EngineDeps,
   resource: RailwayResourceRecord
 ): Promise<{
   resourceId: string;
@@ -133,6 +132,8 @@ async function executeRestorationForResource(
 
   // DEDICATED / SHARED_SERVICE — redeploy this customer's service only.
   try {
+    // Resolved PER RESOURCE — see suspendCustomer's equivalent comment.
+    const railway = await deps.resolveRailwayClient(resource.hostingAccountId);
     const { deploymentId } = await redeployService(railway, resource.serviceId, resource.environmentId);
     if (!deploymentId) {
       return { resourceId: resource.id, result: 'FAILED', detail: 'Redeploy did not return a deployment id' };
@@ -159,7 +160,12 @@ async function executeRestorationForResource(
     return {
       resourceId: resource.id,
       result: 'FAILED',
-      detail: err instanceof Error ? err.message : 'Unknown Railway error',
+      detail:
+        err instanceof HostingAccountResolutionError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Unknown Railway error',
     };
   }
 }

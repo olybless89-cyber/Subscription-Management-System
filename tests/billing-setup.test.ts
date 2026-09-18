@@ -189,6 +189,18 @@ describe('createSubscription', () => {
   });
 });
 
+function hostingAccountSeed(overrides: Partial<{ id: string; label: string; apiToken: string; apiUrl: string | null; isActive: boolean }> = {}) {
+  return {
+    id: 'hacct_1',
+    provider: 'RAILWAY' as const,
+    label: 'Primary Railway account',
+    apiToken: 'railway_token_1',
+    apiUrl: null,
+    isActive: true,
+    ...overrides,
+  };
+}
+
 describe('mapRailwayResource', () => {
   it('creates a DEDICATED/STOP_DEPLOYMENT mapping and it is immediately findable', async () => {
     const deps = makeFakeBillingSetupDeps({
@@ -197,10 +209,12 @@ describe('mapRailwayResource', () => {
       plans: [plan()],
       subscriptions: [baseSub()],
       railwayResources: [],
+      hostingAccounts: [hostingAccountSeed()],
     });
 
     const result = await mapRailwayResource(deps, 'admin_1', {
       subscriptionId: 'sub_1',
+      hostingAccountId: 'hacct_1',
       projectId: 'proj_abc',
       environmentId: 'env_production',
       serviceId: 'svc_abc-web',
@@ -212,6 +226,7 @@ describe('mapRailwayResource', () => {
     const found = await deps.railwayResources.findBySubscriptionId('sub_1');
     expect(found).toHaveLength(1);
     expect(found[0].hostingMode).toBe('DEDICATED');
+    expect(found[0].hostingAccountId).toBe('hacct_1');
   });
 
   it('rejects MULTI_TENANT paired with STOP_DEPLOYMENT — the exact unsafe combination spec section 16 forbids', async () => {
@@ -221,10 +236,12 @@ describe('mapRailwayResource', () => {
       plans: [plan()],
       subscriptions: [baseSub()],
       railwayResources: [],
+      hostingAccounts: [hostingAccountSeed()],
     });
 
     const result = await mapRailwayResource(deps, 'admin_1', {
       subscriptionId: 'sub_1',
+      hostingAccountId: 'hacct_1',
       projectId: 'proj_shared',
       environmentId: 'env_production',
       serviceId: 'svc_shared-app',
@@ -243,10 +260,12 @@ describe('mapRailwayResource', () => {
       plans: [plan()],
       subscriptions: [baseSub()],
       railwayResources: [],
+      hostingAccounts: [hostingAccountSeed()],
     });
 
     const result = await mapRailwayResource(deps, 'admin_1', {
       subscriptionId: 'sub_1',
+      hostingAccountId: 'hacct_1',
       projectId: 'proj_shared',
       environmentId: 'env_production',
       serviceId: 'svc_shared-app',
@@ -264,10 +283,12 @@ describe('mapRailwayResource', () => {
       plans: [plan()],
       subscriptions: [baseSub()],
       railwayResources: [],
+      hostingAccounts: [hostingAccountSeed()],
     });
 
     const result = await mapRailwayResource(deps, 'admin_1', {
       subscriptionId: 'sub_1',
+      hostingAccountId: 'hacct_1',
       projectId: 'proj_abc',
       environmentId: 'env_production',
       serviceId: 'svc_abc-web',
@@ -283,6 +304,7 @@ describe('mapRailwayResource', () => {
 
     const result = await mapRailwayResource(deps, 'admin_1', {
       subscriptionId: 'sub_missing',
+      hostingAccountId: 'hacct_1',
       projectId: 'p',
       environmentId: 'e',
       serviceId: 's',
@@ -291,5 +313,76 @@ describe('mapRailwayResource', () => {
     });
 
     expect(result.outcome).toBe('NOT_FOUND');
+  });
+
+  it('rejects a hostingAccountId that does not exist', async () => {
+    const deps = makeFakeBillingSetupDeps({
+      admins: [admin()],
+      customers: [customer()],
+      plans: [plan()],
+      subscriptions: [baseSub()],
+      railwayResources: [],
+    });
+
+    const result = await mapRailwayResource(deps, 'admin_1', {
+      subscriptionId: 'sub_1',
+      hostingAccountId: 'hacct_missing',
+      projectId: 'proj_abc',
+      environmentId: 'env_production',
+      serviceId: 'svc_abc-web',
+      hostingMode: 'DEDICATED',
+      suspensionStrategy: 'STOP_DEPLOYMENT',
+    });
+
+    expect(result.outcome).toBe('NOT_FOUND');
+    expect(deps.railwayResourceStore).toHaveLength(0);
+  });
+
+  it('rejects mapping to a disconnected (inactive) hosting account', async () => {
+    const deps = makeFakeBillingSetupDeps({
+      admins: [admin()],
+      customers: [customer()],
+      plans: [plan()],
+      subscriptions: [baseSub()],
+      railwayResources: [],
+      hostingAccounts: [hostingAccountSeed({ isActive: false })],
+    });
+
+    const result = await mapRailwayResource(deps, 'admin_1', {
+      subscriptionId: 'sub_1',
+      hostingAccountId: 'hacct_1',
+      projectId: 'proj_abc',
+      environmentId: 'env_production',
+      serviceId: 'svc_abc-web',
+      hostingMode: 'DEDICATED',
+      suspensionStrategy: 'STOP_DEPLOYMENT',
+    });
+
+    expect(result.outcome).toBe('INVALID_INPUT');
+    expect(result.message).toMatch(/disconnected/);
+  });
+
+  it('never falls back to a different account — a missing hostingAccountId is INVALID_INPUT, not a guess', async () => {
+    const deps = makeFakeBillingSetupDeps({
+      admins: [admin()],
+      customers: [customer()],
+      plans: [plan()],
+      subscriptions: [baseSub()],
+      railwayResources: [],
+      hostingAccounts: [hostingAccountSeed()],
+    });
+
+    const result = await mapRailwayResource(deps, 'admin_1', {
+      subscriptionId: 'sub_1',
+      hostingAccountId: '',
+      projectId: 'proj_abc',
+      environmentId: 'env_production',
+      serviceId: 'svc_abc-web',
+      hostingMode: 'DEDICATED',
+      suspensionStrategy: 'STOP_DEPLOYMENT',
+    });
+
+    expect(result.outcome).toBe('INVALID_INPUT');
+    expect(deps.railwayResourceStore).toHaveLength(0);
   });
 });

@@ -1,4 +1,3 @@
-import { RailwayClient } from '../railway/client';
 import { WebhookDeps } from '../db/ports';
 import { PaymentProvider } from './provider';
 import { addBillingCycle } from '../billing/cycle';
@@ -40,7 +39,6 @@ export interface WebhookResult {
 export async function handlePaymentWebhook(
   deps: WebhookDeps,
   provider: PaymentProvider,
-  railway: RailwayClient,
   rawBody: string,
   signatureHeader: string | null,
   opts: { now?: Date } = {}
@@ -211,7 +209,7 @@ export async function handlePaymentWebhook(
   if (subscription.status === 'SUSPENDED') {
     // Let restoreCustomer own the ACTIVE transition — it only flips status
     // after Railway confirms the service is actually back up.
-    const restoration = await restoreCustomer(deps, railway, subscription.id, {
+    const restoration = await restoreCustomer(deps, subscription.id, {
       paymentVerified: true,
     });
     if (restoration.outcome !== 'RESTORED') {

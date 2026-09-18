@@ -38,6 +38,7 @@ export async function POST(
   }
 
   let body: {
+    hostingAccountId?: string;
     projectId?: string;
     environmentId?: string;
     serviceId?: string;
@@ -51,9 +52,9 @@ export async function POST(
     return json(400, { error: 'Malformed JSON body' });
   }
 
-  if (!body.projectId || !body.environmentId || !body.serviceId || !body.hostingMode || !body.suspensionStrategy) {
+  if (!body.hostingAccountId || !body.projectId || !body.environmentId || !body.serviceId || !body.hostingMode || !body.suspensionStrategy) {
     return json(400, {
-      error: 'projectId, environmentId, serviceId, hostingMode, and suspensionStrategy are all required',
+      error: 'hostingAccountId, projectId, environmentId, serviceId, hostingMode, and suspensionStrategy are all required',
     });
   }
 
@@ -65,6 +66,7 @@ export async function POST(
 
   const result = await mapRailwayResource(buildBillingSetupDeps(), auth.session.sub, {
     subscriptionId: context.params.id,
+    hostingAccountId: body.hostingAccountId,
     projectId: body.projectId,
     environmentId: body.environmentId,
     serviceId: body.serviceId,

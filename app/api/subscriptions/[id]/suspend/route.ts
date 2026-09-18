@@ -12,7 +12,7 @@
 // forbidden action through.
 
 import { suspendCustomer } from '../../../../../src/lib/suspension/engine';
-import { buildWebhookDeps, buildRailwayClient, buildAuditLogRepository } from '../../../../../src/lib/deps-factory';
+import { buildWebhookDeps, buildAuditLogRepository } from '../../../../../src/lib/deps-factory';
 import { authenticateFromHeader, hasAdminRole } from '../../../../../src/lib/auth/authorize';
 import { recordAuditLog } from '../../../../../src/lib/audit/log';
 
@@ -40,7 +40,7 @@ export async function POST(
   }
   const reason = body.reason?.trim() || 'MANUAL_ADMIN_SUSPENSION';
 
-  const result = await suspendCustomer(deps, buildRailwayClient(), context.params.id, reason, {
+  const result = await suspendCustomer(deps, context.params.id, reason, {
     manual: true,
     performedBy: auth.session.sub,
   });

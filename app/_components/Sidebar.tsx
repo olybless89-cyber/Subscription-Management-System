@@ -18,6 +18,7 @@ const NAV_ITEMS = [
 ];
 
 const SUPER_ADMIN_ONLY_NAV_ITEMS = [
+  { href: '/dashboard/hosting-accounts', label: 'Hosting Accounts' },
   { href: '/dashboard/railway-import', label: 'Import Railway services' },
   { href: '/dashboard/activity', label: 'Activity' },
 ];

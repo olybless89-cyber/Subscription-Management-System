@@ -60,8 +60,13 @@ src/lib/db/
   ports.ts                           Repository interfaces everything above depends on (DB-agnostic)
   prisma-repository.ts                Real Prisma implementation of every port (see caveat below)
 src/lib/deps-factory.ts              Runtime wiring: Prisma + Paystack + Railway (needs generated client — see below)
+src/lib/hosting/
+  crypto.ts                            AES-256-GCM encrypt/decrypt for stored hosting-account API tokens
+  account-client.ts                     resolveRailwayClientForAccount() — per-resource client resolution, never guesses
+  manage.ts                             createHostingAccount() / updateHostingAccount() / deleteHostingAccount() / testHostingAccount()
 src/types/domain.ts                Shared enums/types mirroring the Prisma schema
 scripts/seed-admin.mjs               Creates/updates the first SUPER_ADMIN (no signup UI yet)
+scripts/backfill-hosting-accounts.mjs  One-time migration onto multi-provider hosting accounts (see below)
 app/api/
   webhooks/payment/route.ts          Paystack webhook
   payments/route.ts                   Checkout initiation (real auth + scoped access)
@@ -85,7 +90,7 @@ app/api/
   cron/railway-sync/route.ts             Railway sync (CRON_SECRET-protected)
   subscriptions/[id]/suspend/route.ts     Admin manual suspend — scoped to assignment
   subscriptions/[id]/restore/route.ts      Admin manual restore — scoped to assignment
-tests/                                259 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
+tests/                                316 passing tests (fakes.ts = in-memory repos, no live DB/network needed)
 app/
   globals.css                          Design tokens (forest green/paper/clay — matches the spec's own branding request)
   layout.tsx                            Root layout, wraps everything in AuthProvider
@@ -679,6 +684,88 @@ weren't included in this restriction. If you want those locked to
 SUPER_ADMIN too, say so and it's a small change to the same two route
 files.
 
+## Multi-provider hosting accounts (connect more than one Railway account, or another provider)
+
+Originally the whole app shared **one** Railway account via the
+`RAILWAY_API_TOKEN`/`RAILWAY_API_URL` env vars — fine until you're
+actually hosting different batches of customers on different Railway
+accounts (or want to add DigitalOcean/AWS/Vercel someday). That's now a
+first-class concept:
+
+- **`HostingAccount`** (`prisma/schema.prisma`) — one row per connected
+  provider account: `provider` (`RAILWAY` | `DIGITALOCEAN` | `AWS` |
+  `VERCEL`), a `label` you choose, an optional `apiUrl` override, the
+  API token **encrypted at rest** (`encryptedApiToken`, AES-256-GCM via
+  `src/lib/hosting/crypto.ts`, keyed by a new `HOSTING_CREDENTIALS_KEY`
+  env var — generate one with `openssl rand -hex 32`, deliberately a
+  separate key from `SESSION_SECRET`/`CRON_SECRET` since it protects a
+  different kind of secret), and `isActive`.
+- **`RailwayResource.hostingAccountId`** — every customer's Railway
+  mapping now points at a specific connected account, not a single
+  global client. Nullable at the schema level (so the column could be
+  added without breaking existing rows), but treated as a **hard error,
+  never a silent fallback**, everywhere it's actually used —
+  `src/lib/hosting/account-client.ts#resolveRailwayClientForAccount`
+  throws a clear `HostingAccountResolutionError` for a null id, a
+  deleted account, a disconnected (`isActive: false`) account, or a
+  non-`RAILWAY` account, exactly the way a real Railway outage would
+  fail — never guesses which credentials to use.
+- Every place that used to build one Railway client for a whole
+  batch operation now resolves a (possibly different) client **per
+  resource**, keyed by that resource's own `hostingAccountId` —
+  `suspendCustomer`/`restoreCustomer`/`syncRailwayResources` all changed
+  shape for this (`EngineDeps` gained `resolveRailwayClient`, a small
+  injected resolver function — production wiring in
+  `src/lib/deps-factory.ts` closes over the real
+  `HostingAccountRepository`; tests inject a fake returning a mock
+  client, same DI pattern as every other port in `src/lib/db/ports.ts`,
+  so none of this needed network mocking to test).
+- **Only Railway has an adapter implemented.** DigitalOcean/AWS/Vercel
+  are real, selectable `provider` values end-to-end (schema, API,
+  dashboard) so the architecture and intent are visible, but
+  `createHostingAccount` explicitly refuses to connect one
+  (`INVALID_INPUT`: "No DIGITALOCEAN adapter is implemented yet...") —
+  building the actual adapter for a new provider means implementing its
+  own `stopDeployment`/`redeployService`/`getServiceStatus`-equivalent
+  calls, which doesn't exist yet for anything but Railway.
+- Dashboard: **Hosting Accounts** page (`app/dashboard/hosting-accounts`,
+  `SUPER_ADMIN` only — same bar as every other Railway-infrastructure
+  surface) to connect/relabel/rotate-token/deactivate/disconnect
+  accounts and test a stored token with one click. **Import Railway
+  services** (`app/dashboard/railway-import`) now starts with an account
+  picker — browsing/mapping services always happens against one
+  explicitly chosen connected account, never an implicit default.
+- Deleting a `HostingAccount` that still governs any mapped
+  `RailwayResource` is refused (`IN_USE`, mirrors the FK's own
+  `onDelete: Restrict`) — re-map or remove those resources first, the
+  same "check before you let a constraint error bubble up" pattern used
+  for customer/domain deletion elsewhere in this app.
+
+### Migrating an existing deployment onto this
+
+If you're upgrading a deployment that predates this feature (i.e. it
+still has customers mapped via the old single global
+`RAILWAY_API_TOKEN`), do this once, in order:
+
+```bash
+# 1. Generate and set a new env var (Railway dashboard -> Variables):
+openssl rand -hex 32   # -> HOSTING_CREDENTIALS_KEY
+
+# 2. Deploy this code, then from the Railway shell for this service:
+npx prisma db push                        # creates HostingAccount + the new column
+node scripts/backfill-hosting-accounts.mjs # migrates RAILWAY_API_TOKEN into a real
+                                           # HostingAccount row and backfills every
+                                           # existing RailwayResource.hostingAccountId
+```
+
+`scripts/backfill-hosting-accounts.mjs` is idempotent (safe to re-run —
+it looks up the account by label before creating a new one, and only
+backfills rows that are still null), same pattern as
+`scripts/seed-admin.mjs`. After that, connect any additional accounts
+(e.g. a second Railway account with other customers on it) from the
+Hosting Accounts dashboard page — no more env-var edits needed for
+that.
+
 ## Admin visibility, customer profile fields, and custom messaging
 
 This is largely the same scoped-admin model from before, extended with
@@ -780,7 +867,7 @@ every real customer.
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit — passes clean (prisma-repository.ts excluded, see below)
-npm test            # vitest — 259 tests, all green, no network/DB needed
+npm test            # vitest — 316 tests, all green, no network/DB needed
 npm run build       # next build — verified working in this sandbox, produces all 37 API routes + 20 UI pages
 ```
 

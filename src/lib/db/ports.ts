@@ -24,7 +24,9 @@ import {
   CampaignStatus,
   CampaignRecipientRecord,
   CampaignRecipientStatus,
+  HostingAccountRecord,
 } from '@/types/domain';
+import { RailwayClient } from '../railway/client';
 
 /**
  * Narrow repository interfaces the engines depend on. A Prisma-backed
@@ -271,6 +273,10 @@ export interface RailwayResourceRepository {
   findBySubscriptionId(subscriptionId: string): Promise<RailwayResourceRecord[]>;
   /** All resources, for the periodic Railway sync worker (spec section 13). */
   findAll(): Promise<RailwayResourceRecord[]>;
+  /** For the "can this hosting account be deleted" check — a
+   * HostingAccount with any resource still pointing at it must not be
+   * removable, the same Restrict boundary the FK itself enforces. */
+  findByHostingAccountId(hostingAccountId: string): Promise<RailwayResourceRecord[]>;
   updateStatus(
     id: string,
     status: RailwayResourceStatus,
@@ -283,6 +289,7 @@ export interface RailwayResourceRepository {
    * for both concerns. */
   create(input: {
     subscriptionId: string;
+    hostingAccountId: string;
     projectId: string;
     environmentId: string;
     serviceId: string;
@@ -290,6 +297,34 @@ export interface RailwayResourceRepository {
     hostingMode: RailwayResourceRecord['hostingMode'];
     suspensionStrategy: RailwayResourceRecord['suspensionStrategy'];
   }): Promise<RailwayResourceRecord>;
+}
+
+/** A connected hosting-provider account — see prisma/schema.prisma's
+ * HostingAccount doc comment. `apiToken` only ever appears on the
+ * `*WithCredentials` read, and only server-side code about to make a
+ * real provider API call should be calling that method; every other
+ * read/list here returns the safe HostingAccountRecord shape with no
+ * credential in it at all. */
+export interface HostingAccountRepository {
+  findById(id: string): Promise<HostingAccountRecord | null>;
+  /** Decrypts and returns the credential — internal use only (Railway
+   * client construction), never surfaced over an API response. */
+  findByIdWithCredentials(id: string): Promise<(HostingAccountRecord & { apiToken: string }) | null>;
+  listAll(): Promise<HostingAccountRecord[]>;
+  create(input: {
+    provider: HostingAccountRecord['provider'];
+    label: string;
+    apiToken: string;
+    apiUrl?: string | null;
+  }): Promise<HostingAccountRecord>;
+  /** Omit apiToken to leave the stored credential untouched (relabeling,
+   * toggling isActive); pass it to rotate the token after it's been
+   * regenerated on the provider's side. */
+  update(
+    id: string,
+    patch: { label?: string; apiToken?: string; apiUrl?: string | null; isActive?: boolean }
+  ): Promise<HostingAccountRecord>;
+  delete(id: string): Promise<void>;
 }
 
 /** One row per periodic status check (written by syncRailwayResources,
@@ -381,10 +416,25 @@ export interface CampaignRepository {
   ): Promise<void>;
 }
 
+/** Resolves a callable RailwayClient for a given resource's
+ * hostingAccountId. Production wiring (deps-factory.ts) closes over the
+ * real HostingAccountRepository and calls resolveRailwayClientForAccount
+ * (src/lib/hosting/account-client.ts), which builds a real network
+ * client keyed by that account's own decrypted credentials. Tests inject
+ * a resolver that returns a mock RailwayClient — this is what keeps
+ * suspend/restore/sync unit-testable without hitting the network, same
+ * as every other port in this file. */
+export type RailwayClientResolver = (hostingAccountId: string | null) => Promise<RailwayClient>;
+
 export interface EngineDeps {
   subscriptions: SubscriptionRepository;
   customers: CustomerRepository;
   railwayResources: RailwayResourceRepository;
+  /** Needed so suspendCustomer/restoreCustomer can resolve the right
+   * Railway client PER RESOURCE (each RailwayResource may belong to a
+   * different connected account) instead of being handed one client for
+   * the whole call. */
+  resolveRailwayClient: RailwayClientResolver;
   suspensionEvents: SuspensionEventRepository;
   notifications: NotificationSender;
   invoices: InvoiceRepository;
@@ -435,6 +485,7 @@ export interface BillingSetupDeps {
   plans: PlanRepository;
   subscriptions: SubscriptionRepository;
   railwayResources: RailwayResourceRepository;
+  hostingAccounts: HostingAccountRepository;
   domains: DomainRepository;
   auditLog: AuditLogRepository;
 }

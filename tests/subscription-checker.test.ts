@@ -66,6 +66,7 @@ function multiTenantResource(): RailwayResourceRecord {
     hostingMode: 'MULTI_TENANT',
     suspensionStrategy: 'APP_LEVEL',
     status: 'ACTIVE',
+    hostingAccountId: null,
   };
 }
 
@@ -81,7 +82,7 @@ describe('runSubscriptionChecker', () => {
       payments: [],
     });
 
-    const result = await runSubscriptionChecker(deps, railway, { now: NOW });
+    const result = await runSubscriptionChecker(deps, { now: NOW });
 
     expect(result.movedToPaymentDue).toBe(1);
     const s = await deps.subscriptions.findById('sub_1');
@@ -98,7 +99,7 @@ describe('runSubscriptionChecker', () => {
       payments: [],
     });
 
-    const result = await runSubscriptionChecker(deps, railway, { now: NOW });
+    const result = await runSubscriptionChecker(deps, { now: NOW });
 
     expect(result.skipped).toBe(1);
     expect(result.movedToPaymentDue).toBe(0);
@@ -113,7 +114,7 @@ describe('runSubscriptionChecker', () => {
       payments: [],
     });
 
-    await runSubscriptionChecker(deps, railway, { now: NOW });
+    await runSubscriptionChecker(deps, { now: NOW });
 
     const invoices = await deps.invoices.findByCustomerId('cust_1');
     expect(invoices).toHaveLength(1);
@@ -134,7 +135,7 @@ describe('runSubscriptionChecker', () => {
       ],
     });
 
-    await runSubscriptionChecker(deps, railway, { now: NOW });
+    await runSubscriptionChecker(deps, { now: NOW });
 
     expect(deps.adminNotificationLog.length).toBeGreaterThan(0);
     expect(deps.adminNotificationLog.some((n) => n.event === 'PAYMENT_DUE' && n.customerId === 'cust_1')).toBe(true);
@@ -152,7 +153,7 @@ describe('runSubscriptionChecker', () => {
       throw new Error('simulated invoice failure');
     };
 
-    const result = await runSubscriptionChecker(deps, railway, { now: NOW });
+    const result = await runSubscriptionChecker(deps, { now: NOW });
 
     expect(result.movedToPaymentDue).toBe(1);
     const s = await deps.subscriptions.findById('sub_1');
@@ -169,7 +170,7 @@ describe('runSubscriptionChecker', () => {
       payments: [],
     });
 
-    const result = await runSubscriptionChecker(deps, railway, { now: NOW });
+    const result = await runSubscriptionChecker(deps, { now: NOW });
 
     expect(result.movedToGracePeriod).toBe(1);
     const s = await deps.subscriptions.findById('sub_1');
@@ -188,7 +189,7 @@ describe('runSubscriptionChecker', () => {
       payments: [],
     });
 
-    const result = await runSubscriptionChecker(deps, railway, { now: NOW });
+    const result = await runSubscriptionChecker(deps, { now: NOW });
 
     expect(result.suspended).toBe(1);
     const s = await deps.subscriptions.findById('sub_1');
@@ -209,7 +210,7 @@ describe('runSubscriptionChecker', () => {
       payments: [],
     });
 
-    const result = await runSubscriptionChecker(deps, railway, { now: NOW });
+    const result = await runSubscriptionChecker(deps, { now: NOW });
 
     expect(result.suspended).toBe(0);
     expect(result.skipped).toBe(1);
@@ -224,11 +225,11 @@ describe('runSubscriptionChecker', () => {
       payments: [],
     });
 
-    const first = await runSubscriptionChecker(deps, railway, { now: NOW });
+    const first = await runSubscriptionChecker(deps, { now: NOW });
     // Second run picks up the (now) PAYMENT_DUE subscription — since its
     // nextBillingDate is still in the past, it correctly progresses it
     // toward GRACE_PERIOD rather than re-firing PAYMENT_DUE again.
-    const second = await runSubscriptionChecker(deps, railway, { now: NOW });
+    const second = await runSubscriptionChecker(deps, { now: NOW });
 
     expect(first.movedToPaymentDue).toBe(1);
     expect(second.movedToPaymentDue).toBe(0);
@@ -247,7 +248,7 @@ describe('runSubscriptionChecker', () => {
       payments: [],
     });
 
-    const result = await runSubscriptionChecker(deps, railway, { now: NOW });
+    const result = await runSubscriptionChecker(deps, { now: NOW });
 
     // suspendCustomer returns SKIPPED, which the checker surfaces as an
     // error entry (not a silent success) so an admin notices it needs a
@@ -270,7 +271,7 @@ describe('runSubscriptionChecker', () => {
       payments: [],
     });
 
-    const result = await runSubscriptionChecker(deps, railway, { now: NOW });
+    const result = await runSubscriptionChecker(deps, { now: NOW });
 
     // sub_broken falls back to the default grace period (missing plan)
     // rather than throwing and aborting the batch; sub_ok is unaffected

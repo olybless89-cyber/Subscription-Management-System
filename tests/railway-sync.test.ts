@@ -33,10 +33,14 @@ function makeFakeResourceRepo(seed: RailwayResourceRecord[]): RailwayResourceRep
         deploymentId: input.deploymentId ?? null,
         hostingMode: input.hostingMode,
         suspensionStrategy: input.suspensionStrategy,
+        hostingAccountId: input.hostingAccountId,
         status: 'UNKNOWN',
       };
       rows.set(record.id, record);
       return record;
+    },
+    async findByHostingAccountId(hostingAccountId) {
+      return [...rows.values()].filter((r) => r.hostingAccountId === hostingAccountId);
     },
   };
 }
@@ -52,6 +56,7 @@ function dedicatedResource(overrides: Partial<RailwayResourceRecord> = {}): Rail
     hostingMode: 'DEDICATED',
     suspensionStrategy: 'STOP_DEPLOYMENT',
     status: 'UNKNOWN',
+    hostingAccountId: 'hacct_1',
     ...overrides,
   };
 }
@@ -67,6 +72,7 @@ function multiTenantResource(overrides: Partial<RailwayResourceRecord> = {}): Ra
     hostingMode: 'MULTI_TENANT',
     suspensionStrategy: 'APP_LEVEL',
     status: 'ACTIVE',
+    hostingAccountId: null,
     ...overrides,
   };
 }
@@ -80,7 +86,7 @@ describe('syncRailwayResources', () => {
       })),
     };
 
-    const result = await syncRailwayResources(repo, railway);
+    const result = await syncRailwayResources(repo, async () => railway);
 
     expect(result.checked).toBe(1);
     expect(result.updated).toBe(1);
@@ -95,7 +101,7 @@ describe('syncRailwayResources', () => {
       })),
     };
 
-    const result = await syncRailwayResources(repo, railway);
+    const result = await syncRailwayResources(repo, async () => railway);
 
     expect(result.updated).toBe(1);
     expect(repo.rows.get('res_1')!.status).toBe('STOPPED');
@@ -109,7 +115,7 @@ describe('syncRailwayResources', () => {
       }),
     };
 
-    const result = await syncRailwayResources(repo, railway);
+    const result = await syncRailwayResources(repo, async () => railway);
 
     expect(result.errors).toHaveLength(1);
     expect(repo.rows.get('res_1')!.status).toBe('UNKNOWN');
@@ -123,7 +129,7 @@ describe('syncRailwayResources', () => {
       })),
     };
 
-    const result = await syncRailwayResources(repo, railway);
+    const result = await syncRailwayResources(repo, async () => railway);
 
     // Only the DEDICATED resource is checked; MULTI_TENANT is skipped.
     expect(result.checked).toBe(1);
@@ -142,7 +148,7 @@ describe('syncRailwayResources — status snapshot recording', () => {
       })),
     };
 
-    await syncRailwayResources(repo, railway, snapshots);
+    await syncRailwayResources(repo, async () => railway, snapshots);
 
     expect(snapshotRows).toHaveLength(1);
     expect(snapshotRows[0]).toMatchObject({ railwayResourceId: 'res_1', status: 'ACTIVE' });
@@ -157,7 +163,7 @@ describe('syncRailwayResources — status snapshot recording', () => {
       }),
     };
 
-    await syncRailwayResources(repo, railway, snapshots);
+    await syncRailwayResources(repo, async () => railway, snapshots);
 
     expect(snapshotRows).toHaveLength(1);
     expect(snapshotRows[0].status).toBe('UNKNOWN');
@@ -179,7 +185,7 @@ describe('syncRailwayResources — status snapshot recording', () => {
       },
     };
 
-    const result = await syncRailwayResources(repo, railway, brokenSnapshots);
+    const result = await syncRailwayResources(repo, async () => railway, brokenSnapshots);
 
     expect(result.updated).toBe(1);
     expect(repo.rows.get('res_1')!.status).toBe('ACTIVE');
@@ -193,7 +199,7 @@ describe('syncRailwayResources — status snapshot recording', () => {
       })),
     };
 
-    const result = await syncRailwayResources(repo, railway);
+    const result = await syncRailwayResources(repo, async () => railway);
 
     expect(result.updated).toBe(1);
   });
@@ -208,7 +214,7 @@ describe('syncSingleRailwayResource', () => {
       })),
     };
 
-    const outcome = await syncSingleRailwayResource(repo, railway, dedicatedResource());
+    const outcome = await syncSingleRailwayResource(repo, async () => railway, dedicatedResource());
 
     expect(outcome.status).toBe('ACTIVE');
   });
@@ -217,7 +223,7 @@ describe('syncSingleRailwayResource', () => {
     const repo = makeFakeResourceRepo([multiTenantResource()]);
     const railway: RailwayClient = { request: vi.fn() };
 
-    const outcome = await syncSingleRailwayResource(repo, railway, multiTenantResource());
+    const outcome = await syncSingleRailwayResource(repo, async () => railway, multiTenantResource());
 
     expect(outcome.status).toBe('ACTIVE');
     expect(railway.request).not.toHaveBeenCalled();

@@ -3,6 +3,7 @@ import { RailwayResourceRecord, HostingMode, SuspensionStrategyValue } from '@/t
 
 export interface MapRailwayResourceInput {
   subscriptionId: string;
+  hostingAccountId: string;
   projectId: string;
   environmentId: string;
   serviceId: string;
@@ -55,6 +56,20 @@ export async function mapRailwayResource(
     return { outcome: 'INVALID_INPUT', message: 'projectId, environmentId, and serviceId are all required' };
   }
 
+  if (!input.hostingAccountId?.trim()) {
+    return { outcome: 'INVALID_INPUT', message: 'hostingAccountId is required — which connected account owns this service?' };
+  }
+  const hostingAccount = await deps.hostingAccounts.findById(input.hostingAccountId);
+  if (!hostingAccount) {
+    return { outcome: 'NOT_FOUND', message: 'Connected hosting account not found' };
+  }
+  if (!hostingAccount.isActive) {
+    return { outcome: 'INVALID_INPUT', message: `Hosting account "${hostingAccount.label}" is disconnected — reactivate it before mapping new resources to it.` };
+  }
+  if (hostingAccount.provider !== 'RAILWAY') {
+    return { outcome: 'INVALID_INPUT', message: `Hosting account "${hostingAccount.label}" is a ${hostingAccount.provider} account — Railway resource mapping only works against a RAILWAY account.` };
+  }
+
   if (input.hostingMode === 'MULTI_TENANT' && input.suspensionStrategy !== 'APP_LEVEL') {
     return {
       outcome: 'INVALID_INPUT',
@@ -71,6 +86,7 @@ export async function mapRailwayResource(
 
   const resource = await deps.railwayResources.create({
     subscriptionId: input.subscriptionId,
+    hostingAccountId: input.hostingAccountId,
     projectId: input.projectId.trim(),
     environmentId: input.environmentId.trim(),
     serviceId: input.serviceId.trim(),

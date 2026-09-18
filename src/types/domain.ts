@@ -12,6 +12,7 @@ export type SubscriptionStatus =
 export type HostingMode = 'DEDICATED' | 'SHARED_SERVICE' | 'MULTI_TENANT';
 
 export type SuspensionStrategyValue = 'STOP_DEPLOYMENT' | 'APP_LEVEL' | 'REDIRECT' | 'MANUAL';
+export type HostingProviderType = 'RAILWAY' | 'DIGITALOCEAN' | 'AWS' | 'VERCEL';
 
 export type RailwayResourceStatus = 'ACTIVE' | 'STOPPED' | 'UNKNOWN' | 'ERROR';
 
@@ -198,6 +199,7 @@ export interface PaymentRecord {
 export interface RailwayResourceRecord {
   id: string;
   subscriptionId: string;
+  hostingAccountId: string | null;
   projectId: string;
   environmentId: string;
   serviceId: string;
@@ -205,6 +207,18 @@ export interface RailwayResourceRecord {
   hostingMode: HostingMode;
   suspensionStrategy: SuspensionStrategyValue;
   status: RailwayResourceStatus;
+}
+
+/** Safe view of a connected hosting-provider account — never carries
+ * the credential itself. See prisma/schema.prisma's HostingAccount doc
+ * comment and src/lib/db/ports.ts's HostingAccountRepository. */
+export interface HostingAccountRecord {
+  id: string;
+  provider: HostingProviderType;
+  label: string;
+  apiUrl: string | null;
+  isActive: boolean;
+  createdAt: string;
 }
 
 export interface StatusSnapshotRecord {

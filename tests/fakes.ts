@@ -1,4 +1,5 @@
 import { EngineDeps, WebhookDeps, AuthDeps, AdminManagementDeps, BillingSetupDeps, CustomEmailDeps, CampaignDeps, RegisterCustomerDeps, CustomerPortalDeps } from '@/lib/db/ports';
+import { RailwayClient } from '@/lib/railway/client';
 import {
   CustomerRecord,
   SubscriptionRecord,
@@ -12,6 +13,7 @@ import {
   CampaignRecord,
   CampaignRecipientRecord,
   StatusSnapshotRecord,
+  HostingAccountRecord,
 } from '@/types/domain';
 
 // ---------- shared primitive stores, reused across the various fake-deps builders ----------
@@ -370,6 +372,79 @@ function makeDomainRepo(seed: DomainRecord[] = []) {
   return { repo, byId };
 }
 
+function makeHostingAccountRepo(
+  seed: Array<{
+    id?: string;
+    provider: HostingAccountRecord['provider'];
+    label: string;
+    apiToken: string;
+    apiUrl?: string | null;
+    isActive?: boolean;
+  }> = []
+) {
+  const byId = new Map<string, HostingAccountRecord & { apiToken: string }>();
+  let counter = 0;
+  for (const s of seed) {
+    counter += 1;
+    const id = s.id ?? `hacct_${counter}`;
+    byId.set(id, {
+      id,
+      provider: s.provider,
+      label: s.label,
+      apiUrl: s.apiUrl ?? null,
+      isActive: s.isActive ?? true,
+      createdAt: new Date().toISOString(),
+      apiToken: s.apiToken,
+    });
+  }
+  const strip = (r: HostingAccountRecord & { apiToken: string }): HostingAccountRecord => {
+    const { apiToken, ...rest } = r; // eslint-disable-line @typescript-eslint/no-unused-vars
+    return rest;
+  };
+  const repo = {
+    async findById(id: string) {
+      const r = byId.get(id);
+      return r ? strip(r) : null;
+    },
+    async findByIdWithCredentials(id: string) {
+      return byId.get(id) ?? null;
+    },
+    async listAll() {
+      return [...byId.values()].map(strip);
+    },
+    async create(input: { provider: HostingAccountRecord['provider']; label: string; apiToken: string; apiUrl?: string | null }) {
+      counter += 1;
+      const record: HostingAccountRecord & { apiToken: string } = {
+        id: `hacct_${counter}`,
+        provider: input.provider,
+        label: input.label,
+        apiUrl: input.apiUrl ?? null,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        apiToken: input.apiToken,
+      };
+      byId.set(record.id, record);
+      return strip(record);
+    },
+    async update(
+      id: string,
+      patch: { label?: string; apiToken?: string; apiUrl?: string | null; isActive?: boolean }
+    ) {
+      const r = byId.get(id);
+      if (!r) throw new Error('not found');
+      if (patch.label !== undefined) r.label = patch.label;
+      if (patch.apiToken !== undefined) r.apiToken = patch.apiToken;
+      if (patch.apiUrl !== undefined) r.apiUrl = patch.apiUrl;
+      if (patch.isActive !== undefined) r.isActive = patch.isActive;
+      return strip(r);
+    },
+    async delete(id: string) {
+      byId.delete(id);
+    },
+  };
+  return { repo, byId };
+}
+
 // ---------- composed fake-deps builders used by the test suites ----------
 
 export function makeFakeDeps(seed: {
@@ -395,12 +470,27 @@ export function makeFakeDeps(seed: {
     invoiceStore,
     subscriptions: subscriptionsRepo,
     customers: customersRepo,
+    // Tests that reach a resource's Railway call point (DEDICATED /
+    // SHARED_SERVICE strategies) must override this before calling —
+    // e.g. `deps.resolveRailwayClient = async () => mockRailwayClient;`
+    // — mirroring how `deps.notifications.send` is overridden elsewhere
+    // in this file. Left un-configured, it throws immediately rather
+    // than silently reaching the real network, so a test that forgot to
+    // wire it fails loudly instead of hanging on a real fetch.
+    resolveRailwayClient: async (): Promise<RailwayClient> => {
+      throw new Error(
+        'deps.resolveRailwayClient was not configured for this test — set it to an async function returning a mock RailwayClient before calling code that reaches Railway.'
+      );
+    },
     railwayResources: {
       async findBySubscriptionId(subscriptionId) {
         return resources.filter((r) => r.subscriptionId === subscriptionId);
       },
       async findAll() {
         return [...resources];
+      },
+      async findByHostingAccountId(hostingAccountId) {
+        return resources.filter((r) => r.hostingAccountId === hostingAccountId);
       },
       async updateStatus(id, status, extra) {
         const r = resources.find((x) => x.id === id);
@@ -412,6 +502,7 @@ export function makeFakeDeps(seed: {
         const record: RailwayResourceRecord = {
           id: `res_${resources.length + 1}`,
           subscriptionId: input.subscriptionId,
+          hostingAccountId: input.hostingAccountId,
           projectId: input.projectId,
           environmentId: input.environmentId,
           serviceId: input.serviceId,
@@ -575,12 +666,21 @@ export function makeFakeBillingSetupDeps(seed: {
   subscriptions: SubscriptionRecord[];
   railwayResources: RailwayResourceRecord[];
   domains?: DomainRecord[];
+  hostingAccounts?: Array<{
+    id?: string;
+    provider: HostingAccountRecord['provider'];
+    label: string;
+    apiToken: string;
+    apiUrl?: string | null;
+    isActive?: boolean;
+  }>;
 }): BillingSetupDeps & {
   auditLogEntries: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }>;
   planStore: Map<string, PlanRecord>;
   subscriptionStore: Map<string, SubscriptionRecord>;
   railwayResourceStore: RailwayResourceRecord[];
   domainStore: Map<string, DomainRecord>;
+  hostingAccountStore: Map<string, HostingAccountRecord & { apiToken: string }>;
 } {
   const { repo: adminsRepo } = makeAdminRepo(seed.admins);
   const { repo: customersRepo } = makeCustomerRepo(seed.customers);
@@ -588,6 +688,7 @@ export function makeFakeBillingSetupDeps(seed: {
   const { repo: subscriptionsRepo, byId: subscriptionStore } = makeSubscriptionRepo(seed.subscriptions);
   const railwayResourceStore = [...seed.railwayResources];
   const { repo: domainsRepo, byId: domainStore } = makeDomainRepo(seed.domains ?? []);
+  const { repo: hostingAccountsRepo, byId: hostingAccountStore } = makeHostingAccountRepo(seed.hostingAccounts ?? []);
   const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
 
   return {
@@ -596,12 +697,16 @@ export function makeFakeBillingSetupDeps(seed: {
     plans: plansRepo,
     subscriptions: subscriptionsRepo,
     domains: domainsRepo,
+    hostingAccounts: hostingAccountsRepo,
     railwayResources: {
       async findBySubscriptionId(subscriptionId: string) {
         return railwayResourceStore.filter((r) => r.subscriptionId === subscriptionId);
       },
       async findAll() {
         return [...railwayResourceStore];
+      },
+      async findByHostingAccountId(hostingAccountId: string) {
+        return railwayResourceStore.filter((r) => r.hostingAccountId === hostingAccountId);
       },
       async updateStatus(id: string, status: RailwayResourceRecord['status'], extra) {
         const r = railwayResourceStore.find((x) => x.id === id);
@@ -613,6 +718,7 @@ export function makeFakeBillingSetupDeps(seed: {
         const record: RailwayResourceRecord = {
           id: `res_${railwayResourceStore.length + 1}`,
           subscriptionId: input.subscriptionId,
+          hostingAccountId: input.hostingAccountId,
           projectId: input.projectId,
           environmentId: input.environmentId,
           serviceId: input.serviceId,
@@ -631,6 +737,7 @@ export function makeFakeBillingSetupDeps(seed: {
     subscriptionStore,
     railwayResourceStore,
     domainStore,
+    hostingAccountStore,
   };
 }
 
@@ -861,6 +968,9 @@ export function makeFakeCustomerPortalDeps(seed: {
       async findAll() {
         return [...railwayResources];
       },
+      async findByHostingAccountId(hostingAccountId: string) {
+        return railwayResources.filter((r) => r.hostingAccountId === hostingAccountId);
+      },
       async updateStatus(id: string, status: RailwayResourceRecord['status'], extra?: { deploymentId?: string | null }) {
         const r = railwayResources.find((x) => x.id === id);
         if (!r) throw new Error('not found');
@@ -871,6 +981,7 @@ export function makeFakeCustomerPortalDeps(seed: {
         const record: RailwayResourceRecord = {
           id: `res_${railwayResources.length + 1}`,
           subscriptionId: input.subscriptionId,
+          hostingAccountId: input.hostingAccountId ?? null,
           projectId: input.projectId,
           environmentId: input.environmentId,
           serviceId: input.serviceId,

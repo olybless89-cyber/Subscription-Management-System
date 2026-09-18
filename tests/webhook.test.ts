@@ -78,6 +78,7 @@ function multiTenantResource(): RailwayResourceRecord {
     hostingMode: 'MULTI_TENANT',
     suspensionStrategy: 'APP_LEVEL',
     status: 'STOPPED',
+    hostingAccountId: null,
   };
 }
 
@@ -114,7 +115,7 @@ describe('handlePaymentWebhook — signature and parsing', () => {
     });
     const provider = fakeProvider({ verifyWebhookSignature: vi.fn().mockReturnValue(false) });
 
-    const result = await handlePaymentWebhook(deps, provider, railway, chargeSuccessBody(), 'bad-sig');
+    const result = await handlePaymentWebhook(deps, provider, chargeSuccessBody(), 'bad-sig');
 
     expect(result.httpStatus).toBe(401);
     expect(result.outcome).toBe('INVALID_SIGNATURE');
@@ -134,7 +135,6 @@ describe('handlePaymentWebhook — signature and parsing', () => {
     const result = await handlePaymentWebhook(
       deps,
       provider,
-      railway,
       JSON.stringify({ event: 'charge.failed', data: { reference: 'WOH-REF-001' } }),
       'sig'
     );
@@ -153,7 +153,7 @@ describe('handlePaymentWebhook — signature and parsing', () => {
     });
     const provider = fakeProvider();
 
-    const result = await handlePaymentWebhook(deps, provider, railway, chargeSuccessBody(), 'sig', { now: new Date('2026-09-05T00:00:00.000Z') });
+    const result = await handlePaymentWebhook(deps, provider, chargeSuccessBody(), 'sig', { now: new Date('2026-09-05T00:00:00.000Z') });
 
     expect(result.httpStatus).toBe(200);
     expect(result.outcome).toBe('UNKNOWN_REFERENCE');
@@ -171,8 +171,8 @@ describe('handlePaymentWebhook — idempotency', () => {
     });
     const provider = fakeProvider();
 
-    const first = await handlePaymentWebhook(deps, provider, railway, chargeSuccessBody(), 'sig', { now: new Date('2026-09-05T00:00:00.000Z') });
-    const second = await handlePaymentWebhook(deps, provider, railway, chargeSuccessBody(), 'sig', { now: new Date('2026-09-05T00:00:00.000Z') });
+    const first = await handlePaymentWebhook(deps, provider, chargeSuccessBody(), 'sig', { now: new Date('2026-09-05T00:00:00.000Z') });
+    const second = await handlePaymentWebhook(deps, provider, chargeSuccessBody(), 'sig', { now: new Date('2026-09-05T00:00:00.000Z') });
 
     expect(first.outcome).toBe('PROCESSED');
     expect(second.outcome).toBe('ALREADY_PROCESSED');
@@ -202,7 +202,7 @@ describe('handlePaymentWebhook — verification', () => {
       })),
     });
 
-    const result = await handlePaymentWebhook(deps, provider, railway, chargeSuccessBody(), 'sig', { now: new Date('2026-09-05T00:00:00.000Z') });
+    const result = await handlePaymentWebhook(deps, provider, chargeSuccessBody(), 'sig', { now: new Date('2026-09-05T00:00:00.000Z') });
 
     expect(result.outcome).toBe('VERIFICATION_MISMATCH');
     const subscription = await deps.subscriptions.findById('sub_1');
@@ -227,7 +227,7 @@ describe('handlePaymentWebhook — verification', () => {
       })),
     });
 
-    const result = await handlePaymentWebhook(deps, provider, railway, chargeSuccessBody(), 'sig', { now: new Date('2026-09-05T00:00:00.000Z') });
+    const result = await handlePaymentWebhook(deps, provider, chargeSuccessBody(), 'sig', { now: new Date('2026-09-05T00:00:00.000Z') });
 
     expect(result.outcome).toBe('PAYMENT_NOT_SUCCESSFUL');
     const subscription = await deps.subscriptions.findById('sub_1');
@@ -249,7 +249,7 @@ describe('handlePaymentWebhook — notification failures never crash the webhook
     };
     const provider = fakeProvider();
 
-    const result = await handlePaymentWebhook(deps, provider, railway, chargeSuccessBody(), 'sig');
+    const result = await handlePaymentWebhook(deps, provider, chargeSuccessBody(), 'sig');
 
     // The payment was still recorded and the subscription still
     // restored — a notification crash must degrade silently, never
@@ -273,7 +273,7 @@ describe('handlePaymentWebhook — receipt invoice', () => {
     });
     const provider = fakeProvider();
 
-    const result = await handlePaymentWebhook(deps, provider, railway, chargeSuccessBody(), 'sig');
+    const result = await handlePaymentWebhook(deps, provider, chargeSuccessBody(), 'sig');
 
     expect(result.outcome).toBe('PROCESSED');
     const invoices = await deps.invoices.findByCustomerId('cust_1');
@@ -296,7 +296,7 @@ describe('handlePaymentWebhook — receipt invoice', () => {
     };
     const provider = fakeProvider();
 
-    const result = await handlePaymentWebhook(deps, provider, railway, chargeSuccessBody(), 'sig');
+    const result = await handlePaymentWebhook(deps, provider, chargeSuccessBody(), 'sig');
 
     expect(result.outcome).toBe('PROCESSED');
     expect(result.httpStatus).toBe(200);
@@ -315,8 +315,13 @@ describe('handlePaymentWebhook — restoration wiring', () => {
       payments: [basePayment()],
     });
     const provider = fakeProvider();
+    // Wired even though MULTI_TENANT never calls Railway — this is what
+    // makes the assertion below meaningful (it would fail loudly, not
+    // silently pass, if restoreCustomer ever wrongly reached Railway for
+    // a MULTI_TENANT resource).
+    deps.resolveRailwayClient = async () => railway;
 
-    const result = await handlePaymentWebhook(deps, provider, railway, chargeSuccessBody(), 'sig', { now: new Date('2026-09-05T00:00:00.000Z') });
+    const result = await handlePaymentWebhook(deps, provider, chargeSuccessBody(), 'sig', { now: new Date('2026-09-05T00:00:00.000Z') });
 
     expect(result.outcome).toBe('PROCESSED');
     const subscription = await deps.subscriptions.findById('sub_1');
@@ -339,7 +344,7 @@ describe('handlePaymentWebhook — restoration wiring', () => {
     });
     const provider = fakeProvider();
 
-    const result = await handlePaymentWebhook(deps, provider, railway, chargeSuccessBody(), 'sig', { now: new Date('2026-09-05T00:00:00.000Z') });
+    const result = await handlePaymentWebhook(deps, provider, chargeSuccessBody(), 'sig', { now: new Date('2026-09-05T00:00:00.000Z') });
 
     expect(result.outcome).toBe('PROCESSED');
     const subscription = await deps.subscriptions.findById('sub_1');
@@ -363,6 +368,7 @@ describe('handlePaymentWebhook — restoration wiring', () => {
           hostingMode: 'DEDICATED',
           suspensionStrategy: 'STOP_DEPLOYMENT',
           status: 'STOPPED',
+          hostingAccountId: 'hacct_1',
         },
       ],
       plans: [basePlan()],
@@ -374,8 +380,9 @@ describe('handlePaymentWebhook — restoration wiring', () => {
         throw new Error('Railway unreachable');
       }),
     };
+    deps.resolveRailwayClient = async () => flakyRailway;
 
-    const result = await handlePaymentWebhook(deps, provider, flakyRailway, chargeSuccessBody(), 'sig', { now: new Date('2026-09-05T00:00:00.000Z') });
+    const result = await handlePaymentWebhook(deps, provider, chargeSuccessBody(), 'sig', { now: new Date('2026-09-05T00:00:00.000Z') });
 
     expect(result.outcome).toBe('PROCESSED');
     expect(result.message).toMatch(/restoration did not complete/);

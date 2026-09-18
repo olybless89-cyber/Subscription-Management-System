@@ -63,6 +63,20 @@ enum HostingMode {
   MULTI_TENANT
 }
 
+// Which infrastructure platform a HostingAccount's credentials belong
+// to. Only RAILWAY has a working adapter today (src/lib/railway/*) —
+// the others exist so the data model and UI are ready for them, but
+// nothing yet knows how to actually call DigitalOcean/AWS/Vercel's
+// APIs. Adding a real adapter for one of these later is additive: a
+// new src/lib/<provider>/* module plus a branch in the account-client
+// resolver, never a schema change.
+enum HostingProviderType {
+  RAILWAY
+  DIGITALOCEAN
+  AWS
+  VERCEL
+}
+
 enum SuspensionStrategy {
   STOP_DEPLOYMENT
   APP_LEVEL
@@ -256,6 +270,16 @@ model RailwayResource {
   subscriptionId     String
   subscription       Subscription           @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
 
+  // Which connected account's credentials govern this resource — see
+  // HostingAccount below. Nullable only for rows created before
+  // multi-account support existed; every code path that actually calls
+  // Railway on behalf of a resource treats a null here as a hard error
+  // rather than silently falling back to a default account (never
+  // guess which credentials to use). scripts/backfill-hosting-accounts.mjs
+  // is the one-time fix for pre-existing rows.
+  hostingAccountId   String?
+  hostingAccount     HostingAccount?        @relation(fields: [hostingAccountId], references: [id], onDelete: Restrict)
+
   projectId          String
   environmentId      String
   serviceId          String
@@ -275,6 +299,36 @@ model RailwayResource {
 
   @@index([hostingMode])
   @@index([status])
+  @@index([hostingAccountId])
+}
+
+// A connected hosting-provider account: a label plus the credentials
+// needed to call that provider's API on behalf of every RailwayResource
+// (or, once built, equivalent per-provider resource) that references
+// it. Lets one admin manage infrastructure spread across several
+// Railway accounts (or, later, other providers) from one dashboard
+// instead of being limited to a single global API token.
+//
+// apiToken is never stored in plaintext — see src/lib/hosting/crypto.ts
+// (AES-256-GCM, keyed by HOSTING_CREDENTIALS_KEY) — and is never
+// returned from a "safe" repository read; only
+// HostingAccountRepository.findByIdWithCredentials decrypts it, and
+// only server-side code that is about to make a provider API call
+// should ever be calling that method.
+model HostingAccount {
+  id                String              @id @default(cuid())
+  provider          HostingProviderType
+  label             String
+  apiUrl            String?
+  encryptedApiToken String
+  isActive          Boolean             @default(true)
+
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  railwayResources  RailwayResource[]
+
+  @@index([provider])
 }
 
 // A snapshot of a RailwayResource's status at one point in time,

@@ -25,11 +25,12 @@
 // than failing the whole screen (the admin can always re-map after a
 // deploy, or the value gets corrected on the next "Map" retry).
 
-import { buildBillingSetupDeps, buildRailwayClient } from '../../../../../src/lib/deps-factory';
+import { buildBillingSetupDeps } from '../../../../../src/lib/deps-factory';
 import { authenticateFromHeader, hasAdminRole } from '../../../../../src/lib/auth/authorize';
 import { listAccountProjects, RailwayAccountEnvironment } from '../../../../../src/lib/railway/projects';
 import { getDeployments } from '../../../../../src/lib/railway/deployments';
 import { RailwayApiError, RailwayClient } from '../../../../../src/lib/railway/client';
+import { resolveRailwayClientForAccount, HostingAccountResolutionError } from '../../../../../src/lib/hosting/account-client';
 
 function normalize(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -78,8 +79,21 @@ export async function GET(request: Request): Promise<Response> {
     return json(403, { error: 'Super admin access required' });
   }
 
+  const url = new URL(request.url);
+  const accountId = url.searchParams.get('accountId');
+  if (!accountId) {
+    return json(400, { error: 'accountId is required — pick a connected Railway account to browse.' });
+  }
+
   const deps = buildBillingSetupDeps();
-  const railway = buildRailwayClient();
+
+  let railway: RailwayClient;
+  try {
+    railway = await resolveRailwayClientForAccount(deps.hostingAccounts, accountId);
+  } catch (err) {
+    const message = err instanceof HostingAccountResolutionError ? err.message : 'Failed to resolve hosting account';
+    return json(400, { error: message });
+  }
 
   let projects;
   try {
@@ -89,12 +103,15 @@ export async function GET(request: Request): Promise<Response> {
     return json(502, { error: message });
   }
 
-  const [existingResources, customers, domains, subscriptions] = await Promise.all([
+  const [allResources, customers, domains, subscriptions] = await Promise.all([
     deps.railwayResources.findAll(),
     deps.customers.listAll(),
     deps.domains.listAll(),
     deps.subscriptions.listAll(),
   ]);
+  // Scoped to THIS account — project/service ids from a different
+  // Railway account should never show as "already mapped" here.
+  const existingResources = allResources.filter((r) => r.hostingAccountId === accountId);
 
   const mappedByServiceId = new Map(existingResources.map((r) => [`${r.projectId}:${r.serviceId}`, r]));
   const subscriptionsByCustomerId = new Map<string, typeof subscriptions>();

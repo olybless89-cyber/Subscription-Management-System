@@ -53,6 +53,7 @@ function dedicatedResource(overrides: Partial<RailwayResourceRecord> = {}): Rail
     hostingMode: 'DEDICATED',
     suspensionStrategy: 'STOP_DEPLOYMENT',
     status: 'ACTIVE',
+    hostingAccountId: 'hacct_1',
     ...overrides,
   };
 }
@@ -68,8 +69,9 @@ describe('suspendCustomer — customer message includes a renewal link', () => {
       ],
     });
     const railway: RailwayClient = { request: vi.fn() };
+    deps.resolveRailwayClient = async () => railway;
 
-    await suspendCustomer(deps, railway, 'sub_1', 'NON_PAYMENT', { manual: true });
+    await suspendCustomer(deps, 'sub_1', 'NON_PAYMENT', { manual: true });
 
     expect(deps.notificationLog[0].message).toContain('https://example.com/renew/WOH-000042');
   });
@@ -90,8 +92,9 @@ describe('suspendCustomer — notification failures never crash the response', (
       throw new Error('simulated notification pipeline crash');
     };
     const railway: RailwayClient = { request: vi.fn() };
+    deps.resolveRailwayClient = async () => railway;
 
-    const result = await suspendCustomer(deps, railway, 'sub_1', 'NON_PAYMENT', { manual: true });
+    const result = await suspendCustomer(deps, 'sub_1', 'NON_PAYMENT', { manual: true });
 
     // The suspension itself still completed and was recorded — this is
     // the whole point: a notification crash must never masquerade as a
@@ -119,7 +122,9 @@ describe('suspendCustomer — DEDICATED / STOP_DEPLOYMENT', () => {
       }),
     };
 
-    const result = await suspendCustomer(deps, railway, 'sub_1', 'NON_PAYMENT');
+    deps.resolveRailwayClient = async () => railway;
+
+    const result = await suspendCustomer(deps, 'sub_1', 'NON_PAYMENT');
 
     expect(result.outcome).toBe('SUSPENDED');
     expect((await deps.subscriptions.findById('sub_1'))!.status).toBe('SUSPENDED');
@@ -147,7 +152,9 @@ describe('suspendCustomer — DEDICATED / STOP_DEPLOYMENT', () => {
       }),
     };
 
-    const result = await suspendCustomer(deps, railway, 'sub_1', 'NON_PAYMENT');
+    deps.resolveRailwayClient = async () => railway;
+
+    const result = await suspendCustomer(deps, 'sub_1', 'NON_PAYMENT');
 
     expect(result.outcome).toBe('FAILED');
     expect((await deps.subscriptions.findById('sub_1'))!.status).toBe('GRACE_PERIOD');
@@ -162,8 +169,9 @@ describe('suspendCustomer — DEDICATED / STOP_DEPLOYMENT', () => {
       railwayResources: [dedicatedResource()],
     });
     const railway: RailwayClient = { request: vi.fn() };
+    deps.resolveRailwayClient = async () => railway;
 
-    const result = await suspendCustomer(deps, railway, 'sub_1', 'NON_PAYMENT', { dryRun: true });
+    const result = await suspendCustomer(deps, 'sub_1', 'NON_PAYMENT', { dryRun: true });
 
     expect(result.outcome).toBe('DRY_RUN');
     expect(railway.request).not.toHaveBeenCalled();
@@ -181,8 +189,9 @@ describe('suspendCustomer — MULTI_TENANT / APP_LEVEL', () => {
       ],
     });
     const railway: RailwayClient = { request: vi.fn() };
+    deps.resolveRailwayClient = async () => railway;
 
-    const result = await suspendCustomer(deps, railway, 'sub_1', 'NON_PAYMENT');
+    const result = await suspendCustomer(deps, 'sub_1', 'NON_PAYMENT');
 
     expect(result.outcome).toBe('SUSPENDED');
     expect(railway.request).not.toHaveBeenCalled();
@@ -207,8 +216,9 @@ describe('suspendCustomer — per-subscription dryRunOverride precedence', () =>
       ],
     });
     const railway: RailwayClient = { request: vi.fn() };
+    deps.resolveRailwayClient = async () => railway;
 
-    const result = await suspendCustomer(deps, railway, 'sub_1', 'TEST');
+    const result = await suspendCustomer(deps, 'sub_1', 'TEST');
 
     expect(result.outcome).toBe('SUSPENDED'); // not DRY_RUN
     expect((await deps.subscriptions.findById('sub_1'))!.status).toBe('SUSPENDED');
@@ -222,8 +232,9 @@ describe('suspendCustomer — per-subscription dryRunOverride precedence', () =>
       railwayResources: [dedicatedResource()],
     });
     const railway: RailwayClient = { request: vi.fn() };
+    deps.resolveRailwayClient = async () => railway;
 
-    const result = await suspendCustomer(deps, railway, 'sub_1', 'TEST');
+    const result = await suspendCustomer(deps, 'sub_1', 'TEST');
 
     expect(result.outcome).toBe('DRY_RUN');
     expect(railway.request).not.toHaveBeenCalled();
@@ -238,8 +249,9 @@ describe('suspendCustomer — per-subscription dryRunOverride precedence', () =>
       railwayResources: [dedicatedResource()],
     });
     const railway: RailwayClient = { request: vi.fn() };
+    deps.resolveRailwayClient = async () => railway;
 
-    const result = await suspendCustomer(deps, railway, 'sub_1', 'TEST');
+    const result = await suspendCustomer(deps, 'sub_1', 'TEST');
 
     expect(result.outcome).toBe('DRY_RUN');
   });
@@ -254,8 +266,9 @@ describe('suspendCustomer — per-subscription dryRunOverride precedence', () =>
       ],
     });
     const railway: RailwayClient = { request: vi.fn() };
+    deps.resolveRailwayClient = async () => railway;
 
-    const result = await suspendCustomer(deps, railway, 'sub_1', 'TEST', { dryRun: true });
+    const result = await suspendCustomer(deps, 'sub_1', 'TEST', { dryRun: true });
 
     expect(result.outcome).toBe('DRY_RUN');
   });
@@ -269,8 +282,9 @@ describe('suspendCustomer — safety & idempotency', () => {
       railwayResources: [dedicatedResource({ suspensionStrategy: 'MANUAL' })],
     });
     const railway: RailwayClient = { request: vi.fn() };
+    deps.resolveRailwayClient = async () => railway;
 
-    const result = await suspendCustomer(deps, railway, 'sub_1', 'NON_PAYMENT');
+    const result = await suspendCustomer(deps, 'sub_1', 'NON_PAYMENT');
 
     expect(railway.request).not.toHaveBeenCalled();
     expect(result.resourceResults[0].result).toBe('SKIPPED');
@@ -285,9 +299,10 @@ describe('suspendCustomer — safety & idempotency', () => {
       ],
     });
     const railway: RailwayClient = { request: vi.fn() };
+    deps.resolveRailwayClient = async () => railway;
 
-    await suspendCustomer(deps, railway, 'sub_1', 'NON_PAYMENT');
-    const second = await suspendCustomer(deps, railway, 'sub_1', 'NON_PAYMENT');
+    await suspendCustomer(deps, 'sub_1', 'NON_PAYMENT');
+    const second = await suspendCustomer(deps, 'sub_1', 'NON_PAYMENT');
 
     expect(second.outcome).toBe('SKIPPED');
     expect(deps.events).toHaveLength(1); // not logged again
@@ -300,8 +315,9 @@ describe('suspendCustomer — safety & idempotency', () => {
       railwayResources: [dedicatedResource()],
     });
     const railway: RailwayClient = { request: vi.fn() };
+    deps.resolveRailwayClient = async () => railway;
 
-    const result = await suspendCustomer(deps, railway, 'sub_1', 'NON_PAYMENT');
+    const result = await suspendCustomer(deps, 'sub_1', 'NON_PAYMENT');
 
     expect(result.outcome).toBe('SKIPPED');
     expect(railway.request).not.toHaveBeenCalled();
@@ -316,8 +332,9 @@ describe('suspendCustomer — safety & idempotency', () => {
       ],
     });
     const railway: RailwayClient = { request: vi.fn() };
+    deps.resolveRailwayClient = async () => railway;
 
-    const result = await suspendCustomer(deps, railway, 'sub_1', 'ADMIN_OVERRIDE', {
+    const result = await suspendCustomer(deps, 'sub_1', 'ADMIN_OVERRIDE', {
       manual: true,
       performedBy: 'admin_1',
     });
@@ -341,8 +358,9 @@ describe('restoreCustomer', () => {
       throw new Error('simulated notification pipeline crash');
     };
     const railway: RailwayClient = { request: vi.fn() };
+    deps.resolveRailwayClient = async () => railway;
 
-    const result = await restoreCustomer(deps, railway, 'sub_1', { paymentVerified: true });
+    const result = await restoreCustomer(deps, 'sub_1', { paymentVerified: true });
 
     expect(result.outcome).toBe('RESTORED');
     expect((await deps.subscriptions.findById('sub_1'))!.status).toBe('ACTIVE');
@@ -355,8 +373,9 @@ describe('restoreCustomer', () => {
       railwayResources: [dedicatedResource({ status: 'STOPPED' })],
     });
     const railway: RailwayClient = { request: vi.fn() };
+    deps.resolveRailwayClient = async () => railway;
 
-    const result = await restoreCustomer(deps, railway, 'sub_1', { paymentVerified: false });
+    const result = await restoreCustomer(deps, 'sub_1', { paymentVerified: false });
 
     expect(result.outcome).toBe('FAILED');
     expect(railway.request).not.toHaveBeenCalled();
@@ -396,7 +415,9 @@ describe('restoreCustomer', () => {
       }),
     };
 
-    const result = await restoreCustomer(deps, railway, 'sub_1', {
+    deps.resolveRailwayClient = async () => railway;
+
+    const result = await restoreCustomer(deps, 'sub_1', {
       paymentVerified: true,
       performedBy: null,
     });
@@ -415,8 +436,9 @@ describe('restoreCustomer', () => {
       ],
     });
     const railway: RailwayClient = { request: vi.fn() };
+    deps.resolveRailwayClient = async () => railway;
 
-    const result = await restoreCustomer(deps, railway, 'sub_1', { paymentVerified: true });
+    const result = await restoreCustomer(deps, 'sub_1', { paymentVerified: true });
 
     expect(result.outcome).toBe('RESTORED');
     expect(railway.request).not.toHaveBeenCalled();
@@ -429,9 +451,76 @@ describe('restoreCustomer', () => {
       railwayResources: [dedicatedResource()],
     });
     const railway: RailwayClient = { request: vi.fn() };
+    deps.resolveRailwayClient = async () => railway;
 
-    const result = await restoreCustomer(deps, railway, 'sub_1', { paymentVerified: true });
+    const result = await restoreCustomer(deps, 'sub_1', { paymentVerified: true });
 
     expect(result.outcome).toBe('SKIPPED');
+  });
+});
+
+describe('suspendCustomer — multi-account resolution', () => {
+  it('resolves a different Railway client per resource, keyed by each resource\'s own hostingAccountId', async () => {
+    const deps = makeFakeDeps({
+      customers: [baseCustomer()],
+      subscriptions: [baseSubscription()],
+      railwayResources: [
+        dedicatedResource({ id: 'res_a', serviceId: 'svc_a', deploymentId: 'dep_a', hostingAccountId: 'hacct_a' }),
+        dedicatedResource({ id: 'res_b', serviceId: 'svc_b', deploymentId: 'dep_b', hostingAccountId: 'hacct_b' }),
+      ],
+    });
+
+    const requestedAccountIds: Array<string | null> = [];
+    const railwayA: RailwayClient = {
+      request: vi.fn(async (query: string): Promise<any> => {
+        if (query.includes('mutation StopDeployment')) return { deploymentStop: true };
+        return { deployment: { id: 'dep_a', status: 'REMOVED', serviceId: 'svc_a', environmentId: 'env_1', createdAt: new Date().toISOString() } };
+      }),
+    };
+    const railwayB: RailwayClient = {
+      request: vi.fn(async (query: string): Promise<any> => {
+        if (query.includes('mutation StopDeployment')) return { deploymentStop: true };
+        return { deployment: { id: 'dep_b', status: 'REMOVED', serviceId: 'svc_b', environmentId: 'env_1', createdAt: new Date().toISOString() } };
+      }),
+    };
+
+    deps.resolveRailwayClient = async (hostingAccountId) => {
+      requestedAccountIds.push(hostingAccountId);
+      if (hostingAccountId === 'hacct_a') return railwayA;
+      if (hostingAccountId === 'hacct_b') return railwayB;
+      throw new Error(`unexpected hostingAccountId: ${hostingAccountId}`);
+    };
+
+    const result = await suspendCustomer(deps, 'sub_1', 'NON_PAYMENT');
+
+    expect(result.outcome).toBe('SUSPENDED');
+    expect(requestedAccountIds.sort()).toEqual(['hacct_a', 'hacct_b']);
+    expect(railwayA.request).toHaveBeenCalled();
+    expect(railwayB.request).toHaveBeenCalled();
+  });
+
+  it('fails loudly (never silently falls back) when a resource has no hostingAccountId on record', async () => {
+    const deps = makeFakeDeps({
+      customers: [baseCustomer()],
+      subscriptions: [baseSubscription()],
+      railwayResources: [dedicatedResource({ hostingAccountId: null })],
+    });
+    // Deliberately left un-configured — a resource that predates
+    // multi-account support must fail with a clear message, never
+    // silently reach some default client.
+    const { HostingAccountResolutionError } = await import('@/lib/hosting/account-client');
+    deps.resolveRailwayClient = async (hostingAccountId) => {
+      if (!hostingAccountId) {
+        throw new HostingAccountResolutionError(
+          'This resource has no connected hosting account on record — it predates multi-account support and needs to be backfilled or re-mapped.'
+        );
+      }
+      throw new Error('unreachable');
+    };
+
+    const result = await suspendCustomer(deps, 'sub_1', 'NON_PAYMENT');
+
+    expect(result.outcome).toBe('FAILED');
+    expect(result.resourceResults[0].detail).toContain('predates multi-account support');
   });
 });
