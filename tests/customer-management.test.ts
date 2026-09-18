@@ -247,7 +247,7 @@ describe('createCustomer', () => {
     expect(result.outcome).toBe('INVALID_INPUT');
   });
 
-  it('accepts a valid websiteType', async () => {
+  it('accepts a valid websiteType, including free-text custom values', async () => {
     const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [] });
 
     const result = await createCustomer(deps, 'super_1', {
@@ -255,14 +255,29 @@ describe('createCustomer', () => {
       email: 'bank@example.com',
       notificationEmail: 'notify@bank.example.com',
       domainName: 'bank.example.com',
-      websiteType: 'ONLINE_BANKING',
+      websiteType: 'Online banking platform',
     });
 
     expect(result.outcome).toBe('CREATED');
-    expect(result.customer?.websiteType).toBe('ONLINE_BANKING');
+    expect(result.customer?.websiteType).toBe('Online banking platform');
   });
 
-  it('rejects an invalid websiteType rather than passing it through to the DB', async () => {
+  it('trims whitespace off websiteType before storing it', async () => {
+    const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [] });
+
+    const result = await createCustomer(deps, 'super_1', {
+      name: 'Trimmed Co',
+      email: 'trimmed@example.com',
+      notificationEmail: 'notify@trimmed.example.com',
+      domainName: 'trimmed.example.com',
+      websiteType: '  Solar  ',
+    });
+
+    expect(result.outcome).toBe('CREATED');
+    expect(result.customer?.websiteType).toBe('Solar');
+  });
+
+  it('rejects a blank websiteType rather than passing it through to the DB', async () => {
     const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [] });
 
     const result = await createCustomer(deps, 'super_1', {
@@ -270,8 +285,21 @@ describe('createCustomer', () => {
       email: 'x@example.com',
       notificationEmail: 'notify@example.com',
       domainName: 'x.example.com',
-      // @ts-expect-error deliberately invalid for this test
-      websiteType: 'CRYPTO_CASINO',
+      websiteType: '   ',
+    });
+
+    expect(result.outcome).toBe('INVALID_INPUT');
+  });
+
+  it('rejects a websiteType over the length limit', async () => {
+    const deps = makeFakeAdminManagementDeps({ admins: [superAdmin()], customers: [] });
+
+    const result = await createCustomer(deps, 'super_1', {
+      name: 'X',
+      email: 'x2@example.com',
+      notificationEmail: 'notify2@example.com',
+      domainName: 'x2.example.com',
+      websiteType: 'a'.repeat(101),
     });
 
     expect(result.outcome).toBe('INVALID_INPUT');

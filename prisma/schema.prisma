@@ -22,22 +22,6 @@ enum CustomerStatus {
   TERMINATED
 }
 
-// What kind of website/product this customer runs — captured at
-// onboarding specifically so the super admin knows what they're
-// configuring Railway infrastructure for later (a banking site and a
-// delivery app have very different hosting-mode/suspension-strategy
-// needs). OTHER covers anything that doesn't fit the presets.
-enum WebsiteType {
-  ONLINE_BANKING
-  INVESTMENT
-  ECOMMERCE
-  DELIVERY
-  SAAS
-  WEB_APP
-  CORPORATE
-  OTHER
-}
-
 enum SubscriptionStatus {
   TRIAL
   ACTIVE
@@ -151,7 +135,14 @@ model Customer {
   dateOfBirth         DateTime?           // used by the daily birthday-message cron — only month/day matter, year is stored but not checked
   serviceStartDate     DateTime?           // manual contract/service dates — independent of subscription billing periods
   serviceEndDate       DateTime?
-  websiteType          WebsiteType?        // what kind of site/product this is — informs Railway hosting-mode/suspension-strategy choices
+  // What kind of service this customer runs — captured at onboarding so
+  // the super admin knows what they're configuring hosting infrastructure
+  // for later. Free text rather than an enum: the curated list of service
+  // categories (Website, Application, Social media management, Support,
+  // Smart home, Solar) is offered in the UI as quick picks, but the column
+  // itself stores whatever string was chosen or typed (including a custom
+  // "Other" value), so the category list can grow without a schema change.
+  websiteType          String?
   status              CustomerStatus      @default(ACTIVE)
   automaticSuspension Boolean             @default(true)
   automaticSuspensionOffReason String?

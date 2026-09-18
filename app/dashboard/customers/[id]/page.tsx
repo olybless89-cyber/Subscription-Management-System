@@ -36,17 +36,23 @@ interface Subscription {
   status: string;
 }
 
+// Curated service categories. The select's value IS the string that
+// gets stored (websiteType is free text on the backend) — 'OTHER' is a
+// UI-only sentinel that reveals a text box instead of being sent as-is.
 const WEBSITE_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: '', label: 'Not specified' },
-  { value: 'ONLINE_BANKING', label: 'Online banking' },
-  { value: 'INVESTMENT', label: 'Investment / business investment' },
-  { value: 'ECOMMERCE', label: 'E-commerce' },
-  { value: 'DELIVERY', label: 'Delivery' },
-  { value: 'SAAS', label: 'SaaS product' },
-  { value: 'WEB_APP', label: 'Web app' },
-  { value: 'CORPORATE', label: 'Corporate / brochure site' },
+  { value: 'Website', label: 'Website' },
+  { value: 'Application', label: 'Application' },
+  { value: 'Social media management', label: 'Social media management' },
+  { value: 'Support', label: 'Support' },
+  { value: 'Smart home', label: 'Smart home' },
+  { value: 'Solar', label: 'Solar' },
   { value: 'OTHER', label: 'Other' },
 ];
+
+const WEBSITE_TYPE_PRESET_VALUES = new Set(
+  WEBSITE_TYPE_OPTIONS.map((o) => o.value).filter((v) => v !== '' && v !== 'OTHER')
+);
 
 function toDateInputValue(iso: string | null): string {
   return iso ? iso.slice(0, 10) : '';
@@ -69,6 +75,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [serviceStartDate, setServiceStartDate] = useState('');
   const [serviceEndDate, setServiceEndDate] = useState('');
   const [websiteType, setWebsiteType] = useState('');
+  const [websiteTypeOther, setWebsiteTypeOther] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
@@ -114,7 +121,20 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       setDateOfBirth(toDateInputValue(custData.customer.dateOfBirth));
       setServiceStartDate(toDateInputValue(custData.customer.serviceStartDate));
       setServiceEndDate(toDateInputValue(custData.customer.serviceEndDate));
-      setWebsiteType(custData.customer.websiteType ?? '');
+      const loadedWebsiteType = custData.customer.websiteType;
+      if (!loadedWebsiteType) {
+        setWebsiteType('');
+        setWebsiteTypeOther('');
+      } else if (WEBSITE_TYPE_PRESET_VALUES.has(loadedWebsiteType)) {
+        setWebsiteType(loadedWebsiteType);
+        setWebsiteTypeOther('');
+      } else {
+        // Doesn't match a current preset — either a custom "Other" value
+        // or one of the old (pre-rename) constant-style values. Either
+        // way, show it in the free-text box rather than losing it.
+        setWebsiteType('OTHER');
+        setWebsiteTypeOther(loadedWebsiteType);
+      }
       setDomains(domainData.domains);
       setSubscriptions(subData.subscriptions.filter((s) => s.customerId === params.id));
     } catch (err) {
@@ -131,6 +151,10 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     if (!session) return;
     setSaveError(null);
     setSaveNotice(null);
+    if (websiteType === 'OTHER' && !websiteTypeOther.trim()) {
+      setSaveError('Please specify the website type for "Other"');
+      return;
+    }
     setSaving(true);
     try {
       await authFetch(session.token, `/api/admin/customers/${params.id}`, {
@@ -142,7 +166,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
           dateOfBirth: dateOfBirth || null,
           serviceStartDate: serviceStartDate || null,
           serviceEndDate: serviceEndDate || null,
-          websiteType: websiteType || null,
+          websiteType: websiteType === 'OTHER' ? websiteTypeOther.trim() : websiteType || null,
         }),
       });
       setSaveNotice('Saved');
@@ -463,6 +487,15 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
+              {websiteType === 'OTHER' && (
+                <input
+                  id="edit-website-type-other"
+                  style={{ marginTop: '0.5em' }}
+                  placeholder="Specify the product/service"
+                  value={websiteTypeOther}
+                  onChange={(e) => setWebsiteTypeOther(e.target.value)}
+                />
+              )}
             </div>
             <div className="field">
               <label htmlFor="edit-dob">Birthday</label>

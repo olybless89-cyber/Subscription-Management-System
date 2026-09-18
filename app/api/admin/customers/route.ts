@@ -43,7 +43,7 @@ export async function POST(request: Request): Promise<Response> {
     dateOfBirth?: string;
     serviceStartDate?: string;
     serviceEndDate?: string;
-    websiteType?: 'ONLINE_BANKING' | 'INVESTMENT' | 'ECOMMERCE' | 'DELIVERY' | 'SAAS' | 'WEB_APP' | 'CORPORATE' | 'OTHER';
+    websiteType?: string;
     domainName?: string;
     paymentProvider?: 'PAYSTACK' | 'FLUTTERWAVE';
     automaticSuspension?: boolean;
@@ -66,7 +66,7 @@ export async function POST(request: Request): Promise<Response> {
     dateOfBirth: body.dateOfBirth ?? null,
     serviceStartDate: body.serviceStartDate ?? null,
     serviceEndDate: body.serviceEndDate ?? null,
-    websiteType: body.websiteType ?? null,
+    websiteType: body.websiteType?.trim() || null,
     domainName: body.domainName ?? null,
     paymentProvider: body.paymentProvider,
     automaticSuspension: body.automaticSuspension,

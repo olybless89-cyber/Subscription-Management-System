@@ -13,7 +13,7 @@ export async function POST(request: Request): Promise<Response> {
     password?: string;
     phone?: string;
     dateOfBirth?: string;
-    websiteType?: 'ONLINE_BANKING' | 'INVESTMENT' | 'ECOMMERCE' | 'DELIVERY' | 'SAAS' | 'WEB_APP' | 'CORPORATE' | 'OTHER';
+    websiteType?: string;
     domainName?: string;
   };
   try {
@@ -32,7 +32,7 @@ export async function POST(request: Request): Promise<Response> {
     password: body.password,
     phone: body.phone ?? null,
     dateOfBirth: body.dateOfBirth ?? null,
-    websiteType: body.websiteType ?? null,
+    websiteType: body.websiteType?.trim() || null,
     domainName: body.domainName,
   });
 

@@ -2,15 +2,17 @@
 
 import { useState } from 'react';
 
+// Curated service categories. The select's value IS the string that
+// gets stored (websiteType is free text on the backend) — 'OTHER' is a
+// UI-only sentinel that reveals a text box instead of being sent as-is.
 const WEBSITE_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: '', label: 'Not sure yet' },
-  { value: 'ONLINE_BANKING', label: 'Online banking' },
-  { value: 'INVESTMENT', label: 'Investment / business investment' },
-  { value: 'ECOMMERCE', label: 'E-commerce' },
-  { value: 'DELIVERY', label: 'Delivery' },
-  { value: 'SAAS', label: 'SaaS product' },
-  { value: 'WEB_APP', label: 'Web app' },
-  { value: 'CORPORATE', label: 'Corporate / brochure site' },
+  { value: 'Website', label: 'Website' },
+  { value: 'Application', label: 'Application' },
+  { value: 'Social media management', label: 'Social media management' },
+  { value: 'Support', label: 'Support' },
+  { value: 'Smart home', label: 'Smart home' },
+  { value: 'Solar', label: 'Solar' },
   { value: 'OTHER', label: 'Other' },
 ];
 
@@ -21,6 +23,7 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [phone, setPhone] = useState('');
   const [websiteType, setWebsiteType] = useState('');
+  const [websiteTypeOther, setWebsiteTypeOther] = useState('');
   const [domainName, setDomainName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +42,10 @@ export default function RegisterPage() {
       setError('Password must be at least 12 characters');
       return;
     }
+    if (websiteType === 'OTHER' && !websiteTypeOther.trim()) {
+      setError('Please tell us what the product/service is');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -50,7 +57,7 @@ export default function RegisterPage() {
           email,
           password,
           phone: phone || undefined,
-          websiteType: websiteType || undefined,
+          websiteType: websiteType === 'OTHER' ? websiteTypeOther.trim() : websiteType || undefined,
           domainName,
         }),
       });
@@ -149,6 +156,16 @@ export default function RegisterPage() {
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
                 </select>
+                {websiteType === 'OTHER' && (
+                  <input
+                    id="reg-website-type-other"
+                    style={{ marginTop: '0.5em' }}
+                    placeholder="Tell us what it is"
+                    required
+                    value={websiteTypeOther}
+                    onChange={(e) => setWebsiteTypeOther(e.target.value)}
+                  />
+                )}
               </div>
               <div className="field">
                 <label htmlFor="reg-domain">Domain name</label>

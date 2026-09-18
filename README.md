@@ -625,11 +625,21 @@ Two fields captured at customer creation, specifically so the super
 admin has what they need on hand when allocating Railway resources
 afterward:
 
-- **`websiteType`** — `ONLINE_BANKING`, `INVESTMENT`, `ECOMMERCE`,
-  `DELIVERY`, `SAAS`, `WEB_APP`, `CORPORATE`, or `OTHER`. Purely
-  informational (nothing in the suspension/hosting logic branches on it
-  today), but it tells the super admin what kind of infrastructure
-  they're about to configure before they even open Railway.
+- **`websiteType`** — free text (a plain nullable string column, not an
+  enum). The register page and admin customer forms offer curated
+  quick-picks — Website, Application, Social media management, Support,
+  Smart home, Solar — plus an "Other" option that reveals a text box for
+  a specific product/service name; whatever's chosen or typed is stored
+  as-is. Purely informational (nothing in the suspension/hosting logic
+  branches on it today), but it tells the super admin what kind of
+  service they're about to configure before they even open a hosting
+  provider. Existing customers created before this field became free
+  text may still hold one of the old constant-style values
+  (`ONLINE_BANKING`, `INVESTMENT`, `ECOMMERCE`, `DELIVERY`, `SAAS`,
+  `WEB_APP`, `CORPORATE`, `OTHER`) — the admin customer list/edit pages
+  recognize and display those with friendly labels for backward
+  compatibility, and editing one of those customers shows the raw value
+  in the "Other" text box so it can be updated to the new wording.
 - **`domainName`** — optional at creation. If provided, `createCustomer`
   composes a second step internally: it attaches the domain (via the
   same global-uniqueness-checked path as the standalone Domains page)

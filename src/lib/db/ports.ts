@@ -14,7 +14,6 @@ import {
   PaymentProviderName,
   DomainRecord,
   AuditLogRecord,
-  WebsiteType,
   InvoiceRecord,
   InvoiceType,
   InvoiceStatus,
@@ -141,7 +140,7 @@ export interface CustomerRepository {
     dateOfBirth?: string | null;
     serviceStartDate?: string | null;
     serviceEndDate?: string | null;
-    websiteType?: WebsiteType | null;
+    websiteType?: string | null;
     paymentProvider: PaymentProviderName;
     automaticSuspension: boolean;
   }): Promise<CustomerRecord>;
@@ -158,7 +157,7 @@ export interface CustomerRepository {
       dateOfBirth?: string | null;
       serviceStartDate?: string | null;
       serviceEndDate?: string | null;
-      websiteType?: WebsiteType | null;
+      websiteType?: string | null;
       paymentProvider?: PaymentProviderName;
       automaticSuspension?: boolean;
     }

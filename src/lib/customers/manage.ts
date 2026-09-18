@@ -1,23 +1,22 @@
 import { AdminManagementDeps, RegisterCustomerDeps } from '../db/ports';
-import { CustomerRecord, PaymentProviderName, WebsiteType } from '@/types/domain';
+import { CustomerRecord, PaymentProviderName } from '@/types/domain';
 import { hashPassword } from '../auth/password';
 import { notifyAdminsForCustomer } from '../notifications/admin-notify';
 
-const VALID_WEBSITE_TYPES: readonly WebsiteType[] = [
-  'ONLINE_BANKING',
-  'INVESTMENT',
-  'ECOMMERCE',
-  'DELIVERY',
-  'SAAS',
-  'WEB_APP',
-  'CORPORATE',
-  'OTHER',
-];
+const MAX_WEBSITE_TYPE_LENGTH = 100;
 
-function validateWebsiteType(value: WebsiteType | null | undefined): string | null {
+// websiteType is free text (see domain.ts's WEBSITE_TYPE_PRESETS for the
+// curated quick-picks offered in the UI) — this just guards against an
+// empty string sneaking in as "set but blank" and against unbounded
+// input, it doesn't restrict to a fixed list.
+function validateWebsiteType(value: string | null | undefined): string | null {
   if (value === undefined || value === null) return null;
-  if (!VALID_WEBSITE_TYPES.includes(value)) {
-    return `websiteType must be one of: ${VALID_WEBSITE_TYPES.join(', ')}`;
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return 'websiteType cannot be blank — omit it or pass null instead';
+  }
+  if (trimmed.length > MAX_WEBSITE_TYPE_LENGTH) {
+    return `websiteType must be ${MAX_WEBSITE_TYPE_LENGTH} characters or fewer`;
   }
   return null;
 }
@@ -30,7 +29,7 @@ export interface CreateCustomerInput {
   dateOfBirth?: string | null;
   serviceStartDate?: string | null;
   serviceEndDate?: string | null;
-  websiteType?: WebsiteType | null;
+  websiteType?: string | null;
   /** Captured at onboarding, per an explicit request — the domain the
    * super admin will later use to configure this customer on Railway.
    * Composed here as a best-effort second step after the customer is
@@ -123,7 +122,8 @@ export async function createCustomer(
     return { outcome: 'INVALID_INPUT', message: 'domainName is required' };
   }
 
-  const websiteTypeError = validateWebsiteType(input.websiteType);
+  const websiteType = input.websiteType == null ? null : input.websiteType.trim();
+  const websiteTypeError = validateWebsiteType(websiteType);
   if (websiteTypeError) return { outcome: 'INVALID_INPUT', message: websiteTypeError };
 
   for (const [value, fieldName] of [
@@ -155,7 +155,7 @@ export async function createCustomer(
     dateOfBirth: input.dateOfBirth || null,
     serviceStartDate: input.serviceStartDate || null,
     serviceEndDate: input.serviceEndDate || null,
-    websiteType: input.websiteType ?? null,
+    websiteType,
     paymentProvider: input.paymentProvider ?? 'PAYSTACK',
     automaticSuspension: input.automaticSuspension ?? true,
   });
@@ -204,7 +204,7 @@ export interface UpdateCustomerInput {
   dateOfBirth?: string | null;
   serviceStartDate?: string | null;
   serviceEndDate?: string | null;
-  websiteType?: WebsiteType | null;
+  websiteType?: string | null;
   paymentProvider?: PaymentProviderName;
   automaticSuspension?: boolean;
 }
@@ -250,6 +250,9 @@ export async function updateCustomer(
     return { outcome: 'INVALID_INPUT', message: 'notificationEmail is not a valid email' };
   }
 
+  if (typeof patch.websiteType === 'string') {
+    patch.websiteType = patch.websiteType.trim();
+  }
   const websiteTypeError = validateWebsiteType(patch.websiteType);
   if (websiteTypeError) return { outcome: 'INVALID_INPUT', message: websiteTypeError };
 
@@ -283,7 +286,7 @@ export interface RegisterCustomerInput {
   password: string;
   phone?: string | null;
   dateOfBirth?: string | null;
-  websiteType?: WebsiteType | null;
+  websiteType?: string | null;
   domainName: string;
   paymentProvider?: PaymentProviderName;
 }
@@ -347,7 +350,8 @@ export async function registerCustomer(
     return { outcome: 'INVALID_INPUT', message: 'domainName is required' };
   }
 
-  const websiteTypeError = validateWebsiteType(input.websiteType);
+  const websiteType = input.websiteType == null ? null : input.websiteType.trim();
+  const websiteTypeError = validateWebsiteType(websiteType);
   if (websiteTypeError) return { outcome: 'INVALID_INPUT', message: websiteTypeError };
 
   const dobError = validateOptionalDate(input.dateOfBirth, 'dateOfBirth');
@@ -369,7 +373,7 @@ export async function registerCustomer(
     dateOfBirth: input.dateOfBirth || null,
     serviceStartDate: today,
     serviceEndDate: null,
-    websiteType: input.websiteType ?? null,
+    websiteType,
     paymentProvider: input.paymentProvider ?? 'PAYSTACK',
     automaticSuspension: true,
   });

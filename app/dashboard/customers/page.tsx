@@ -15,20 +15,36 @@ interface Customer {
   paymentProvider: 'PAYSTACK' | 'FLUTTERWAVE';
 }
 
+// Curated service categories. The select's value IS the string that
+// gets stored (websiteType is free text on the backend) — 'OTHER' is a
+// UI-only sentinel that reveals a text box instead of being sent as-is.
 const WEBSITE_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: '', label: 'Not specified' },
-  { value: 'ONLINE_BANKING', label: 'Online banking' },
-  { value: 'INVESTMENT', label: 'Investment / business investment' },
-  { value: 'ECOMMERCE', label: 'E-commerce' },
-  { value: 'DELIVERY', label: 'Delivery' },
-  { value: 'SAAS', label: 'SaaS product' },
-  { value: 'WEB_APP', label: 'Web app' },
-  { value: 'CORPORATE', label: 'Corporate / brochure site' },
+  { value: 'Website', label: 'Website' },
+  { value: 'Application', label: 'Application' },
+  { value: 'Social media management', label: 'Social media management' },
+  { value: 'Support', label: 'Support' },
+  { value: 'Smart home', label: 'Smart home' },
+  { value: 'Solar', label: 'Solar' },
   { value: 'OTHER', label: 'Other' },
 ];
 
+// Display-only fallback for customers created before websiteType became
+// free text — old rows may still hold one of these constant-style values.
+const LEGACY_WEBSITE_TYPE_LABELS: Record<string, string> = {
+  ONLINE_BANKING: 'Online banking',
+  INVESTMENT: 'Investment / business investment',
+  ECOMMERCE: 'E-commerce',
+  DELIVERY: 'Delivery',
+  SAAS: 'SaaS product',
+  WEB_APP: 'Web app',
+  CORPORATE: 'Corporate / brochure site',
+  OTHER: 'Other',
+};
+
 function websiteTypeLabel(value: string | null): string {
-  return WEBSITE_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? '—';
+  if (!value) return '—';
+  return LEGACY_WEBSITE_TYPE_LABELS[value] ?? value;
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -51,6 +67,7 @@ export default function CustomersPage() {
   const [serviceStartDate, setServiceStartDate] = useState('');
   const [serviceEndDate, setServiceEndDate] = useState('');
   const [websiteType, setWebsiteType] = useState('');
+  const [websiteTypeOther, setWebsiteTypeOther] = useState('');
   const [domainName, setDomainName] = useState('');
   const [paymentProvider, setPaymentProvider] = useState<'PAYSTACK' | 'FLUTTERWAVE'>('PAYSTACK');
   const [submitting, setSubmitting] = useState(false);
@@ -76,6 +93,10 @@ export default function CustomersPage() {
     if (!session) return;
     setFormError(null);
     setFormNotice(null);
+    if (websiteType === 'OTHER' && !websiteTypeOther.trim()) {
+      setFormError('Please specify the website type for "Other"');
+      return;
+    }
     setSubmitting(true);
     try {
       const result = await authFetch<{
@@ -93,7 +114,7 @@ export default function CustomersPage() {
           dateOfBirth: dateOfBirth || undefined,
           serviceStartDate: serviceStartDate || undefined,
           serviceEndDate: serviceEndDate || undefined,
-          websiteType: websiteType || undefined,
+          websiteType: websiteType === 'OTHER' ? websiteTypeOther.trim() : websiteType || undefined,
           domainName: domainName || undefined,
           paymentProvider,
         }),
@@ -108,6 +129,7 @@ export default function CustomersPage() {
       setServiceStartDate('');
       setServiceEndDate('');
       setWebsiteType('');
+      setWebsiteTypeOther('');
       setDomainName('');
       setPaymentProvider('PAYSTACK');
       await load();
@@ -200,6 +222,15 @@ export default function CustomersPage() {
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
+              {websiteType === 'OTHER' && (
+                <input
+                  id="website-type-other"
+                  style={{ marginTop: '0.5em' }}
+                  placeholder="Specify the product/service"
+                  value={websiteTypeOther}
+                  onChange={(e) => setWebsiteTypeOther(e.target.value)}
+                />
+              )}
             </div>
             <div className="field">
               <label htmlFor="domain-name">Domain name</label>

@@ -46,7 +46,7 @@ export async function PATCH(
     dateOfBirth?: string | null;
     serviceStartDate?: string | null;
     serviceEndDate?: string | null;
-    websiteType?: 'ONLINE_BANKING' | 'INVESTMENT' | 'ECOMMERCE' | 'DELIVERY' | 'SAAS' | 'WEB_APP' | 'CORPORATE' | 'OTHER' | null;
+    websiteType?: string | null;
     paymentProvider?: 'PAYSTACK' | 'FLUTTERWAVE';
     automaticSuspension?: boolean;
     status?: unknown;

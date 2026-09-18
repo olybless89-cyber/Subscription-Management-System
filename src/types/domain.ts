@@ -35,15 +35,20 @@ export type AdminRole = 'SUPER_ADMIN' | 'ADMIN';
 
 export type PaymentProviderName = 'PAYSTACK' | 'FLUTTERWAVE';
 
-export type WebsiteType =
-  | 'ONLINE_BANKING'
-  | 'INVESTMENT'
-  | 'ECOMMERCE'
-  | 'DELIVERY'
-  | 'SAAS'
-  | 'WEB_APP'
-  | 'CORPORATE'
-  | 'OTHER';
+// Curated quick-pick service categories offered in the UI (register
+// page, admin create/edit forms). The stored value is free text, not
+// restricted to this list — selecting "Other" lets the customer/admin
+// type a specific product or service name instead.
+export const WEBSITE_TYPE_PRESETS = [
+  'Website',
+  'Application',
+  'Social media management',
+  'Support',
+  'Smart home',
+  'Solar',
+] as const;
+
+export type WebsiteTypePreset = (typeof WEBSITE_TYPE_PRESETS)[number];
 
 export interface CustomerRecord {
   id: string;
@@ -55,7 +60,7 @@ export interface CustomerRecord {
   dateOfBirth: string | null;
   serviceStartDate: string | null;
   serviceEndDate: string | null;
-  websiteType: WebsiteType | null;
+  websiteType: string | null;
   passwordHash: string | null;
   status: CustomerStatus;
   automaticSuspension: boolean;
