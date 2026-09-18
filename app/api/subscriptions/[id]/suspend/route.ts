@@ -53,7 +53,14 @@ export async function POST(
     result: result.outcome === 'SUSPENDED' ? 'SUCCESS' : 'FAILED',
   });
 
-  const httpStatus = result.outcome === 'SUSPENDED' ? 200 : result.outcome === 'SKIPPED' ? 200 : 500;
+  // DRY_RUN is an intentional no-op (the engine logged what it *would*
+  // have done and stopped there) — it is not a failure, so it must not
+  // map to a 500. Before this fix, any subscription with dry-run active
+  // (global SUSPENSION_DRY_RUN env, or this subscription's own
+  // dryRunOverride) made a manual admin Suspend click always come back
+  // as an opaque "Request failed (500)" even though nothing was wrong.
+  const isSuccessLike = result.outcome === 'SUSPENDED' || result.outcome === 'SKIPPED' || result.outcome === 'DRY_RUN';
+  const httpStatus = isSuccessLike ? 200 : 500;
   return json(httpStatus, httpStatus >= 400 ? { ...result, error: buildFailureMessage(result) } : result);
 }
 
