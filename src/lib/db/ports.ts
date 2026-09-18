@@ -170,6 +170,18 @@ export interface CustomerRepository {
    * here (no reset-link flow exists yet — see README); this is the
    * "customer calls/messages support, support resets it" pattern. */
   updatePassword(id: string, passwordHash: string): Promise<void>;
+  /** spec section 44 — the explicit, admin-confirmed permanent-
+   * termination workflow (src/lib/customers/delete.ts#deleteCustomer is
+   * the only caller). Irreversibly removes the customer and everything
+   * that references them: subscriptions, payments, invoices, Railway
+   * resource mappings, suspension events, domains, notifications. Does
+   * NOT touch Railway itself — deleting a RailwayResource row here only
+   * removes this app's own tracking of that mapping, never the actual
+   * Railway service/deployment (same "bookkeeping only" boundary as
+   * domain deletion). Must run as a single atomic transaction: a
+   * customer half-deleted by a mid-way failure is worse than one not
+   * deleted at all. */
+  deleteCascade(id: string): Promise<void>;
 }
 
 export interface AdminRepository {
@@ -234,7 +246,25 @@ export interface DomainRepository {
    * result instead of an unhandled Prisma error. */
   findByDomainName(domainName: string): Promise<DomainRecord | null>;
   listAll(): Promise<DomainRecord[]>;
-  create(input: { customerId: string; domainName: string; isPrimary: boolean }): Promise<DomainRecord>;
+  create(input: {
+    customerId: string;
+    domainName: string;
+    isPrimary: boolean;
+    subscriptionId?: string | null;
+  }): Promise<DomainRecord>;
+  /** Rename, change primary/subscription-link — never customerId
+   * (re-pointing a domain at a different customer belongs to
+   * delete-then-recreate, not an edit, so a mistake can't silently move
+   * billing history's meaning). */
+  update(
+    id: string,
+    patch: { domainName?: string; isPrimary?: boolean; subscriptionId?: string | null }
+  ): Promise<DomainRecord>;
+  /** spec section 43 — domain deletion is deliberately a separate,
+   * explicit action from everything else here (see
+   * src/lib/domains/manage.ts#deleteDomain), never implicit in an
+   * update. Does not touch Railway; this is local bookkeeping only. */
+  delete(id: string): Promise<void>;
 }
 
 export interface RailwayResourceRepository {

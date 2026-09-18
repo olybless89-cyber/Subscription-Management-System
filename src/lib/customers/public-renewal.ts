@@ -62,6 +62,44 @@ export async function buildRenewalInfo(deps: RenewalInfoDeps, customer: Customer
 }
 
 /**
+ * buildRenewalInfoForSubscription — same shape as buildRenewalInfo, but
+ * for a caller that already knows exactly which subscription governs
+ * the thing being looked at (a domain linked via Domain.subscriptionId)
+ * rather than picking among all of a customer's subscriptions. Used by
+ * getSuspendedLandingInfo so a customer with several domains, each on
+ * its own subscription, gets an independently-correct suspended page
+ * per domain instead of one page's status leaking onto another domain.
+ *
+ * Falls back to the customer-wide heuristic (buildRenewalInfo) if the
+ * given subscriptionId turns out not to belong to this customer —
+ * defensive against stale/bad data, never a dead end for the visitor.
+ */
+export async function buildRenewalInfoForSubscription(
+  deps: RenewalInfoDeps,
+  customer: CustomerRecord,
+  subscriptionId: string
+): Promise<RenewalInfo> {
+  const subscription = await deps.subscriptions.findById(subscriptionId);
+  if (!subscription || subscription.customerId !== customer.id) {
+    return buildRenewalInfo(deps, customer);
+  }
+
+  const plan = await deps.plans.findById(subscription.planId);
+
+  return {
+    found: true,
+    customerCode: customer.customerCode,
+    customerName: customer.name,
+    needsPayment: (NEEDS_PAYMENT_STATUSES as readonly string[]).includes(subscription.status),
+    subscriptionId: subscription.id,
+    subscriptionStatus: subscription.status,
+    planName: plan?.name,
+    amount: plan?.amount,
+    currency: plan?.currency,
+  };
+}
+
+/**
  * getRenewalInfo — backs the public, unauthenticated renewal page
  * (`/renew/[customerCode]`). Returns only what's needed to render that
  * page — no email, no internal ids beyond the one subscriptionId

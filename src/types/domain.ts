@@ -135,6 +135,7 @@ export interface CampaignRecipientRecord {
 export interface DomainRecord {
   id: string;
   customerId: string;
+  subscriptionId: string | null;
   domainName: string;
   isPrimary: boolean;
   railwayStatus: string | null;
@@ -154,6 +155,7 @@ export interface AdminNotificationRecord {
 export interface DomainRecord {
   id: string;
   customerId: string;
+  subscriptionId: string | null;
   domainName: string;
   isPrimary: boolean;
   railwayStatus: string | null;

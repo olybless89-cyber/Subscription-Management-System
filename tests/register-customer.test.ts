@@ -100,7 +100,7 @@ describe('registerCustomer', () => {
     const deps = makeFakeRegisterCustomerDeps({
       admins: [superAdmin()],
       customers: [],
-      domains: [{ id: 'dom_1', customerId: 'some_other_customer', domainName: 'taken.com', isPrimary: true, railwayStatus: null, createdAt: '2026-01-01T00:00:00.000Z' }],
+      domains: [{ id: 'dom_1', customerId: 'some_other_customer', domainName: 'taken.com', isPrimary: true, subscriptionId: null, railwayStatus: null, createdAt: '2026-01-01T00:00:00.000Z' }],
     });
 
     const result = await registerCustomer(deps, {

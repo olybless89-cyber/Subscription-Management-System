@@ -202,6 +202,7 @@ model Subscription {
   railwayResources     RailwayResource[]
   suspensionEvents     SuspensionEvent[]
   invoices             Invoice[]
+  domains              Domain[]
 
   @@index([status])
   @@index([nextBillingDate])
@@ -225,14 +226,29 @@ model Payment {
 }
 
 model Domain {
-  id            String    @id @default(cuid())
-  customerId    String
-  customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  domainName    String    @unique
-  isPrimary     Boolean   @default(true)
-  railwayStatus String? // synced status string from Railway domain query
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id             String        @id @default(cuid())
+  customerId     String
+  customer       Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  // Which subscription actually governs this specific domain/service —
+  // nullable because a domain can be attached before its subscription
+  // exists, or left as customer-level reference info only. When set,
+  // this is what lets a customer with several domains have each one
+  // suspended/restored independently: the admin suspends/restores THIS
+  // subscription (existing engine, unchanged), and the /suspended
+  // landing page + this admin UI both key off this link rather than
+  // guessing from the customer's subscriptions generally. onDelete:
+  // SetNull (not Restrict) — deleting the subscription unlinks the
+  // domain rather than blocking it, since the domain itself is still
+  // real-world reference info worth keeping.
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  domainName     String        @unique
+  isPrimary      Boolean       @default(true)
+  railwayStatus  String? // synced status string from Railway domain query
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([subscriptionId])
 }
 
 model RailwayResource {

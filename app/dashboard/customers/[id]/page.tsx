@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '../../../_components/AuthProvider';
 import { authFetch, ApiError } from '../../../_lib/api';
 
@@ -22,9 +23,17 @@ interface Customer {
 
 interface Domain {
   id: string;
+  customerId: string;
   domainName: string;
   isPrimary: boolean;
+  subscriptionId: string | null;
   railwayStatus: string | null;
+}
+
+interface Subscription {
+  id: string;
+  customerId: string;
+  status: string;
 }
 
 const WEBSITE_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
@@ -45,8 +54,12 @@ function toDateInputValue(iso: string | null): string {
 
 export default function CustomerDetailPage({ params }: { params: { id: string } }) {
   const { session } = useAuth();
+  const router = useRouter();
+  const isSuperAdmin = session?.role === 'SUPER_ADMIN';
+
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [domains, setDomains] = useState<Domain[]>([]);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [name, setName] = useState('');
@@ -71,12 +84,28 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetNotice, setResetNotice] = useState<string | null>(null);
 
+  // Domain edit-in-place state — only one row editable at a time.
+  const [editingDomainId, setEditingDomainId] = useState<string | null>(null);
+  const [domainEditName, setDomainEditName] = useState('');
+  const [domainEditPrimary, setDomainEditPrimary] = useState(false);
+  const [domainEditSubscriptionId, setDomainEditSubscriptionId] = useState('');
+  const [domainActionPending, setDomainActionPending] = useState<string | null>(null);
+  const [domainActionError, setDomainActionError] = useState<string | null>(null);
+  const [domainActionNotice, setDomainActionNotice] = useState<string | null>(null);
+  const [confirmDeleteDomainId, setConfirmDeleteDomainId] = useState<string | null>(null);
+
+  // Danger-zone customer deletion — type-to-confirm the customerCode.
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deletingCustomer, setDeletingCustomer] = useState(false);
+  const [deleteCustomerError, setDeleteCustomerError] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     if (!session) return;
     try {
-      const [custData, domainData] = await Promise.all([
+      const [custData, domainData, subData] = await Promise.all([
         authFetch<{ customer: Customer }>(session.token, `/api/admin/customers/${params.id}`),
         authFetch<{ domains: Domain[] }>(session.token, `/api/admin/domains?customerId=${params.id}`),
+        authFetch<{ subscriptions: Subscription[] }>(session.token, `/api/admin/subscriptions`),
       ]);
       setCustomer(custData.customer);
       setName(custData.customer.name);
@@ -87,6 +116,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       setServiceEndDate(toDateInputValue(custData.customer.serviceEndDate));
       setWebsiteType(custData.customer.websiteType ?? '');
       setDomains(domainData.domains);
+      setSubscriptions(subData.subscriptions.filter((s) => s.customerId === params.id));
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : 'Failed to load customer');
     }
@@ -169,8 +199,104 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     }
   }
 
+  function handleStartEditDomain(d: Domain) {
+    setDomainActionError(null);
+    setDomainActionNotice(null);
+    setConfirmDeleteDomainId(null);
+    setEditingDomainId(d.id);
+    setDomainEditName(d.domainName);
+    setDomainEditPrimary(d.isPrimary);
+    setDomainEditSubscriptionId(d.subscriptionId ?? '');
+  }
+
+  function handleCancelEditDomain() {
+    setEditingDomainId(null);
+  }
+
+  async function handleSaveDomain(domainId: string) {
+    if (!session) return;
+    setDomainActionError(null);
+    setDomainActionNotice(null);
+    setDomainActionPending(domainId);
+    try {
+      await authFetch(session.token, `/api/admin/domains/${domainId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          domainName: domainEditName,
+          isPrimary: domainEditPrimary,
+          subscriptionId: domainEditSubscriptionId || null,
+        }),
+      });
+      setEditingDomainId(null);
+      setDomainActionNotice('Domain updated');
+      await load();
+    } catch (err) {
+      setDomainActionError(err instanceof ApiError ? err.message : 'Failed to update domain');
+    } finally {
+      setDomainActionPending(null);
+    }
+  }
+
+  async function handleSuspendRestoreDomain(d: Domain, action: 'suspend' | 'restore') {
+    if (!session || !d.subscriptionId) return;
+    setDomainActionError(null);
+    setDomainActionNotice(null);
+    setDomainActionPending(d.id);
+    try {
+      const result = await authFetch<{ outcome: string }>(
+        session.token,
+        `/api/subscriptions/${d.subscriptionId}/${action}`,
+        { method: 'POST', body: JSON.stringify({}) }
+      );
+      setDomainActionNotice(`${d.domainName}: ${action} outcome ${result.outcome}`);
+      await load();
+    } catch (err) {
+      setDomainActionError(err instanceof ApiError ? err.message : `Failed to ${action}`);
+    } finally {
+      setDomainActionPending(null);
+    }
+  }
+
+  async function handleDeleteDomain(domainId: string) {
+    if (!session) return;
+    if (confirmDeleteDomainId !== domainId) {
+      // First click just arms the confirmation — nothing destructive
+      // happens until the admin clicks "Confirm delete" too.
+      setConfirmDeleteDomainId(domainId);
+      return;
+    }
+    setDomainActionError(null);
+    setDomainActionNotice(null);
+    setDomainActionPending(domainId);
+    try {
+      await authFetch(session.token, `/api/admin/domains/${domainId}`, { method: 'DELETE' });
+      setConfirmDeleteDomainId(null);
+      setDomainActionNotice('Domain permanently removed');
+      await load();
+    } catch (err) {
+      setDomainActionError(err instanceof ApiError ? err.message : 'Failed to delete domain');
+    } finally {
+      setDomainActionPending(null);
+    }
+  }
+
+  async function handleDeleteCustomer() {
+    if (!session || !customer) return;
+    setDeleteCustomerError(null);
+    setDeletingCustomer(true);
+    try {
+      await authFetch(session.token, `/api/admin/customers/${params.id}`, { method: 'DELETE' });
+      router.push('/dashboard/customers');
+    } catch (err) {
+      setDeleteCustomerError(err instanceof ApiError ? err.message : 'Failed to delete customer');
+      setDeletingCustomer(false);
+    }
+  }
+
   if (loadError) return <p className="error-text">{loadError}</p>;
   if (!customer) return <p style={{ color: 'var(--ink-soft)' }}>Loading…</p>;
+
+  const deleteConfirmReady = deleteConfirmText.trim() === customer.customerCode;
 
   return (
     <div>
@@ -181,6 +307,11 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
 
       <div className="card" style={{ marginTop: '1em' }}>
         <h2 style={{ fontSize: '1.05em', fontWeight: 600, marginTop: 0, marginBottom: '0.6em' }}>Domains</h2>
+        <p style={{ fontSize: '0.85em', color: 'var(--ink-soft)', marginTop: '-0.3em', marginBottom: '0.8em' }}>
+          A domain linked to a subscription can be suspended or restored independently of this
+          customer's other domains — the same suspend/restore engine used on the Subscription page,
+          just scoped to whichever subscription that one domain is governed by.
+        </p>
         {domains.length === 0 ? (
           <p style={{ color: 'var(--ink-soft)', fontSize: '0.9em', margin: 0 }}>
             No domain attached yet. Attach one from the{' '}
@@ -194,21 +325,113 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
               <tr>
                 <th>Domain</th>
                 <th>Primary</th>
+                <th>Governing subscription</th>
                 <th>Railway status</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
-              {domains.map((d) => (
-                <tr key={d.id}>
-                  <td className="mono">{d.domainName}</td>
-                  <td>{d.isPrimary ? 'Yes' : ''}</td>
-                  <td className="mono">{d.railwayStatus ?? '—'}</td>
-                </tr>
-              ))}
+              {domains.map((d) => {
+                const linkedSub = subscriptions.find((s) => s.id === d.subscriptionId);
+                const isEditing = editingDomainId === d.id;
+                const isPending = domainActionPending === d.id;
+                return (
+                  <tr key={d.id}>
+                    {isEditing ? (
+                      <>
+                        <td>
+                          <input
+                            value={domainEditName}
+                            onChange={(e) => setDomainEditName(e.target.value)}
+                            style={{ width: '100%' }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={domainEditPrimary}
+                            onChange={(e) => setDomainEditPrimary(e.target.checked)}
+                          />
+                        </td>
+                        <td>
+                          <select
+                            value={domainEditSubscriptionId}
+                            onChange={(e) => setDomainEditSubscriptionId(e.target.value)}
+                            style={{ width: '100%' }}
+                          >
+                            <option value="">Not linked</option>
+                            {subscriptions.map((s) => (
+                              <option key={s.id} value={s.id}>{s.id} ({s.status})</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="mono">{d.railwayStatus ?? '—'}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          <button
+                            className="btn btn-primary"
+                            disabled={isPending}
+                            onClick={() => handleSaveDomain(d.id)}
+                            style={{ marginRight: '0.4em' }}
+                          >
+                            {isPending ? 'Saving…' : 'Save'}
+                          </button>
+                          <button className="btn" onClick={handleCancelEditDomain}>Cancel</button>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="mono">{d.domainName}</td>
+                        <td>{d.isPrimary ? 'Yes' : ''}</td>
+                        <td className="mono" style={{ fontSize: '0.85em' }}>
+                          {linkedSub ? `${linkedSub.id} (${linkedSub.status})` : d.subscriptionId ? d.subscriptionId : '—'}
+                        </td>
+                        <td className="mono">{d.railwayStatus ?? '—'}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          <button className="btn" onClick={() => handleStartEditDomain(d)} style={{ marginRight: '0.4em' }}>
+                            Edit
+                          </button>
+                          {d.subscriptionId && (
+                            <>
+                              <button
+                                className="btn"
+                                disabled={isPending}
+                                onClick={() => handleSuspendRestoreDomain(d, 'suspend')}
+                                style={{ marginRight: '0.4em' }}
+                              >
+                                Suspend
+                              </button>
+                              <button
+                                className="btn"
+                                disabled={isPending}
+                                onClick={() => handleSuspendRestoreDomain(d, 'restore')}
+                                style={{ marginRight: '0.4em' }}
+                              >
+                                Restore
+                              </button>
+                            </>
+                          )}
+                          {isSuperAdmin && (
+                            <button
+                              className="btn"
+                              disabled={isPending}
+                              onClick={() => handleDeleteDomain(d.id)}
+                              style={{ color: 'var(--danger)' }}
+                            >
+                              {confirmDeleteDomainId === d.id ? 'Confirm delete' : 'Delete'}
+                            </button>
+                          )}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           </div>
         )}
+        {domainActionError && <p className="error-text" style={{ marginBottom: 0 }}>{domainActionError}</p>}
+        {domainActionNotice && <p style={{ color: 'var(--forest-bright)', fontSize: '0.9em', marginBottom: 0 }}>{domainActionNotice}</p>}
       </div>
 
       <div className="layout-equal" style={{ marginTop: '1.5em' }}>
@@ -320,6 +543,40 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
           </button>
         </form>
       </div>
+
+      {isSuperAdmin && (
+        <div className="card" style={{ marginTop: '1.5em', maxWidth: 480, borderColor: 'var(--danger)' }}>
+          <h2 style={{ fontSize: '1.05em', fontWeight: 600, marginTop: 0, marginBottom: '0.6em', color: 'var(--danger)' }}>
+            Danger zone
+          </h2>
+          <p style={{ fontSize: '0.85em', color: 'var(--ink-soft)', marginTop: 0 }}>
+            Permanently deletes this customer and everything tied to them — subscriptions,
+            payments, invoices, domains, Railway resource mappings, suspension history. This does
+            NOT delete anything on Railway itself; the actual services/domains there must be
+            cleaned up separately if you no longer need them. This cannot be undone.
+          </p>
+          <div className="field">
+            <label htmlFor="delete-confirm">
+              Type <span className="mono">{customer.customerCode}</span> to confirm
+            </label>
+            <input
+              id="delete-confirm"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder={customer.customerCode}
+            />
+          </div>
+          {deleteCustomerError && <p className="error-text">{deleteCustomerError}</p>}
+          <button
+            className="btn"
+            disabled={!deleteConfirmReady || deletingCustomer}
+            onClick={handleDeleteCustomer}
+            style={{ background: 'var(--danger)', color: 'white', width: '100%', justifyContent: 'center' }}
+          >
+            {deletingCustomer ? 'Deleting…' : 'Permanently delete this customer'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

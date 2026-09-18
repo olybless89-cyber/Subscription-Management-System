@@ -107,6 +107,14 @@ function makeCustomerRepo(seed: CustomerRecord[]) {
       if (!c) throw new Error('not found');
       c.passwordHash = passwordHash;
     },
+    async deleteCascade(id: string) {
+      // Fake scope only owns the customers store itself — sibling
+      // stores (domains, subscriptions, ...) are cascaded by whichever
+      // composed deps-builder has them in scope (see
+      // makeFakeAdminManagementDeps, which wraps this to also purge
+      // domainStore for the deleted customer).
+      byId.delete(id);
+    },
   };
   return { repo, byId };
 }
@@ -333,18 +341,30 @@ function makeDomainRepo(seed: DomainRecord[] = []) {
     async listAll() {
       return [...byId.values()];
     },
-    async create(input: { customerId: string; domainName: string; isPrimary: boolean }) {
+    async create(input: { customerId: string; domainName: string; isPrimary: boolean; subscriptionId?: string | null }) {
       counter += 1;
       const record: DomainRecord = {
         id: `dom_${counter}`,
         customerId: input.customerId,
         domainName: input.domainName,
         isPrimary: input.isPrimary,
+        subscriptionId: input.subscriptionId ?? null,
         railwayStatus: null,
         createdAt: new Date().toISOString(),
       };
       byId.set(record.id, record);
       return record;
+    },
+    async update(id: string, patch: { domainName?: string; isPrimary?: boolean; subscriptionId?: string | null }) {
+      const d = byId.get(id);
+      if (!d) throw new Error('not found');
+      if (patch.domainName !== undefined) d.domainName = patch.domainName;
+      if (patch.isPrimary !== undefined) d.isPrimary = patch.isPrimary;
+      if (patch.subscriptionId !== undefined) d.subscriptionId = patch.subscriptionId;
+      return { ...d };
+    },
+    async delete(id: string) {
+      byId.delete(id);
     },
   };
   return { repo, byId };
@@ -521,9 +541,24 @@ export function makeFakeAdminManagementDeps(seed: {
   const { repo: domainsRepo, byId: domainStore } = makeDomainRepo(seed.domains ?? []);
   const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
 
+  // Widen deleteCascade beyond the plain customers store: this
+  // deps-builder also has domains and assignments in scope, so mirror
+  // what PrismaCustomerRepository.deleteCascade does for the stores a
+  // test using this builder can actually observe.
+  const customersRepoWithCascade = {
+    ...customersRepo,
+    async deleteCascade(id: string) {
+      for (const [domainId, domain] of [...domainStore]) {
+        if (domain.customerId === id) domainStore.delete(domainId);
+      }
+      byAdmin.forEach((customerIds) => customerIds.delete(id));
+      await customersRepo.deleteCascade(id);
+    },
+  };
+
   return {
     admins: adminsRepo,
-    customers: customersRepo,
+    customers: customersRepoWithCascade,
     adminAssignments: assignmentsRepo,
     domains: domainsRepo,
     auditLog: auditLogRepo,

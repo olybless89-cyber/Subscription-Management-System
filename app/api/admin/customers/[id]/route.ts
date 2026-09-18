@@ -6,6 +6,7 @@
 import { buildWebhookDeps, buildAdminManagementDeps } from '../../../../../src/lib/deps-factory';
 import { authenticateFromHeader, hasAdminRole, canAccessCustomer } from '../../../../../src/lib/auth/authorize';
 import { updateCustomer } from '../../../../../src/lib/customers/manage';
+import { deleteCustomer } from '../../../../../src/lib/customers/delete';
 
 export async function GET(
   request: Request,
@@ -97,6 +98,23 @@ export async function PATCH(
     const { passwordHash, ...safe } = result.customer;
     return json(httpStatus, { outcome: result.outcome, message: result.message, customer: safe });
   }
+  return json(httpStatus, result);
+}
+
+export async function DELETE(
+  request: Request,
+  context: { params: { id: string } }
+): Promise<Response> {
+  const auth = authenticateFromHeader(request.headers.get('authorization'));
+  if (!auth.authenticated || !hasAdminRole(auth.session, ['SUPER_ADMIN'])) {
+    return json(403, { error: 'Only the super admin can permanently delete a customer' });
+  }
+
+  const result = await deleteCustomer(buildAdminManagementDeps(), auth.session.sub, context.params.id);
+
+  const httpStatus =
+    result.outcome === 'DELETED' ? 200 : result.outcome === 'FORBIDDEN' ? 403 : 404;
+
   return json(httpStatus, result);
 }
 

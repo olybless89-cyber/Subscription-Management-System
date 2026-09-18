@@ -58,6 +58,7 @@ function domain(overrides: Partial<DomainRecord> = {}): DomainRecord {
     customerId: 'cust_1',
     domainName: 'bellinzoneacredit.com',
     isPrimary: true,
+    subscriptionId: null,
     railwayStatus: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
@@ -146,5 +147,50 @@ describe('getSuspendedLandingInfo', () => {
 
     expect(result.found).toBe(true);
     expect(result.needsPayment).toBe(false);
+  });
+
+  it('uses the domain\'s own linked subscription when the customer has several', async () => {
+    // cust_1 has two domains, each governed by its own subscription —
+    // one paid up, one overdue. Each domain's page must reflect only
+    // its own subscription, never the other one.
+    const deps = makeFakeBillingSetupDeps({
+      admins: [],
+      customers: [customer({ status: 'ACTIVE' })],
+      plans: [plan()],
+      subscriptions: [
+        subscription({ id: 'sub_active', status: 'ACTIVE' }),
+        subscription({ id: 'sub_overdue', status: 'SUSPENDED' }),
+      ],
+      railwayResources: [],
+      domains: [
+        domain({ id: 'dom_active', domainName: 'active-site.com', subscriptionId: 'sub_active' }),
+        domain({ id: 'dom_overdue', domainName: 'overdue-site.com', subscriptionId: 'sub_overdue' }),
+      ],
+    });
+
+    const activeResult = await getSuspendedLandingInfo(deps, 'active-site.com');
+    const overdueResult = await getSuspendedLandingInfo(deps, 'overdue-site.com');
+
+    expect(activeResult.needsPayment).toBe(false);
+    expect(activeResult.subscriptionId).toBe('sub_active');
+    expect(overdueResult.needsPayment).toBe(true);
+    expect(overdueResult.subscriptionId).toBe('sub_overdue');
+  });
+
+  it('falls back to the customer-wide heuristic when a domain has no linked subscription', async () => {
+    const deps = makeFakeBillingSetupDeps({
+      admins: [],
+      customers: [customer()],
+      plans: [plan()],
+      subscriptions: [subscription({ status: 'SUSPENDED' })],
+      railwayResources: [],
+      domains: [domain({ subscriptionId: null })],
+    });
+
+    const result = await getSuspendedLandingInfo(deps, 'bellinzoneacredit.com');
+
+    expect(result.found).toBe(true);
+    expect(result.needsPayment).toBe(true);
+    expect(result.subscriptionId).toBe('sub_1');
   });
 });

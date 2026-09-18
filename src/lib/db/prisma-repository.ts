@@ -276,6 +276,31 @@ export class PrismaCustomerRepository implements CustomerRepository {
     await this.prisma.customer.update({ where: { id }, data: { passwordHash } });
   }
 
+  /** See CustomerRepository.deleteCascade's doc comment for the full
+   * rationale. Deletes in strict dependency order inside one
+   * transaction: every Restrict-constrained child row this customer (or
+   * one of its subscriptions) owns, then the subscriptions, then the
+   * customer itself. AdminCustomerAssignment and CampaignRecipient rows
+   * are schema-level Cascade — Postgres removes those automatically
+   * when the customer row goes, no manual step needed here.
+   * ResourceStatusSnapshot is likewise Cascade off RailwayResource. */
+  async deleteCascade(id: string): Promise<void> {
+    const subscriptions = await this.prisma.subscription.findMany({ where: { customerId: id }, select: { id: true } });
+    const subscriptionIds = subscriptions.map((s: { id: string }) => s.id);
+
+    await this.prisma.$transaction([
+      this.prisma.railwayResource.deleteMany({ where: { subscriptionId: { in: subscriptionIds } } }),
+      this.prisma.payment.deleteMany({ where: { subscriptionId: { in: subscriptionIds } } }),
+      this.prisma.suspensionEvent.deleteMany({ where: { subscriptionId: { in: subscriptionIds } } }),
+      this.prisma.invoice.deleteMany({ where: { customerId: id } }),
+      this.prisma.domain.deleteMany({ where: { customerId: id } }),
+      this.prisma.notification.deleteMany({ where: { customerId: id } }),
+      this.prisma.adminNotification.deleteMany({ where: { customerId: id } }),
+      this.prisma.subscription.deleteMany({ where: { customerId: id } }),
+      this.prisma.customer.delete({ where: { id } }),
+    ]);
+  }
+
   async create(input: {
     name: string;
     email: string;
@@ -935,71 +960,75 @@ export class PrismaAuditLogRepository implements AuditLogRepository {
   }
 }
 
+function mapDomain(d: any): DomainRecord { // eslint-disable-line @typescript-eslint/no-explicit-any
+  return {
+    id: d.id,
+    customerId: d.customerId,
+    subscriptionId: d.subscriptionId,
+    domainName: d.domainName,
+    isPrimary: d.isPrimary,
+    railwayStatus: d.railwayStatus,
+    createdAt: d.createdAt.toISOString(),
+  };
+}
+
 export class PrismaDomainRepository implements DomainRepository {
   constructor(private prisma: PrismaClient) {}
 
   async findById(id: string): Promise<DomainRecord | null> {
     const d = await this.prisma.domain.findUnique({ where: { id } });
-    if (!d) return null;
-    return {
-      id: d.id,
-      customerId: d.customerId,
-      domainName: d.domainName,
-      isPrimary: d.isPrimary,
-      railwayStatus: d.railwayStatus,
-      createdAt: d.createdAt.toISOString(),
-    };
+    return d ? mapDomain(d) : null;
   }
 
   async findByCustomerId(customerId: string): Promise<DomainRecord[]> {
     const rows = await this.prisma.domain.findMany({ where: { customerId } });
-    return rows.map((d: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-      id: d.id,
-      customerId: d.customerId,
-      domainName: d.domainName,
-      isPrimary: d.isPrimary,
-      railwayStatus: d.railwayStatus,
-      createdAt: d.createdAt.toISOString(),
-    }));
+    return rows.map(mapDomain);
   }
 
   async findByDomainName(domainName: string): Promise<DomainRecord | null> {
     const d = await this.prisma.domain.findUnique({ where: { domainName } });
-    if (!d) return null;
-    return {
-      id: d.id,
-      customerId: d.customerId,
-      domainName: d.domainName,
-      isPrimary: d.isPrimary,
-      railwayStatus: d.railwayStatus,
-      createdAt: d.createdAt.toISOString(),
-    };
+    return d ? mapDomain(d) : null;
   }
 
   async listAll(): Promise<DomainRecord[]> {
     const rows = await this.prisma.domain.findMany({ orderBy: { createdAt: 'desc' } });
-    return rows.map((d: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-      id: d.id,
-      customerId: d.customerId,
-      domainName: d.domainName,
-      isPrimary: d.isPrimary,
-      railwayStatus: d.railwayStatus,
-      createdAt: d.createdAt.toISOString(),
-    }));
+    return rows.map(mapDomain);
   }
 
-  async create(input: { customerId: string; domainName: string; isPrimary: boolean }): Promise<DomainRecord> {
+  async create(input: {
+    customerId: string;
+    domainName: string;
+    isPrimary: boolean;
+    subscriptionId?: string | null;
+  }): Promise<DomainRecord> {
     const d = await this.prisma.domain.create({
-      data: { customerId: input.customerId, domainName: input.domainName, isPrimary: input.isPrimary },
+      data: {
+        customerId: input.customerId,
+        domainName: input.domainName,
+        isPrimary: input.isPrimary,
+        subscriptionId: input.subscriptionId ?? null,
+      },
     });
-    return {
-      id: d.id,
-      customerId: d.customerId,
-      domainName: d.domainName,
-      isPrimary: d.isPrimary,
-      railwayStatus: d.railwayStatus,
-      createdAt: d.createdAt.toISOString(),
-    };
+    return mapDomain(d);
+  }
+
+  async update(
+    id: string,
+    patch: { domainName?: string; isPrimary?: boolean; subscriptionId?: string | null }
+  ): Promise<DomainRecord> {
+    const d = await this.prisma.domain.update({
+      where: { id },
+      data: {
+        ...(patch.domainName !== undefined ? { domainName: patch.domainName } : {}),
+        ...(patch.isPrimary !== undefined ? { isPrimary: patch.isPrimary } : {}),
+        ...(patch.subscriptionId !== undefined ? { subscriptionId: patch.subscriptionId } : {}),
+      },
+    });
+    return mapDomain(d);
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.prisma.domain.delete({ where: { id } });
   }
 }
 

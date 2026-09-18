@@ -1,5 +1,5 @@
 import { BillingSetupDeps } from '../db/ports';
-import { buildRenewalInfo, RenewalInfo } from './public-renewal';
+import { buildRenewalInfo, buildRenewalInfoForSubscription, RenewalInfo } from './public-renewal';
 
 /**
  * getSuspendedLandingInfo — backs the public, unauthenticated
@@ -30,6 +30,14 @@ export async function getSuspendedLandingInfo(deps: BillingSetupDeps, hostHeader
   const customer = await deps.customers.findById(domain.customerId);
   if (!customer) {
     return { found: false };
+  }
+
+  // A customer with multiple domains can have each one governed by a
+  // different subscription (see Domain.subscriptionId) — prefer that
+  // specific subscription's status over the customer-wide heuristic so
+  // one domain's payment status never leaks onto a sibling domain.
+  if (domain.subscriptionId) {
+    return buildRenewalInfoForSubscription(deps, customer, domain.subscriptionId);
   }
 
   return buildRenewalInfo(deps, customer);

@@ -38,7 +38,7 @@ export async function POST(request: Request): Promise<Response> {
     return json(403, { error: 'Admin access required' });
   }
 
-  let body: { customerId?: string; domainName?: string; isPrimary?: boolean };
+  let body: { customerId?: string; domainName?: string; isPrimary?: boolean; subscriptionId?: string | null };
   try {
     body = await request.json();
   } catch {
@@ -58,6 +58,7 @@ export async function POST(request: Request): Promise<Response> {
     customerId: body.customerId,
     domainName: body.domainName,
     isPrimary: body.isPrimary,
+    subscriptionId: body.subscriptionId,
   });
 
   const httpStatus =
