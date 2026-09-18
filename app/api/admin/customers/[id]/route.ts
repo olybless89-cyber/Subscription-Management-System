@@ -49,6 +49,7 @@ export async function PATCH(
     websiteType?: string | null;
     paymentProvider?: 'PAYSTACK' | 'FLUTTERWAVE';
     automaticSuspension?: boolean;
+    notes?: string | null;
     status?: unknown;
   };
   try {
@@ -83,6 +84,7 @@ export async function PATCH(
     websiteType: body.websiteType,
     paymentProvider: body.paymentProvider,
     automaticSuspension: body.automaticSuspension,
+    notes: body.notes,
   });
 
   const httpStatus =

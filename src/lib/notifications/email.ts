@@ -152,6 +152,10 @@ export function subjectForEvent(event: string): string {
       return 'Payment received';
     case 'RESTORED':
       return 'Your hosting service has been restored';
+    case 'RENEWAL_REMINDER':
+      return 'Renewal reminder';
+    case 'BIRTHDAY':
+      return 'Happy Birthday!';
     case 'SYSTEM_ERROR':
       return 'System notice';
     default:

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runBirthdayMessages } from '@/lib/customers/birthday';
+import { runBirthdayMessages, sendBirthdayGreetingNow } from '@/lib/customers/birthday';
 import { makeFakeCustomEmailDeps } from './fakes';
 import { AdminRecord, CustomerRecord } from '@/types/domain';
 
@@ -31,6 +31,7 @@ function customer(overrides: Partial<CustomerRecord> = {}): CustomerRecord {
     status: 'ACTIVE',
     automaticSuspension: true,
     paymentProvider: 'PAYSTACK',
+    notes: null,
     ...overrides,
   };
 }
@@ -87,5 +88,53 @@ describe('runBirthdayMessages', () => {
 
     expect(result.checked).toBe(3);
     expect(result.sent).toBe(2);
+  });
+});
+
+describe('sendBirthdayGreetingNow', () => {
+  it('sends a birthday greeting to a specific customer on demand', async () => {
+    const deps = makeFakeCustomEmailDeps({
+      admins: [admin()],
+      customers: [customer({ id: 'cust_1', dateOfBirth: null })], // no dateOfBirth — manual send doesn't require it
+    });
+
+    const result = await sendBirthdayGreetingNow(deps, 'admin_1', 'cust_1');
+
+    expect(result.outcome).toBe('SENT');
+    expect(deps.notificationLog).toHaveLength(1);
+    expect(deps.notificationLog[0]).toMatchObject({ customerId: 'cust_1', event: 'BIRTHDAY' });
+  });
+
+  it('logs an audit entry', async () => {
+    const deps = makeFakeCustomEmailDeps({
+      admins: [admin()],
+      customers: [customer({ id: 'cust_1' })],
+    });
+
+    await sendBirthdayGreetingNow(deps, 'admin_1', 'cust_1');
+
+    expect(deps.auditLogEntries.some((e) => e.action === 'BIRTHDAY_GREETING_SENT_MANUALLY')).toBe(true);
+  });
+
+  it('rejects an unknown requesting admin', async () => {
+    const deps = makeFakeCustomEmailDeps({
+      admins: [],
+      customers: [customer({ id: 'cust_1' })],
+    });
+
+    const result = await sendBirthdayGreetingNow(deps, 'admin_missing', 'cust_1');
+
+    expect(result.outcome).toBe('FORBIDDEN');
+  });
+
+  it('rejects an unknown customer', async () => {
+    const deps = makeFakeCustomEmailDeps({
+      admins: [admin()],
+      customers: [],
+    });
+
+    const result = await sendBirthdayGreetingNow(deps, 'admin_1', 'cust_missing');
+
+    expect(result.outcome).toBe('NOT_FOUND');
   });
 });

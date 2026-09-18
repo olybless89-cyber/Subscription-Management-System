@@ -139,6 +139,7 @@ describe('authenticateCustomer', () => {
       status: 'ACTIVE',
       automaticSuspension: true,
       paymentProvider: 'PAYSTACK',
+      notes: null,
       ...overrides,
     };
   }

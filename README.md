@@ -823,6 +823,101 @@ fields and views that were requested directly:
   at 7am. There's also no "already sent today" tracking — schedule it
   once a day, not the function guarding against being called twice.
 
+## Plain-admin workflow: Reminders & Actions, Reports, CSV import, notes (for the other admins only)
+
+Ported and improved from an existing PHP/MySQL CRM (Digital Web Oracle
+ICT CRM) at the user's request, with one explicit, hard constraint
+honored throughout: **for the other admins only — nothing here touches
+or changes anything in the super admin.** Concretely, that means:
+
+- Every brand-new route below is gated with `hasAdminRole(session,
+  ['ADMIN'])` — **not** `['ADMIN', 'SUPER_ADMIN']` like most existing
+  routes. A SUPER_ADMIN session gets a plain 403 from every one of them.
+- Every addition to a page SUPER_ADMIN and ADMIN already shared
+  (`app/dashboard/page.tsx`, `app/dashboard/customers/[id]/page.tsx`) is
+  wrapped in a `session?.role === 'ADMIN'` conditional, so a SUPER_ADMIN
+  session renders those pages exactly as it did before this round —
+  nothing new appears, nothing existing moved.
+- The one shared backend route touched, `PATCH
+  /api/admin/customers/:id`, gained a single new optional `notes` field
+  that only the ADMIN-only edit-notes textarea ever sends — omitted
+  entirely (never sent as `null`) outside that UI, so a SUPER_ADMIN save
+  can never wipe a notes value it never showed.
+
+### What got added
+
+- **`notes`** — a private per-customer text field, never shown to the
+  customer, editable from the customer detail page (ADMIN-only) and
+  settable at CSV-import time.
+- **Renewal reminders — a NEW, independent automated cron
+  (`POST /api/cron/renewal-reminders`), on top of the existing
+  suspend/restore engine's own `PAYMENT_DUE`/`GRACE_PERIOD`
+  notifications, not a replacement for them.** This was an explicit
+  choice made with the risk stated plainly up front: a customer whose
+  admin opts them into this can receive two different reminder emails
+  from two different systems around the same due date. It's **opt-in
+  per subscription** via `reminderDaysBeforeDue` (null = off, the
+  default for every subscription until an admin sets it from the
+  Reminders & Actions hub or the customer detail page) specifically so
+  it never silently doubles up with the engine's notifications for a
+  subscription nobody configured this way. Idempotency is tracked at
+  the data layer (`lastRenewalReminderSentAt`, date-only) so re-running
+  the cron the same day never double-sends. See
+  `src/lib/subscriptions/renewal-reminder.ts` for the full rationale.
+- **Manual "send now" actions** — `POST
+  /api/admin/subscriptions/:id/send-reminder` and `POST
+  /api/admin/customers/:id/send-birthday-greeting` — the one-click
+  buttons in the Reminders & Actions hub and the customer detail page.
+  Both stamp the same idempotency guard the automated cron uses, so a
+  manual send today means the cron won't ALSO send one later today.
+- **`GET /api/admin/customers/:id/notifications`** and **`GET
+  /api/admin/notifications/recent`** — read side of the `Notification`
+  table (every automated or admin-composed message ever sent),
+  surfaced as "Communication History" on the customer page and "Recent
+  Communications" on the dashboard/hub.
+- **CSV bulk customer import** — `app/dashboard/import/page.tsx` +
+  `POST /api/admin/customers/import`. Parsing (`src/lib/customers/
+  csv-parse.ts`) is a pure, dependency-free, client-safe module the
+  browser runs on the raw file to build a reviewable preview before
+  anything is created; confirming POSTs the reviewed rows (as JSON, not
+  the file) to the import route, which is a thin wrapper around the
+  existing `createCustomer()` — one call per row — so every existing
+  validation rule, the required `notificationEmail`/`domainName`
+  invariants, and (per an explicit decision) **auto-assignment of every
+  imported customer to the importing admin** all come for free and can
+  never drift out of sync with manual customer creation. A duplicate
+  email is skipped (`ALREADY_EXISTS`), not overwritten, and one bad row
+  never aborts the rest of the batch.
+- **`app/dashboard/reminders/page.tsx`** (Reminders & Actions hub) —
+  renewals due within 30 days with an inline reminder-days setting and
+  Send Reminder button, upcoming birthdays with a Greet button, and
+  recent communications.
+- **`app/dashboard/reports/page.tsx`** (Reports & Analytics) — stat
+  tiles, revenue-by-plan and renewal-due-distribution bar charts (plain
+  CSS bars, no charting library/CDN dependency), a top-customers-by-value
+  table, and client-side CSV export — all computed in the browser from
+  the same already-scoped `/api/admin/{customers,plans,subscriptions}`
+  endpoints, no new aggregation route needed.
+- **Dashboard widgets and sidebar nav** — a condensed Reminders &
+  Actions preview on the shared dashboard and three new sidebar entries
+  (Reminders & Actions, Reports & Analytics, Import Customers), all
+  visible only to `session.role === 'ADMIN'`.
+
+### Deploy step: one more cron schedule, and a `prisma db push`
+
+Two new nullable `Subscription` columns
+(`reminderDaysBeforeDue`, `lastRenewalReminderSentAt`) and one new
+nullable `Customer` column (`notes`) — same "no migrations, run `npx
+prisma db push` from the Railway shell after deploying" process as
+every other schema change in this project (see "Migrating an existing
+deployment onto this" above).
+
+Add one more scheduled job alongside the existing birthday/subscription
+crons, calling `POST /api/cron/renewal-reminders` with the same
+`x-cron-secret: $CRON_SECRET` header — once a day is enough (it's
+idempotency-guarded, so more frequent calls the same day are a safe
+no-op, not a resend).
+
 ## Email notification dispatch (Resend)
 
 Both customer notifications (`Notification` rows, sent via

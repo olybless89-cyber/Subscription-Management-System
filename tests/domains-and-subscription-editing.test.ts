@@ -46,6 +46,7 @@ function customer(overrides: Partial<CustomerRecord> = {}): CustomerRecord {
     status: 'ACTIVE',
     automaticSuspension: true,
     paymentProvider: 'PAYSTACK',
+    notes: null,
     ...overrides,
   };
 }
@@ -71,6 +72,8 @@ function baseSub() {
     nextBillingDate: '2026-02-01T00:00:00.000Z',
     gracePeriodEnd: null,
     dryRunOverride: null,
+    reminderDaysBeforeDue: null,
+    lastRenewalReminderSentAt: null,
   };
 }
 

@@ -84,6 +84,7 @@ describe('registerCustomer', () => {
           status: 'ACTIVE',
           automaticSuspension: true,
           paymentProvider: 'PAYSTACK',
+          notes: null,
         },
       ],
     });

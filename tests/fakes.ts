@@ -1,4 +1,17 @@
-import { EngineDeps, WebhookDeps, AuthDeps, AdminManagementDeps, BillingSetupDeps, CustomEmailDeps, CampaignDeps, RegisterCustomerDeps, CustomerPortalDeps } from '@/lib/db/ports';
+import {
+  EngineDeps,
+  WebhookDeps,
+  AuthDeps,
+  AdminManagementDeps,
+  BillingSetupDeps,
+  CustomEmailDeps,
+  CampaignDeps,
+  RegisterCustomerDeps,
+  CustomerPortalDeps,
+  RenewalReminderDeps,
+  SendRenewalReminderNowDeps,
+  AdminWorkflowDeps,
+} from '@/lib/db/ports';
 import { RailwayClient } from '@/lib/railway/client';
 import {
   CustomerRecord,
@@ -14,6 +27,7 @@ import {
   CampaignRecipientRecord,
   StatusSnapshotRecord,
   HostingAccountRecord,
+  NotificationRecord,
 } from '@/types/domain';
 
 // ---------- shared primitive stores, reused across the various fake-deps builders ----------
@@ -53,6 +67,7 @@ function makeCustomerRepo(seed: CustomerRecord[]) {
       websiteType?: CustomerRecord['websiteType'];
       paymentProvider: CustomerRecord['paymentProvider'];
       automaticSuspension: boolean;
+      notes?: string | null;
     }) {
       codeCounter += 1;
       const record: CustomerRecord = {
@@ -70,6 +85,7 @@ function makeCustomerRepo(seed: CustomerRecord[]) {
         status: 'ACTIVE',
         automaticSuspension: input.automaticSuspension,
         paymentProvider: input.paymentProvider,
+        notes: input.notes ?? null,
       };
       byId.set(record.id, record);
       return record;
@@ -86,6 +102,7 @@ function makeCustomerRepo(seed: CustomerRecord[]) {
         websiteType?: CustomerRecord['websiteType'];
         paymentProvider?: CustomerRecord['paymentProvider'];
         automaticSuspension?: boolean;
+        notes?: string | null;
       }
     ) {
       const c = byId.get(id);
@@ -99,6 +116,7 @@ function makeCustomerRepo(seed: CustomerRecord[]) {
       if (patch.websiteType !== undefined) c.websiteType = patch.websiteType;
       if (patch.paymentProvider !== undefined) c.paymentProvider = patch.paymentProvider;
       if (patch.automaticSuspension !== undefined) c.automaticSuspension = patch.automaticSuspension;
+      if (patch.notes !== undefined) c.notes = patch.notes;
       return { ...c };
     },
     async findWithBirthday() {
@@ -279,6 +297,8 @@ function makeSubscriptionRepo(seed: SubscriptionRecord[]) {
         nextBillingDate: input.nextBillingDate,
         gracePeriodEnd: null,
         dryRunOverride: null,
+        reminderDaysBeforeDue: null,
+        lastRenewalReminderSentAt: null,
       };
       byId.set(record.id, record);
       return record;
@@ -297,8 +317,76 @@ function makeSubscriptionRepo(seed: SubscriptionRecord[]) {
       if (patch.planId !== undefined) s.planId = patch.planId;
       if (patch.suspensionEnabled !== undefined) s.suspensionEnabled = patch.suspensionEnabled;
     },
+    async setReminderDays(id: string, days: number | null) {
+      const s = byId.get(id);
+      if (!s) throw new Error('not found');
+      s.reminderDaysBeforeDue = days;
+    },
+    async markRenewalReminderSent(id: string, sentAt: string) {
+      const s = byId.get(id);
+      if (!s) throw new Error('not found');
+      s.lastRenewalReminderSentAt = sentAt;
+    },
+    async findRenewalReminderCandidates() {
+      return [...byId.values()].filter((s) => s.status === 'ACTIVE' && s.reminderDaysBeforeDue !== null);
+    },
   };
   return { repo, byId };
+}
+
+/** Fake read side of the Notification table (see NotificationRepository /
+ * NotificationSender in ports.ts). `log` is shared with whatever fake
+ * NotificationSender a deps-builder wires up (see
+ * makeNotificationSenderRecordingTo below), so a test can send a
+ * notification through `deps.notifications.send(...)` and then read it
+ * back through `deps.notificationHistory`, exactly like the real Prisma
+ * write-then-read pair does. */
+function makeNotificationRepo(store: NotificationRecord[] = []) {
+  // Deliberately operates on `store` BY REFERENCE, not a copy — callers
+  // that also hand this same array to makeNotificationSenderRecordingTo
+  // (see makeFakeAdminWorkflowDeps) need a send() to be immediately
+  // visible through this repo's reads, exactly like the real
+  // Prisma-backed Notification table is a single write-then-read store.
+  const repo = {
+    async listByCustomerId(customerId: string, limit?: number) {
+      const rows = store
+        .filter((n) => n.customerId === customerId)
+        .slice()
+        .reverse();
+      return limit !== undefined ? rows.slice(0, limit) : rows;
+    },
+    async listRecentForCustomerIds(customerIds: string[] | 'ALL', limit: number) {
+      const rows = (customerIds === 'ALL' ? store : store.filter((n) => customerIds.includes(n.customerId)))
+        .slice()
+        .reverse();
+      return rows.slice(0, limit);
+    },
+  };
+  return { repo, log: store };
+}
+
+/** Fake NotificationSender that records every send into `log` as a full
+ * NotificationRecord — the shared store a makeNotificationRepo() built
+ * from the same `log` reads back from. channel is always 'EMAIL' here
+ * since nothing in this codebase's fakes exercises WhatsApp/SMS sends
+ * through this particular pipeline. */
+function makeNotificationSenderRecordingTo(log: NotificationRecord[]) {
+  let counter = log.length;
+  return {
+    async send(customerId: string, event: string, message: string, _subjectOverride?: string) {
+      counter += 1;
+      const now = new Date().toISOString();
+      log.push({
+        id: `notif_${counter}`,
+        customerId,
+        channel: 'EMAIL',
+        event,
+        message,
+        sentAt: now,
+        createdAt: now,
+      });
+    },
+  };
 }
 
 function makeAuditLogRepo() {
@@ -1016,5 +1104,99 @@ export function makeFakeCustomerPortalDeps(seed: {
         return [...invoices.values()];
       },
     },
+  };
+}
+
+export function makeFakeRenewalReminderDeps(seed: {
+  customers: CustomerRecord[];
+  subscriptions: SubscriptionRecord[];
+  plans: PlanRecord[];
+  notificationLog?: NotificationRecord[];
+}): RenewalReminderDeps & { notificationLog: NotificationRecord[] } {
+  const { repo: customersRepo } = makeCustomerRepo(seed.customers);
+  const { repo: subscriptionsRepo } = makeSubscriptionRepo(seed.subscriptions);
+  const { repo: plansRepo } = makePlanRepo(seed.plans);
+  const notificationLog: NotificationRecord[] = seed.notificationLog ?? [];
+
+  return {
+    customers: customersRepo,
+    subscriptions: subscriptionsRepo,
+    plans: plansRepo,
+    notifications: makeNotificationSenderRecordingTo(notificationLog),
+    notificationLog,
+  };
+}
+
+export function makeFakeSendRenewalReminderNowDeps(seed: {
+  admins: AdminRecord[];
+  customers: CustomerRecord[];
+  subscriptions: SubscriptionRecord[];
+  plans: PlanRecord[];
+  notificationLog?: NotificationRecord[];
+}): SendRenewalReminderNowDeps & {
+  notificationLog: NotificationRecord[];
+  auditLogEntries: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }>;
+} {
+  const base = makeFakeRenewalReminderDeps(seed);
+  const { repo: adminsRepo } = makeAdminRepo(seed.admins);
+  const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
+
+  return {
+    ...base,
+    admins: adminsRepo,
+    auditLog: auditLogRepo,
+    auditLogEntries,
+  };
+}
+
+/**
+ * Backs the plain-ADMIN-only workflow features modeled on the Digital Web
+ * Oracle ICT CRM (Reminders & Actions hub, Reports & Analytics, CSV
+ * import, communication history) — see AdminWorkflowDeps's doc comment in
+ * ports.ts. notificationLog is exposed both as the send-log (what got
+ * sent) and, through notificationHistory, the read side a route/lib
+ * function would query — the same array backs both, mirroring how the
+ * real Notification table is a single write-then-read store.
+ */
+export function makeFakeAdminWorkflowDeps(seed: {
+  admins: AdminRecord[];
+  customers: CustomerRecord[];
+  subscriptions: SubscriptionRecord[];
+  plans: PlanRecord[];
+  domains?: DomainRecord[];
+  assignments?: Array<{ adminId: string; customerId: string }>;
+  notifications?: NotificationRecord[];
+}): AdminWorkflowDeps & {
+  notificationLog: NotificationRecord[];
+  auditLogEntries: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }>;
+  assignmentStore: Map<string, Set<string>>;
+  customerStore: Map<string, CustomerRecord>;
+  subscriptionStore: Map<string, SubscriptionRecord>;
+} {
+  const { repo: adminsRepo } = makeAdminRepo(seed.admins);
+  const { repo: customersRepo, byId: customerStore } = makeCustomerRepo(seed.customers);
+  const { repo: subscriptionsRepo, byId: subscriptionStore } = makeSubscriptionRepo(seed.subscriptions);
+  const { repo: plansRepo } = makePlanRepo(seed.plans);
+  const { repo: domainsRepo } = makeDomainRepo(seed.domains ?? []);
+  const { repo: assignmentsRepo, byAdmin: assignmentStore } = makeAssignmentRepo(seed.assignments ?? []);
+  const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
+  const notificationLog: NotificationRecord[] = seed.notifications ?? [];
+  const { repo: notificationHistoryRepo } = makeNotificationRepo(notificationLog);
+
+  return {
+    admins: adminsRepo,
+    customers: customersRepo,
+    subscriptions: subscriptionsRepo,
+    plans: plansRepo,
+    domains: domainsRepo,
+    adminAssignments: assignmentsRepo,
+    notifications: makeNotificationSenderRecordingTo(notificationLog),
+    notificationHistory: notificationHistoryRepo,
+    auditLog: auditLogRepo,
+    notificationLog,
+    auditLogEntries,
+    assignmentStore,
+    customerStore,
+    subscriptionStore,
   };
 }

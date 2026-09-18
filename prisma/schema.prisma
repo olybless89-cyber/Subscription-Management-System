@@ -147,6 +147,7 @@ model Customer {
   automaticSuspension Boolean             @default(true)
   automaticSuspensionOffReason String?
   paymentProvider     PaymentProviderName @default(PAYSTACK) // which provider this customer's checkouts/webhooks route through
+  notes               String?             // private admin notes — never shown to the customer
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 
@@ -199,6 +200,19 @@ model Subscription {
   // true) even if the global var is off. See
   // src/lib/suspension/dry-run-override.ts.
   dryRunOverride      Boolean?
+  // Opt-in, per-subscription renewal-reminder lead time in days — set
+  // by a plain admin from the Reminders & Actions hub, independent of
+  // (and in addition to) the PAYMENT_DUE/GRACE_PERIOD notifications the
+  // suspend/restore engine already sends. Null means "no automated
+  // renewal-reminder cron email for this subscription" — this is
+  // opt-in, not a default, specifically so it never silently doubles up
+  // with the engine's own notifications unless an admin deliberately
+  // turns it on. See src/lib/subscriptions/renewal-reminder.ts.
+  reminderDaysBeforeDue      Int?
+  // Idempotency guard for the renewal-reminder cron — records the last
+  // date (not datetime) it actually sent a reminder for this
+  // subscription, so re-running the cron the same day never double-sends.
+  lastRenewalReminderSentAt  DateTime?
 
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt

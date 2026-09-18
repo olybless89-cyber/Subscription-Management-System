@@ -17,8 +17,22 @@ import {
   WhatsAppNotificationSender,
   PrismaResourceStatusSnapshotRepository,
   PrismaHostingAccountRepository,
+  PrismaNotificationRepository,
 } from './db/prisma-repository';
-import { WebhookDeps, AuthDeps, CronDeps, AdminManagementDeps, BillingSetupDeps, CustomEmailDeps, CampaignDeps, RegisterCustomerDeps, CustomerPortalDeps } from './db/ports';
+import {
+  WebhookDeps,
+  AuthDeps,
+  CronDeps,
+  AdminManagementDeps,
+  BillingSetupDeps,
+  CustomEmailDeps,
+  CampaignDeps,
+  RegisterCustomerDeps,
+  CustomerPortalDeps,
+  RenewalReminderDeps,
+  SendRenewalReminderNowDeps,
+  AdminWorkflowDeps,
+} from './db/ports';
 import { createPaystackProvider } from './payments/paystack';
 import { resolveRailwayClientForAccount } from './hosting/account-client';
 
@@ -149,6 +163,53 @@ export function buildCustomerPortalDeps(): CustomerPortalDeps {
     statusSnapshots: new PrismaResourceStatusSnapshotRepository(client),
     invoices: new PrismaInvoiceRepository(client),
     domains: new PrismaDomainRepository(client),
+  };
+}
+
+/** Dependencies for the renewal-reminder cron (src/lib/subscriptions/
+ * renewal-reminder.ts). See RenewalReminderDeps in ports.ts. */
+export function buildRenewalReminderDeps(): RenewalReminderDeps {
+  const client = getPrisma();
+  return {
+    subscriptions: new PrismaSubscriptionRepository(client),
+    customers: new PrismaCustomerRepository(client),
+    plans: new PrismaPlanRepository(client),
+    notifications: new EmailNotificationSender(client),
+  };
+}
+
+/** Superset of buildRenewalReminderDeps for the admin-triggered "send this
+ * reminder now" action. See SendRenewalReminderNowDeps in ports.ts. */
+export function buildSendRenewalReminderNowDeps(): SendRenewalReminderNowDeps {
+  const client = getPrisma();
+  return {
+    ...buildRenewalReminderDeps(),
+    admins: new PrismaAdminRepository(client),
+    auditLog: new PrismaAuditLogRepository(client),
+  };
+}
+
+/** Backs every plain-ADMIN-only workflow route modeled on the Digital Web
+ * Oracle ICT CRM (Reminders & Actions hub, Reports & Analytics, CSV
+ * customer import, per-customer communication history). See
+ * AdminWorkflowDeps's doc comment in ports.ts for why this is one
+ * deliberately broad bag instead of several narrow ones — it is a
+ * structural superset of AdminManagementDeps, CustomEmailDeps and
+ * RenewalReminderDeps/SendRenewalReminderNowDeps, so this same value can
+ * be passed directly into createCustomer(), sendCustomEmail(), and the
+ * renewal-reminder functions without adapting it. */
+export function buildAdminWorkflowDeps(): AdminWorkflowDeps {
+  const client = getPrisma();
+  return {
+    admins: new PrismaAdminRepository(client),
+    customers: new PrismaCustomerRepository(client),
+    subscriptions: new PrismaSubscriptionRepository(client),
+    plans: new PrismaPlanRepository(client),
+    domains: new PrismaDomainRepository(client),
+    adminAssignments: new PrismaAdminAssignmentRepository(client),
+    notifications: new EmailNotificationSender(client),
+    notificationHistory: new PrismaNotificationRepository(client),
+    auditLog: new PrismaAuditLogRepository(client),
   };
 }
 

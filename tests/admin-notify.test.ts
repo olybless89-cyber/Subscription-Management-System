@@ -19,6 +19,7 @@ function customer(id: string): CustomerRecord {
     status: 'ACTIVE',
     automaticSuspension: true,
     paymentProvider: 'PAYSTACK',
+    notes: null,
   };
 }
 

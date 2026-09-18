@@ -20,6 +20,7 @@ function customer(overrides: Partial<CustomerRecord> = {}): CustomerRecord {
     websiteType: null,
     passwordHash: null,
     paymentProvider: 'PAYSTACK',
+    notes: null,
     status: 'ACTIVE',
     automaticSuspension: true,
     ...overrides,
@@ -51,6 +52,8 @@ function subscription(overrides: Partial<SubscriptionRecord> = {}): Subscription
     nextBillingDate: '2026-09-10T00:00:00.000Z',
     gracePeriodEnd: null,
     dryRunOverride: null,
+    reminderDaysBeforeDue: null,
+    lastRenewalReminderSentAt: null,
     ...overrides,
   };
 }

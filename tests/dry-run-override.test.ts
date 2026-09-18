@@ -32,6 +32,7 @@ function customer(): CustomerRecord {
     status: 'ACTIVE',
     automaticSuspension: true,
     paymentProvider: 'PAYSTACK',
+    notes: null,
   };
 }
 
@@ -52,6 +53,8 @@ function sub() {
     nextBillingDate: '2026-02-01T00:00:00.000Z',
     gracePeriodEnd: null,
     dryRunOverride: null,
+    reminderDaysBeforeDue: null,
+    lastRenewalReminderSentAt: null,
   };
 }
 

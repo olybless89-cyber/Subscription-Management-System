@@ -61,6 +61,8 @@ export interface CustomerRecord {
   serviceStartDate: string | null;
   serviceEndDate: string | null;
   websiteType: string | null;
+  /** Private, admin-only notes — never shown to the customer, never emailed. */
+  notes: string | null;
   passwordHash: string | null;
   status: CustomerStatus;
   automaticSuspension: boolean;
@@ -158,6 +160,21 @@ export interface AdminNotificationRecord {
   createdAt: string;
 }
 
+/** The customer-facing Notification table — every email/WhatsApp/etc.
+ * sent to a customer, automated or admin-composed, is logged here first
+ * (see NotificationSender in ports.ts). This is the read side of that
+ * same table: powers the admin-facing "Communication History" section
+ * on a customer's page and the "Recent Communications" dashboard feed. */
+export interface NotificationRecord {
+  id: string;
+  customerId: string;
+  channel: string; // EMAIL | WHATSAPP | SMS | IN_APP
+  event: string; // PAYMENT_DUE | GRACE_PERIOD | SUSPENDED | RENEWAL_REMINDER | BIRTHDAY | CUSTOM | ...
+  message: string;
+  sentAt: string | null;
+  createdAt: string;
+}
+
 export interface DomainRecord {
   id: string;
   customerId: string;
@@ -180,6 +197,13 @@ export interface SubscriptionRecord {
   gracePeriodEnd: string | null;
   /** null = inherit global SUSPENSION_DRY_RUN. See prisma/schema.prisma. */
   dryRunOverride: boolean | null;
+  /** Opt-in renewal-reminder lead time in days. Null = no automated
+   * renewal-reminder cron email for this subscription. See
+   * prisma/schema.prisma and src/lib/subscriptions/renewal-reminder.ts. */
+  reminderDaysBeforeDue: number | null;
+  /** Idempotency guard for the renewal-reminder cron — date-only in
+   * practice, compared against "today" by the cron. */
+  lastRenewalReminderSentAt: string | null;
 }
 
 export interface PlanRecord {

@@ -23,13 +23,27 @@ const SUPER_ADMIN_ONLY_NAV_ITEMS = [
   { href: '/dashboard/activity', label: 'Activity' },
 ];
 
+// For the other admins only — see AdminWorkflowDeps's doc comment in
+// src/lib/db/ports.ts. Never shown to SUPER_ADMIN, mirroring how
+// SUPER_ADMIN_ONLY_NAV_ITEMS above is never shown to a plain ADMIN.
+const ADMIN_ONLY_NAV_ITEMS = [
+  { href: '/dashboard/reminders', label: 'Reminders & Actions' },
+  { href: '/dashboard/reports', label: 'Reports & Analytics' },
+  { href: '/dashboard/import', label: 'Import Customers' },
+];
+
 export function Sidebar() {
   const pathname = usePathname();
   const { session, logout } = useAuth();
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
-  const navItems = session?.role === 'SUPER_ADMIN' ? [...NAV_ITEMS, ...SUPER_ADMIN_ONLY_NAV_ITEMS] : NAV_ITEMS;
+  const navItems =
+    session?.role === 'SUPER_ADMIN'
+      ? [...NAV_ITEMS, ...SUPER_ADMIN_ONLY_NAV_ITEMS]
+      : session?.role === 'ADMIN'
+        ? [...NAV_ITEMS, ...ADMIN_ONLY_NAV_ITEMS]
+        : NAV_ITEMS;
 
   function handleLogout() {
     setOpen(false);

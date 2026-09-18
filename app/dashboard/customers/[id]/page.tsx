@@ -19,6 +19,7 @@ interface Customer {
   status: string;
   automaticSuspension: boolean;
   paymentProvider: 'PAYSTACK' | 'FLUTTERWAVE';
+  notes: string | null;
 }
 
 interface Domain {
@@ -34,6 +35,28 @@ interface Subscription {
   id: string;
   customerId: string;
   status: string;
+  planId: string;
+  nextBillingDate: string;
+  reminderDaysBeforeDue: number | null;
+}
+
+// ---------- ADMIN-only additions (Communication History, notes, and the
+// per-subscription reminder controls below) — every use of these types
+// and the section that renders them is wrapped in a
+// session?.role === 'ADMIN' check, so none of it ever reaches a
+// SUPER_ADMIN session. ----------
+
+interface Plan {
+  id: string;
+  name: string;
+}
+
+interface NotificationEntry {
+  id: string;
+  channel: string;
+  event: string;
+  message: string;
+  createdAt: string;
 }
 
 // Curated service categories. The select's value IS the string that
@@ -62,6 +85,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const { session } = useAuth();
   const router = useRouter();
   const isSuperAdmin = session?.role === 'SUPER_ADMIN';
+  const isAdmin = session?.role === 'ADMIN';
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [domains, setDomains] = useState<Domain[]>([]);
@@ -76,9 +100,18 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [serviceEndDate, setServiceEndDate] = useState('');
   const [websiteType, setWebsiteType] = useState('');
   const [websiteTypeOther, setWebsiteTypeOther] = useState('');
+  const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
+
+  // ADMIN-only: communication history + per-subscription reminder controls.
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [notifications, setNotifications] = useState<NotificationEntry[] | null>(null);
+  const [reminderDraft, setReminderDraft] = useState<Record<string, string>>({});
+  const [reminderBusyKey, setReminderBusyKey] = useState<string | null>(null);
+  const [reminderError, setReminderError] = useState<string | null>(null);
+  const [reminderNotice, setReminderNotice] = useState<string | null>(null);
 
   const [emailSubject, setEmailSubject] = useState('');
   const [emailMessage, setEmailMessage] = useState('');
@@ -121,6 +154,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       setDateOfBirth(toDateInputValue(custData.customer.dateOfBirth));
       setServiceStartDate(toDateInputValue(custData.customer.serviceStartDate));
       setServiceEndDate(toDateInputValue(custData.customer.serviceEndDate));
+      setNotes(custData.customer.notes ?? '');
       const loadedWebsiteType = custData.customer.websiteType;
       if (!loadedWebsiteType) {
         setWebsiteType('');
@@ -146,6 +180,26 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     load();
   }, [load]);
 
+  // ADMIN-only: plans (for the reminder section's plan names) and
+  // communication history — never fetched for SUPER_ADMIN.
+  const loadAdminExtras = useCallback(async () => {
+    if (!session || session.role !== 'ADMIN') return;
+    try {
+      const [planData, notifData] = await Promise.all([
+        authFetch<{ plans: Plan[] }>(session.token, '/api/admin/plans'),
+        authFetch<{ notifications: NotificationEntry[] }>(session.token, `/api/admin/customers/${params.id}/notifications`),
+      ]);
+      setPlans(planData.plans);
+      setNotifications(notifData.notifications);
+    } catch (err) {
+      setReminderError(err instanceof ApiError ? err.message : 'Failed to load communication history');
+    }
+  }, [session, params.id]);
+
+  useEffect(() => {
+    loadAdminExtras();
+  }, [loadAdminExtras]);
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!session) return;
@@ -167,6 +221,10 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
           serviceStartDate: serviceStartDate || null,
           serviceEndDate: serviceEndDate || null,
           websiteType: websiteType === 'OTHER' ? websiteTypeOther.trim() : websiteType || null,
+          // Omitted entirely (rather than sent as null) outside the
+          // ADMIN-only notes UI, so a SUPER_ADMIN save can never wipe a
+          // notes value it never showed in the first place.
+          ...(isAdmin ? { notes: notes.trim() || null } : {}),
         }),
       });
       setSaveNotice('Saved');
@@ -220,6 +278,67 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       setResetError(err instanceof ApiError ? err.message : 'Failed to reset password');
     } finally {
       setResettingPassword(false);
+    }
+  }
+
+  async function handleSendReminderNow(subscriptionId: string) {
+    if (!session) return;
+    setReminderError(null);
+    setReminderNotice(null);
+    setReminderBusyKey(`reminder_${subscriptionId}`);
+    try {
+      const result = await authFetch<{ message: string }>(session.token, `/api/admin/subscriptions/${subscriptionId}/send-reminder`, {
+        method: 'POST',
+      });
+      setReminderNotice(result.message);
+      await Promise.all([load(), loadAdminExtras()]);
+    } catch (err) {
+      setReminderError(err instanceof ApiError ? err.message : 'Failed to send reminder');
+    } finally {
+      setReminderBusyKey(null);
+    }
+  }
+
+  async function handleSaveReminderDays(subscriptionId: string) {
+    if (!session) return;
+    const raw = reminderDraft[subscriptionId];
+    const days = raw === undefined || raw === '' ? null : Number(raw);
+    if (days !== null && (!Number.isInteger(days) || days < 0)) {
+      setReminderError('Reminder days must be a whole number of 0 or more (or blank to turn off)');
+      return;
+    }
+    setReminderError(null);
+    setReminderNotice(null);
+    setReminderBusyKey(`days_${subscriptionId}`);
+    try {
+      const result = await authFetch<{ message: string }>(session.token, `/api/admin/subscriptions/${subscriptionId}/reminder-days`, {
+        method: 'PUT',
+        body: JSON.stringify({ days }),
+      });
+      setReminderNotice(result.message);
+      await load();
+    } catch (err) {
+      setReminderError(err instanceof ApiError ? err.message : 'Failed to save');
+    } finally {
+      setReminderBusyKey(null);
+    }
+  }
+
+  async function handleSendBirthdayGreeting() {
+    if (!session) return;
+    setReminderError(null);
+    setReminderNotice(null);
+    setReminderBusyKey('greet');
+    try {
+      const result = await authFetch<{ message: string }>(session.token, `/api/admin/customers/${params.id}/send-birthday-greeting`, {
+        method: 'POST',
+      });
+      setReminderNotice(result.message);
+      await loadAdminExtras();
+    } catch (err) {
+      setReminderError(err instanceof ApiError ? err.message : 'Failed to send greeting');
+    } finally {
+      setReminderBusyKey(null);
     }
   }
 
@@ -510,6 +629,19 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
               <input id="edit-service-end" type="date" value={serviceEndDate} onChange={(e) => setServiceEndDate(e.target.value)} />
             </div>
 
+            {isAdmin && (
+              <div className="field">
+                <label htmlFor="edit-notes">Notes (private — never shown to the customer)</label>
+                <textarea
+                  id="edit-notes"
+                  rows={3}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  style={{ padding: '0.6em 0.7em', border: '1px solid var(--line-strong)', borderRadius: 4, background: 'var(--paper-raised)', fontFamily: 'inherit', resize: 'vertical' }}
+                />
+              </div>
+            )}
+
             {saveError && <p className="error-text">{saveError}</p>}
             {saveNotice && <p style={{ color: 'var(--forest-bright)', fontSize: '0.9em' }}>{saveNotice}</p>}
 
@@ -576,6 +708,116 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
           </button>
         </form>
       </div>
+
+      {isAdmin && (
+        <div className="card" style={{ marginTop: '1.5em' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '0.6em' }}>
+            <h2 style={{ fontSize: '1.05em', fontWeight: 600, marginTop: 0, marginBottom: '0.6em' }}>Reminders</h2>
+            {customer.dateOfBirth && (
+              <button type="button" className="btn" disabled={reminderBusyKey === 'greet'} onClick={handleSendBirthdayGreeting}>
+                {reminderBusyKey === 'greet' ? 'Sending…' : 'Send birthday greeting'}
+              </button>
+            )}
+          </div>
+          {reminderError && <p className="error-text">{reminderError}</p>}
+          {reminderNotice && <p style={{ color: 'var(--forest-bright)', fontSize: '0.9em' }}>{reminderNotice}</p>}
+          {subscriptions.length === 0 ? (
+            <p style={{ color: 'var(--ink-soft)', fontSize: '0.9em', margin: 0 }}>No subscriptions yet.</p>
+          ) : (
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Plan</th>
+                    <th>Status</th>
+                    <th>Next billing</th>
+                    <th>Auto-reminder (days before)</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {subscriptions.map((s) => {
+                    const plan = plans.find((p) => p.id === s.planId);
+                    const draftValue = reminderDraft[s.id] ?? (s.reminderDaysBeforeDue ?? '').toString();
+                    return (
+                      <tr key={s.id}>
+                        <td>{plan?.name ?? s.planId}</td>
+                        <td>{s.status}</td>
+                        <td className="mono">{new Date(s.nextBillingDate).toLocaleDateString()}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: '0.4em', alignItems: 'center' }}>
+                            <input
+                              type="number"
+                              min={0}
+                              max={365}
+                              placeholder="off"
+                              value={draftValue}
+                              onChange={(e) => setReminderDraft((prev) => ({ ...prev, [s.id]: e.target.value }))}
+                              style={{ width: 60, padding: '0.3em 0.4em' }}
+                            />
+                            <button
+                              type="button"
+                              className="btn"
+                              disabled={reminderBusyKey === `days_${s.id}`}
+                              onClick={() => handleSaveReminderDays(s.id)}
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            disabled={reminderBusyKey === `reminder_${s.id}`}
+                            onClick={() => handleSendReminderNow(s.id)}
+                          >
+                            {reminderBusyKey === `reminder_${s.id}` ? 'Sending…' : 'Send Reminder'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isAdmin && (
+        <div className="card" style={{ marginTop: '1.5em' }}>
+          <h2 style={{ fontSize: '1.05em', fontWeight: 600, marginTop: 0, marginBottom: '0.6em' }}>Communication History</h2>
+          {notifications === null && <p style={{ color: 'var(--ink-soft)', fontSize: '0.9em' }}>Loading…</p>}
+          {notifications !== null && notifications.length === 0 && (
+            <p style={{ color: 'var(--ink-soft)', fontSize: '0.9em', margin: 0 }}>Nothing sent to this customer yet.</p>
+          )}
+          {notifications !== null && notifications.length > 0 && (
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Sent</th>
+                    <th>Channel</th>
+                    <th>Event</th>
+                    <th>Message</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {notifications.map((n) => (
+                    <tr key={n.id}>
+                      <td className="mono">{new Date(n.createdAt).toLocaleString()}</td>
+                      <td>{n.channel}</td>
+                      <td className="mono">{n.event}</td>
+                      <td style={{ fontSize: '0.85em', maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {isSuperAdmin && (
         <div className="card" style={{ marginTop: '1.5em', maxWidth: 480, borderColor: 'var(--danger)' }}>

@@ -20,6 +20,7 @@ function customer(overrides: Partial<CustomerRecord> = {}): CustomerRecord {
     status: 'ACTIVE',
     automaticSuspension: true,
     paymentProvider: 'PAYSTACK',
+    notes: null,
     ...overrides,
   };
 }

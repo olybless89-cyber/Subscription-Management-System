@@ -41,6 +41,11 @@ export interface CreateCustomerInput {
   domainName?: string | null;
   paymentProvider?: PaymentProviderName;
   automaticSuspension?: boolean;
+  /** Private admin notes — never shown to the customer. Supported here
+   * (in addition to updateCustomer) so CSV import can carry a notes
+   * column straight through on creation, matching the source CRM's
+   * import template. */
+  notes?: string | null;
 }
 
 export type CreateCustomerOutcome = 'CREATED' | 'FORBIDDEN' | 'INVALID_INPUT' | 'ALREADY_EXISTS';
@@ -158,6 +163,7 @@ export async function createCustomer(
     websiteType,
     paymentProvider: input.paymentProvider ?? 'PAYSTACK',
     automaticSuspension: input.automaticSuspension ?? true,
+    notes: input.notes ?? null,
   });
 
   if (requester.role !== 'SUPER_ADMIN') {
@@ -207,6 +213,7 @@ export interface UpdateCustomerInput {
   websiteType?: string | null;
   paymentProvider?: PaymentProviderName;
   automaticSuspension?: boolean;
+  notes?: string | null;
 }
 
 export type UpdateCustomerOutcome = 'UPDATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'INVALID_INPUT' | 'NO_CHANGES';

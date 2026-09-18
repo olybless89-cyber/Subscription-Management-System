@@ -1,5 +1,12 @@
 import { CustomEmailDeps } from '../db/ports';
 
+export type SendBirthdayGreetingNowOutcome = 'SENT' | 'FORBIDDEN' | 'NOT_FOUND';
+
+export interface SendBirthdayGreetingNowResult {
+  outcome: SendBirthdayGreetingNowOutcome;
+  message: string;
+}
+
 export interface BirthdayCronResult {
   checked: number;
   sent: number;
@@ -62,4 +69,46 @@ export async function runBirthdayMessages(
   }
 
   return result;
+}
+
+/**
+ * sendBirthdayGreetingNow — the manual "Greet" button in the Reminders &
+ * Actions hub. Same message/subject as the automated runBirthdayMessages
+ * cron above, just triggered on demand for one specific customer rather
+ * than date-matched across all of them — an admin who spots an upcoming
+ * birthday in the hub doesn't have to wait for the cron to fire. Doesn't
+ * check dateOfBirth at all (unlike the cron): sending a birthday
+ * greeting on demand is a deliberate one-off action, not a date match.
+ */
+export async function sendBirthdayGreetingNow(
+  deps: CustomEmailDeps,
+  requestingAdminId: string,
+  customerId: string
+): Promise<SendBirthdayGreetingNowResult> {
+  const requester = await deps.admins.findById(requestingAdminId);
+  if (!requester) {
+    return { outcome: 'FORBIDDEN', message: 'Requesting admin not found' };
+  }
+
+  const customer = await deps.customers.findById(customerId);
+  if (!customer) {
+    return { outcome: 'NOT_FOUND', message: 'Customer not found' };
+  }
+
+  await deps.notifications.send(
+    customer.id,
+    'BIRTHDAY',
+    `Happy Birthday, ${customer.name}! 🎉 Wishing you a great year ahead, from all of us at Digital Web Oracle ICT.`,
+    'Happy Birthday from Digital Web Oracle ICT! 🎂'
+  );
+
+  await deps.auditLog.create({
+    actor: requestingAdminId,
+    action: 'BIRTHDAY_GREETING_SENT_MANUALLY',
+    target: customer.id,
+    metadata: {},
+    result: 'SUCCESS',
+  });
+
+  return { outcome: 'SENT', message: 'Greeting sent' };
 }

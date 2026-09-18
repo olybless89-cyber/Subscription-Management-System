@@ -46,6 +46,7 @@ function customer(overrides: Partial<CustomerRecord> = {}): CustomerRecord {
     status: 'ACTIVE',
     automaticSuspension: true,
     paymentProvider: 'PAYSTACK',
+    notes: null,
     ...overrides,
   };
 }
@@ -76,6 +77,7 @@ describe('createCustomer', () => {
       notificationEmail: 'notify@enterprise.example.com',
       domainName: 'enterprise.example.com',
       paymentProvider: 'FLUTTERWAVE',
+      notes: null,
       automaticSuspension: false,
     });
 
@@ -102,6 +104,7 @@ describe('createCustomer', () => {
           status: 'ACTIVE',
           automaticSuspension: true,
           paymentProvider: 'PAYSTACK',
+          notes: null,
         },
       ],
     });

@@ -24,6 +24,7 @@ import {
   CampaignRecipientRecord,
   CampaignRecipientStatus,
   HostingAccountRecord,
+  NotificationRecord,
 } from '@/types/domain';
 import { RailwayClient } from '../railway/client';
 
@@ -86,6 +87,23 @@ export interface SubscriptionRepository {
    * actually running.
    */
   update(id: string, patch: { planId?: string; suspensionEnabled?: boolean }): Promise<void>;
+  /** Sets/clears the opt-in per-subscription renewal-reminder lead
+   * time (see prisma/schema.prisma) — a plain-admin-only workflow
+   * action, kept as its own narrow method rather than folded into
+   * update() so it can never be confused with the plan/suspension
+   * fields that method deliberately restricts. Pass null to turn the
+   * automated reminder off for this subscription. */
+  setReminderDays(id: string, days: number | null): Promise<void>;
+  /** Stamps the idempotency guard after the renewal-reminder cron (or a
+   * manual "send now" action) actually sends a reminder — see
+   * lastRenewalReminderSentAt in prisma/schema.prisma. */
+  markRenewalReminderSent(id: string, sentAt: string): Promise<void>;
+  /** Candidates for the renewal-reminder cron: ACTIVE subscriptions
+   * with reminderDaysBeforeDue set at all — the cron itself does the
+   * exact date-arithmetic match against "today", this just narrows what
+   * is worth loading (same division of labor as
+   * findBillingCheckCandidates). */
+  findRenewalReminderCandidates(): Promise<SubscriptionRecord[]>;
 }
 
 export interface PlanRepository {
@@ -141,6 +159,7 @@ export interface CustomerRepository {
     serviceStartDate?: string | null;
     serviceEndDate?: string | null;
     websiteType?: string | null;
+    notes?: string | null;
     paymentProvider: PaymentProviderName;
     automaticSuspension: boolean;
   }): Promise<CustomerRecord>;
@@ -158,6 +177,7 @@ export interface CustomerRepository {
       serviceStartDate?: string | null;
       serviceEndDate?: string | null;
       websiteType?: string | null;
+      notes?: string | null;
       paymentProvider?: PaymentProviderName;
       automaticSuspension?: boolean;
     }
@@ -391,6 +411,21 @@ export interface InvoiceRepository {
   listAll(): Promise<InvoiceRecord[]>;
 }
 
+/** Read side of the Notification table (NotificationSender in this
+ * same file is the write side — every send already records a row
+ * there first). Powers the admin-facing "Communication History"
+ * section on a customer's page and the "Recent Communications"
+ * dashboard/hub feed — nothing here sends anything, purely a history
+ * read. */
+export interface NotificationRepository {
+  listByCustomerId(customerId: string, limit?: number): Promise<NotificationRecord[]>;
+  /** 'ALL' mirrors the listVisibleCustomerIds() sentinel used
+   * throughout the route layer — callers pass it straight through
+   * rather than materializing every customer id just to say
+   * "everything". */
+  listRecentForCustomerIds(customerIds: string[] | 'ALL', limit: number): Promise<NotificationRecord[]>;
+}
+
 export interface CampaignRepository {
   create(input: {
     name: string;
@@ -546,5 +581,55 @@ export interface RegisterCustomerDeps {
   adminAssignments: AdminAssignmentRepository;
   adminNotifications: AdminNotificationRepository;
   notifications: NotificationSender;
+  auditLog: AuditLogRepository;
+}
+
+/** Dependencies for the renewal-reminder cron (src/lib/subscriptions/
+ * renewal-reminder.ts) — a plain read-subscriptions/customers/plans,
+ * write-notifications bag, same shape/spirit as CustomEmailDeps but for
+ * the per-subscription opt-in reminder rather than the birthday cron. */
+export interface RenewalReminderDeps {
+  subscriptions: SubscriptionRepository;
+  customers: CustomerRepository;
+  plans: PlanRepository;
+  notifications: NotificationSender;
+}
+
+/** Superset of RenewalReminderDeps for the admin-triggered "send this
+ * reminder now" action — needs to look up the requesting admin and
+ * write an audit-log entry, same pattern as sendCustomEmail. */
+export interface SendRenewalReminderNowDeps extends RenewalReminderDeps {
+  admins: AdminRepository;
+  auditLog: AuditLogRepository;
+}
+
+/**
+ * Dependencies for the plain-admin workflow features modeled on the
+ * Digital Web Oracle ICT CRM: the Reminders & Actions hub, Reports &
+ * Analytics, CSV customer import, and per-customer communication
+ * history. One deliberately broad bag (rather than five narrow ones)
+ * because these features share almost everything they touch; a single
+ * buildAdminWorkflowDeps() in deps-factory.ts backs all of them, and —
+ * being a structural superset of AdminManagementDeps, CustomEmailDeps
+ * and RenewalReminderDeps/SendRenewalReminderNowDeps — the same value
+ * can be passed directly into createCustomer(), sendCustomEmail(), and
+ * the renewal-reminder functions without adapting it.
+ *
+ * Every route built on this deps bag is gated to plain ADMIN only
+ * (hasAdminRole(session, ['ADMIN'])) at the route layer — deliberately
+ * excluding SUPER_ADMIN, so nothing here can ever change what a
+ * SUPER_ADMIN sees or can do (see the "for the other admins only, do
+ * not touch super admin" requirement this whole feature set was built
+ * under).
+ */
+export interface AdminWorkflowDeps {
+  admins: AdminRepository;
+  customers: CustomerRepository;
+  subscriptions: SubscriptionRepository;
+  plans: PlanRepository;
+  domains: DomainRepository;
+  adminAssignments: AdminAssignmentRepository;
+  notifications: NotificationSender;
+  notificationHistory: NotificationRepository;
   auditLog: AuditLogRepository;
 }

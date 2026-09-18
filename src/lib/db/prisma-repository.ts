@@ -17,6 +17,7 @@ import {
   WhatsAppSender,
   ResourceStatusSnapshotRepository,
   HostingAccountRepository,
+  NotificationRepository,
 } from './ports';
 import {
   SubscriptionRecord,
@@ -31,6 +32,7 @@ import {
   CampaignRecipientRecord,
   StatusSnapshotRecord,
   HostingAccountRecord,
+  NotificationRecord,
 } from '@/types/domain';
 import { sendWhatsAppMessage } from '../notifications/whatsapp';
 import { sendEmail, subjectForEvent, renderBrandedEmailHtml } from '../notifications/email';
@@ -76,6 +78,8 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
       nextBillingDate: s.nextBillingDate.toISOString(),
       gracePeriodEnd: s.gracePeriodEnd ? s.gracePeriodEnd.toISOString() : null,
       dryRunOverride: s.dryRunOverride,
+      reminderDaysBeforeDue: s.reminderDaysBeforeDue,
+      lastRenewalReminderSentAt: s.lastRenewalReminderSentAt ? s.lastRenewalReminderSentAt.toISOString() : null,
     };
   }
 
@@ -93,6 +97,8 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
       nextBillingDate: s.nextBillingDate.toISOString(),
       gracePeriodEnd: s.gracePeriodEnd ? s.gracePeriodEnd.toISOString() : null,
       dryRunOverride: s.dryRunOverride,
+      reminderDaysBeforeDue: s.reminderDaysBeforeDue,
+      lastRenewalReminderSentAt: s.lastRenewalReminderSentAt ? s.lastRenewalReminderSentAt.toISOString() : null,
     }));
   }
 
@@ -114,6 +120,8 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
       nextBillingDate: s.nextBillingDate.toISOString(),
       gracePeriodEnd: s.gracePeriodEnd ? s.gracePeriodEnd.toISOString() : null,
       dryRunOverride: s.dryRunOverride,
+      reminderDaysBeforeDue: s.reminderDaysBeforeDue,
+      lastRenewalReminderSentAt: s.lastRenewalReminderSentAt ? s.lastRenewalReminderSentAt.toISOString() : null,
     }));
   }
 
@@ -195,6 +203,8 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
       nextBillingDate: s.nextBillingDate.toISOString(),
       gracePeriodEnd: s.gracePeriodEnd ? s.gracePeriodEnd.toISOString() : null,
       dryRunOverride: s.dryRunOverride,
+      reminderDaysBeforeDue: s.reminderDaysBeforeDue,
+      lastRenewalReminderSentAt: s.lastRenewalReminderSentAt ? s.lastRenewalReminderSentAt.toISOString() : null,
     };
   }
 
@@ -214,6 +224,40 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
       nextBillingDate: s.nextBillingDate.toISOString(),
       gracePeriodEnd: s.gracePeriodEnd ? s.gracePeriodEnd.toISOString() : null,
       dryRunOverride: s.dryRunOverride,
+      reminderDaysBeforeDue: s.reminderDaysBeforeDue,
+      lastRenewalReminderSentAt: s.lastRenewalReminderSentAt ? s.lastRenewalReminderSentAt.toISOString() : null,
+    }));
+  }
+
+  async setReminderDays(id: string, days: number | null): Promise<void> {
+    await this.prisma.subscription.update({ where: { id }, data: { reminderDaysBeforeDue: days } });
+  }
+
+  async markRenewalReminderSent(id: string, sentAt: string): Promise<void> {
+    await this.prisma.subscription.update({
+      where: { id },
+      data: { lastRenewalReminderSentAt: new Date(sentAt) },
+    });
+  }
+
+  async findRenewalReminderCandidates(): Promise<SubscriptionRecord[]> {
+    const rows = await this.prisma.subscription.findMany({
+      where: { status: 'ACTIVE', reminderDaysBeforeDue: { not: null } },
+    });
+    return rows.map((s: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+      id: s.id,
+      customerId: s.customerId,
+      planId: s.planId,
+      status: s.status,
+      suspensionEnabled: s.suspensionEnabled,
+      suspendedAt: s.suspendedAt ? s.suspendedAt.toISOString() : null,
+      currentPeriodStart: s.currentPeriodStart.toISOString(),
+      currentPeriodEnd: s.currentPeriodEnd.toISOString(),
+      nextBillingDate: s.nextBillingDate.toISOString(),
+      gracePeriodEnd: s.gracePeriodEnd ? s.gracePeriodEnd.toISOString() : null,
+      dryRunOverride: s.dryRunOverride,
+      reminderDaysBeforeDue: s.reminderDaysBeforeDue,
+      lastRenewalReminderSentAt: s.lastRenewalReminderSentAt ? s.lastRenewalReminderSentAt.toISOString() : null,
     }));
   }
 }
@@ -237,6 +281,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
       status: c.status,
       automaticSuspension: c.automaticSuspension,
       paymentProvider: c.paymentProvider,
+      notes: c.notes,
     };
   }
 
@@ -315,6 +360,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
     websiteType?: CustomerRecord['websiteType'];
     paymentProvider: CustomerRecord['paymentProvider'];
     automaticSuspension: boolean;
+    notes?: string | null;
   }): Promise<CustomerRecord> {
     const customerCode = await this.nextCustomerCode();
     const c = await this.prisma.customer.create({
@@ -330,6 +376,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
         websiteType: (input.websiteType ?? undefined) as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         paymentProvider: input.paymentProvider as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         automaticSuspension: input.automaticSuspension,
+        notes: input.notes ?? undefined,
       },
     });
     return this.map(c);
@@ -347,6 +394,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
       websiteType?: CustomerRecord['websiteType'];
       paymentProvider?: CustomerRecord['paymentProvider'];
       automaticSuspension?: boolean;
+      notes?: string | null;
     }
   ): Promise<CustomerRecord> {
     const c = await this.prisma.customer.update({
@@ -367,6 +415,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
         ...(patch.websiteType !== undefined ? { websiteType: patch.websiteType as any } : {}), // eslint-disable-line @typescript-eslint/no-explicit-any
         ...(patch.paymentProvider !== undefined ? { paymentProvider: patch.paymentProvider as any } : {}), // eslint-disable-line @typescript-eslint/no-explicit-any
         ...(patch.automaticSuspension !== undefined ? { automaticSuspension: patch.automaticSuspension } : {}),
+        ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
       },
     });
     return this.map(c);
@@ -1254,5 +1303,40 @@ export class PrismaResourceStatusSnapshotRepository implements ResourceStatusSna
       status: r.status,
       checkedAt: r.checkedAt.toISOString(),
     }));
+  }
+}
+
+export class PrismaNotificationRepository implements NotificationRepository {
+  constructor(private prisma: PrismaClient) {}
+
+  private map(n: any): NotificationRecord { // eslint-disable-line @typescript-eslint/no-explicit-any
+    return {
+      id: n.id,
+      customerId: n.customerId,
+      channel: n.channel,
+      event: n.event,
+      message: n.message,
+      sentAt: n.sentAt ? n.sentAt.toISOString() : null,
+      createdAt: n.createdAt.toISOString(),
+    };
+  }
+
+  async listByCustomerId(customerId: string, limit?: number): Promise<NotificationRecord[]> {
+    const rows = await this.prisma.notification.findMany({
+      where: { customerId },
+      orderBy: { createdAt: 'desc' },
+      ...(limit !== undefined ? { take: limit } : {}),
+    });
+    return rows.map((n: any) => this.map(n)); // eslint-disable-line @typescript-eslint/no-explicit-any
+  }
+
+  async listRecentForCustomerIds(customerIds: string[] | 'ALL', limit: number): Promise<NotificationRecord[]> {
+    if (customerIds !== 'ALL' && customerIds.length === 0) return [];
+    const rows = await this.prisma.notification.findMany({
+      where: customerIds === 'ALL' ? {} : { customerId: { in: customerIds } },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+    return rows.map((n: any) => this.map(n)); // eslint-disable-line @typescript-eslint/no-explicit-any
   }
 }
