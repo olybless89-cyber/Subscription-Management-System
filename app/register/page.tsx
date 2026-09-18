@@ -89,9 +89,19 @@ export default function RegisterPage() {
             <div style={{ fontSize: '2.4em', marginBottom: '0.3em' }}>🎉</div>
             <h1 style={{ fontSize: '1.3em', fontWeight: 700, margin: '0 0 0.5em' }}>Account created</h1>
             <p className="mono" style={{ color: 'var(--ink-soft)', margin: '0 0 0.8em' }}>{successCode}</p>
-            <p style={{ color: 'var(--ink-soft)', margin: 0 }}>
+            <p style={{ color: 'var(--ink-soft)', margin: '0 0 1.4em' }}>
               Thanks for signing up! Our team will review your details and get your hosting set up
               shortly.
+            </p>
+            <a
+              href="/client/login"
+              className="btn btn-primary"
+              style={{ width: '100%', justifyContent: 'center', textDecoration: 'none' }}
+            >
+              Log in to your dashboard
+            </a>
+            <p style={{ fontSize: '0.85em', color: 'var(--ink-soft)', margin: '0.8em 0 0' }}>
+              Use the email and password you just created.
             </p>
           </div>
         ) : (
@@ -167,7 +177,7 @@ export default function RegisterPage() {
             </form>
 
             <p style={{ fontSize: '0.85em', color: 'var(--ink-soft)', textAlign: 'center', marginTop: '1.2em', marginBottom: 0 }}>
-              <a href="/login" style={{ color: 'var(--forest-bright)' }}>Sign in</a>
+              <a href="/client/login" style={{ color: 'var(--forest-bright)' }}>Sign in</a>
             </p>
           </>
         )}
