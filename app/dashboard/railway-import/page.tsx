@@ -16,12 +16,25 @@ interface CustomerOption {
   subscriptions: Array<{ id: string; status: string }>;
 }
 
+interface FullCustomer {
+  id: string;
+  email: string;
+}
+
+interface PlanOption {
+  id: string;
+  name: string;
+  isActive: boolean;
+}
+
 interface DiscoveredService {
   projectId: string;
   projectName: string;
   serviceId: string;
   serviceName: string;
   environments: RailwayEnvironment[];
+  defaultEnvironmentId: string;
+  latestDeploymentId: string | null;
   mapped: {
     subscriptionId: string;
     customerId: string | null;
@@ -36,8 +49,36 @@ interface DiscoveredService {
 type HostingMode = 'DEDICATED' | 'SHARED_SERVICE' | 'MULTI_TENANT';
 type SuspensionStrategy = 'STOP_DEPLOYMENT' | 'APP_LEVEL' | 'REDIRECT' | 'MANUAL';
 
+// Sentinel value for the customer <select> meaning "don't ask me to pick
+// one — auto-create a placeholder customer named after this service, and
+// let me rename/fix it properly on the Customers page afterward." Kept
+// out of band from real subscription ids (those are cuids, never this
+// literal string).
+const PLACEHOLDER = '__PLACEHOLDER__';
+
 function defaultEnvironmentId(envs: RailwayEnvironment[]): string {
   return envs.find((e) => e.name.toLowerCase() === 'production')?.id ?? envs[0]?.id ?? '';
+}
+
+/** Turns a Railway service name into a short, stable, URL/email-safe
+ * slug — used both for the placeholder email's local part and, when the
+ * service name isn't already domain-shaped, for a fabricated domain. */
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/^https?-/, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40) || 'service';
+}
+
+/** Many of these service names already look like the real domain
+ * ("bellinzoneacredit.com", "https-veyloraglobal.com") — prefer that as
+ * the placeholder's domainName when it's shaped like one, since it's
+ * more useful to have on file than a fabricated placeholder. */
+function looksLikeDomain(s: string): string | null {
+  const stripped = s.replace(/^https?-/, '').toLowerCase();
+  return /^[a-z0-9-]+\.[a-z]{2,}$/.test(stripped) ? stripped : null;
 }
 
 export default function RailwayImportPage() {
@@ -46,6 +87,7 @@ export default function RailwayImportPage() {
 
   const [services, setServices] = useState<DiscoveredService[] | null>(null);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const [plans, setPlans] = useState<PlanOption[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // Per-service pending form state, keyed by `${projectId}:${serviceId}`.
@@ -59,12 +101,16 @@ export default function RailwayImportPage() {
     if (!session || !isSuperAdmin) return;
     setLoadError(null);
     try {
-      const data = await authFetch<{ services: DiscoveredService[]; customers: CustomerOption[] }>(
-        session.token,
-        '/api/admin/railway/services'
-      );
+      const [data, planData] = await Promise.all([
+        authFetch<{ services: DiscoveredService[]; customers: CustomerOption[] }>(
+          session.token,
+          '/api/admin/railway/services'
+        ),
+        authFetch<{ plans: PlanOption[] }>(session.token, '/api/admin/plans').catch(() => ({ plans: [] })),
+      ]);
       setServices(data.services);
       setCustomers(data.customers);
+      setPlans(planData.plans);
 
       setSelections((prev) => {
         const next = { ...prev };
@@ -74,9 +120,13 @@ export default function RailwayImportPage() {
           const suggested = svc.suggestedCustomerId
             ? data.customers.find((c) => c.id === svc.suggestedCustomerId)
             : null;
+          // Default to the suggested real customer when we have one; when
+          // we don't, default to the placeholder rather than a blank
+          // "Select customer…" — the whole point is that clicking Map
+          // works immediately, with the customer fixed up afterward.
           next[key] = {
-            subscriptionId: suggested?.subscriptions[0]?.id ?? '',
-            environmentId: defaultEnvironmentId(svc.environments),
+            subscriptionId: suggested?.subscriptions[0]?.id ?? PLACEHOLDER,
+            environmentId: svc.defaultEnvironmentId || defaultEnvironmentId(svc.environments),
             hostingMode: 'DEDICATED',
             suspensionStrategy: 'STOP_DEPLOYMENT',
           };
@@ -93,9 +143,58 @@ export default function RailwayImportPage() {
   }, [load]);
 
   const unmappedCount = useMemo(() => (services ?? []).filter((s) => !s.mapped).length, [services]);
+  const placeholderPlan = useMemo(() => plans.find((p) => p.isActive) ?? plans[0] ?? null, [plans]);
 
   function updateSelection(key: string, patch: Partial<(typeof selections)[string]>) {
     setSelections((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+  }
+
+  /** Creates (or reuses, on retry) a placeholder customer + a TRIAL
+   * subscription for it, named after the Railway service so it's
+   * identifiable in the Customers list until someone fixes the real
+   * name/email/domain. Returns the new subscription id to map against. */
+  async function ensurePlaceholderSubscription(svc: DiscoveredService): Promise<string> {
+    if (!session) throw new Error('Not signed in');
+    if (!placeholderPlan) {
+      throw new Error('No plan exists yet — create one on the Plans page first, then come back and map.');
+    }
+
+    const slug = slugify(`${svc.projectName}-${svc.serviceName}`);
+    const email = `placeholder+${slug}@digitalweboracleict.com`;
+    const domainName = looksLikeDomain(svc.serviceName) ?? `${slugify(svc.serviceName)}.placeholder.local`;
+
+    let customerId: string;
+    try {
+      const created = await authFetch<{ customer: { id: string } }>(session.token, '/api/admin/customers', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: svc.serviceName,
+          email,
+          notificationEmail: email,
+          domainName,
+        }),
+      });
+      customerId = created.customer.id;
+    } catch (err) {
+      // Re-running Map after a partial failure (customer created, then
+      // the subscription or resource step failed) would otherwise hit
+      // ALREADY_EXISTS forever — look the existing placeholder up by its
+      // deterministic email and reuse it instead of dead-ending.
+      if (err instanceof ApiError && err.status === 409) {
+        const list = await authFetch<{ customers: FullCustomer[] }>(session.token, '/api/admin/customers');
+        const existing = list.customers.find((c) => c.email === email);
+        if (!existing) throw err;
+        customerId = existing.id;
+      } else {
+        throw err;
+      }
+    }
+
+    const sub = await authFetch<{ subscription: { id: string } }>(session.token, '/api/admin/subscriptions', {
+      method: 'POST',
+      body: JSON.stringify({ customerId, planId: placeholderPlan.id }),
+    });
+    return sub.subscription.id;
   }
 
   async function handleMap(svc: DiscoveredService) {
@@ -115,12 +214,21 @@ export default function RailwayImportPage() {
 
     setMappingKey(key);
     try {
-      await authFetch(session.token, `/api/admin/subscriptions/${sel.subscriptionId}/railway-resource`, {
+      const subscriptionId =
+        sel.subscriptionId === PLACEHOLDER ? await ensurePlaceholderSubscription(svc) : sel.subscriptionId;
+
+      await authFetch(session.token, `/api/admin/subscriptions/${subscriptionId}/railway-resource`, {
         method: 'POST',
         body: JSON.stringify({
           projectId: svc.projectId,
           environmentId: sel.environmentId,
           serviceId: svc.serviceId,
+          // Populated up front from Railway's latest deployment for this
+          // service/environment — STOP_DEPLOYMENT suspension has nothing
+          // to act on without it (see src/lib/suspension/engine.ts). If
+          // Railway had no deployment yet when the list loaded, this is
+          // null and suspension will fail until re-mapped after a deploy.
+          deploymentId: sel.environmentId === svc.defaultEnvironmentId ? svc.latestDeploymentId : null,
           hostingMode: sel.hostingMode,
           suspensionStrategy: sel.suspensionStrategy,
         }),
@@ -146,9 +254,10 @@ export default function RailwayImportPage() {
       <h1 style={{ fontSize: '1.5em', fontWeight: 700, marginBottom: '0.2em' }}>Import Railway services</h1>
       <p style={{ color: 'var(--ink-soft)', marginTop: 0, maxWidth: 640 }}>
         Every project and service visible to your <code className="mono">RAILWAY_API_TOKEN</code>, pulled live —
-        no more copying project/service IDs by hand. Railway has no idea which customer owns which service, so
-        that part still needs a human: pick the customer per row (a likely match is pre-selected when one of
-        their domains matches the service name) and confirm.
+        no more copying project/service IDs by hand. Railway has no idea which customer owns which service: a
+        likely match is pre-selected when one of their domains matches the service name, and every other row
+        defaults to <strong>creating a new placeholder customer named after the service</strong> — click Map to
+        proceed as-is, then rename it properly on the Customers page whenever you get to it.
       </p>
 
       {loadError && (
@@ -163,6 +272,15 @@ export default function RailwayImportPage() {
       )}
 
       {!loadError && services === null && <p style={{ color: 'var(--ink-soft)' }}>Loading from Railway…</p>}
+
+      {services !== null && !placeholderPlan && (
+        <div className="card" style={{ marginTop: '1em', borderColor: 'var(--danger)' }}>
+          <p className="error-text" style={{ margin: 0 }}>
+            No plan exists yet, so placeholder customers can&apos;t get a subscription. Create a plan on the
+            Plans page, then come back — the existing real-customer matches above still work without one.
+          </p>
+        </div>
+      )}
 
       {services !== null && (
         <>
@@ -226,10 +344,11 @@ export default function RailwayImportPage() {
                           </span>
                         ) : (
                           <select
-                            value={sel?.subscriptionId ?? ''}
+                            value={sel?.subscriptionId ?? PLACEHOLDER}
+                            disabled={sel?.subscriptionId === PLACEHOLDER && !placeholderPlan}
                             onChange={(e) => updateSelection(key, { subscriptionId: e.target.value })}
                           >
-                            <option value="">Select customer…</option>
+                            <option value={PLACEHOLDER}>+ New customer &quot;{svc.serviceName}&quot; (fix later)</option>
                             {customers.map((c) =>
                               c.subscriptions.map((s) => (
                                 <option key={s.id} value={s.id}>
