@@ -127,6 +127,41 @@ describe('getCustomerDashboardData', () => {
     expect(result!.subscriptions[0].resources).toHaveLength(0);
   });
 
+  it('derives an account-wide uptimeSummary and a real activity feed from resource status history', async () => {
+    const deps = makeFakeCustomerPortalDeps({
+      customers: [customer()],
+      subscriptions: [subscription()],
+      plans: [plan()],
+      railwayResources: [resource()],
+    });
+    await deps.statusSnapshots.create({ railwayResourceId: 'res_1', status: 'ACTIVE' });
+    await deps.statusSnapshots.create({ railwayResourceId: 'res_1', status: 'ACTIVE' });
+
+    const result = await getCustomerDashboardData(deps, 'cust_1');
+
+    expect(result!.uptimeSummary.d1.uptimePercent).toBe(100);
+    expect(result!.uptimeSummary.d7.uptimePercent).toBe(100);
+    expect(result!.uptimeSummary.d30.uptimePercent).toBe(100);
+    expect(result!.activity.series).toHaveLength(6);
+    expect(result!.activity.events.length).toBeGreaterThan(0);
+    expect(result!.activity.events[0].status).toBe('ACTIVE');
+  });
+
+  it('returns a safe empty uptimeSummary/activity when there are no resources at all', async () => {
+    const deps = makeFakeCustomerPortalDeps({
+      customers: [customer()],
+      subscriptions: [],
+      plans: [],
+      railwayResources: [],
+    });
+
+    const result = await getCustomerDashboardData(deps, 'cust_1');
+
+    expect(result!.uptimeSummary.d30.uptimePercent).toBeNull();
+    expect(result!.activity.events).toHaveLength(0);
+    expect(result!.activity.series).toHaveLength(6);
+  });
+
   it('handles a customer with zero subscriptions, invoices, and domains without throwing', async () => {
     const deps = makeFakeCustomerPortalDeps({
       customers: [customer()],

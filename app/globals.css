@@ -557,3 +557,95 @@ table.data-table tbody tr:hover {
 .w3-mono {
   font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
 }
+
+/* ---------- customer portal: sidebar shell (dashboard redesign) ---------- */
+
+.w3-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.35em 0.8em;
+  border-radius: 999px;
+  font-size: 0.78em;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  white-space: nowrap;
+}
+
+.w3-sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  padding: 0.7em 0.9em;
+  border-radius: 10px;
+  color: var(--w3-text-soft);
+  text-decoration: none;
+  font-size: 0.92em;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.w3-sidebar-link:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--w3-text);
+}
+
+.w3-sidebar-link.active {
+  background: rgba(42, 245, 152, 0.1);
+  border-color: rgba(42, 245, 152, 0.3);
+  color: var(--w3-cyan);
+}
+
+.w3-sidebar-toggle {
+  display: none;
+}
+
+.w3-sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .w3-welcome-text {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .w3-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+  }
+
+  .w3-sidebar.open {
+    transform: translateX(0);
+  }
+
+  .w3-sidebar-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--w3-text);
+    cursor: pointer;
+  }
+
+  .w3-sidebar-backdrop.open {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 40;
+  }
+}
