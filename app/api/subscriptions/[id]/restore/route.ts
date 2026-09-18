@@ -42,7 +42,17 @@ export async function POST(
   });
 
   const httpStatus = result.outcome === 'RESTORED' ? 200 : result.outcome === 'SKIPPED' ? 200 : 500;
-  return json(httpStatus, result);
+  return json(httpStatus, httpStatus >= 400 ? { ...result, error: buildFailureMessage(result) } : result);
+}
+
+// Surface *why* a restore failed instead of a bare 500 — mirrors the same
+// fix in the suspend route. See that file's comment for rationale.
+function buildFailureMessage(result: {
+  reason: string;
+  resourceResults: Array<{ resourceId: string; result: string; detail: string }>;
+}): string {
+  const firstFailure = result.resourceResults.find((r) => r.result === 'FAILED');
+  return firstFailure ? `${result.reason} — ${firstFailure.detail}` : result.reason;
 }
 
 function json(status: number, body: unknown): Response {

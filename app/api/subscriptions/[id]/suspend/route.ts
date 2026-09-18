@@ -54,7 +54,21 @@ export async function POST(
   });
 
   const httpStatus = result.outcome === 'SUSPENDED' ? 200 : result.outcome === 'SKIPPED' ? 200 : 500;
-  return json(httpStatus, result);
+  return json(httpStatus, httpStatus >= 400 ? { ...result, error: buildFailureMessage(result) } : result);
+}
+
+// Surface *why* a suspend failed instead of a bare 500. `result.reason` is
+// the engine-level summary ("One or more Railway resources failed to
+// suspend"); the first FAILED resourceResults[].detail carries the actual
+// cause (e.g. a missing hostingAccountId, a Railway API error) that the
+// admin needs to act on. Without this, the client's generic
+// "Request failed (500)" fallback was the only thing ever shown.
+function buildFailureMessage(result: {
+  reason: string;
+  resourceResults: Array<{ resourceId: string; result: string; detail: string }>;
+}): string {
+  const firstFailure = result.resourceResults.find((r) => r.result === 'FAILED');
+  return firstFailure ? `${result.reason} — ${firstFailure.detail}` : result.reason;
 }
 
 function json(status: number, body: unknown): Response {
