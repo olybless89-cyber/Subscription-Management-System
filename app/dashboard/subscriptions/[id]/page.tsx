@@ -48,6 +48,9 @@ export default function SubscriptionDetailPage({ params }: { params: { id: strin
   const [actionPending, setActionPending] = useState<'suspend' | 'restore' | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
+  const [dryRunPending, setDryRunPending] = useState(false);
+  const [dryRunNotice, setDryRunNotice] = useState<string | null>(null);
+
   const [projectId, setProjectId] = useState('');
   const [environmentId, setEnvironmentId] = useState('production');
   const [serviceId, setServiceId] = useState('');
@@ -131,6 +134,25 @@ export default function SubscriptionDetailPage({ params }: { params: { id: strin
     }
   }
 
+  async function handleSetDryRunOverride(override: boolean | null) {
+    if (!session) return;
+    setDryRunNotice(null);
+    setDryRunPending(true);
+    try {
+      const result = await authFetch<{ outcome: string; message: string }>(
+        session.token,
+        `/api/admin/subscriptions/${params.id}/dry-run-override`,
+        { method: 'POST', body: JSON.stringify({ override }) }
+      );
+      setDryRunNotice(result.message);
+      await load();
+    } catch (err) {
+      setDryRunNotice(err instanceof ApiError ? err.message : 'Failed to update dry-run override');
+    } finally {
+      setDryRunPending(false);
+    }
+  }
+
   async function handleMapResource(e: React.FormEvent) {
     e.preventDefault();
     if (!session) return;
@@ -195,6 +217,26 @@ export default function SubscriptionDetailPage({ params }: { params: { id: strin
 
           {isSuperAdmin ? (
             <>
+              <div style={{ marginTop: '1.5em', display: 'flex', gap: '0.6em', flexWrap: 'wrap' }}>
+                <button
+                  className="btn"
+                  disabled={dryRunPending || subscription.dryRunOverride === false}
+                  onClick={() => handleSetDryRunOverride(false)}
+                  title="Bypass dry-run for this subscription only — Suspend/Restore below will take real effect regardless of the global SUSPENSION_DRY_RUN setting"
+                >
+                  {dryRunPending ? 'Updating…' : 'Force real (bypass dry-run)'}
+                </button>
+                {subscription.dryRunOverride !== null && (
+                  <button
+                    className="btn"
+                    disabled={dryRunPending}
+                    onClick={() => handleSetDryRunOverride(null)}
+                  >
+                    Reset to inherit global setting
+                  </button>
+                )}
+              </div>
+              {dryRunNotice && <p style={{ fontSize: '0.85em', marginTop: '0.6em' }}>{dryRunNotice}</p>}
               <div style={{ marginTop: '1.5em', display: 'flex', gap: '0.6em' }}>
                 <button
                   className="btn"
