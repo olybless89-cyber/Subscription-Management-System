@@ -168,6 +168,11 @@ model Plan {
   amount        Int // stored in minor units (kobo)
   currency      String         @default("NGN")
   billingCycle  BillingCycle
+  // Only meaningful when billingCycle == CUSTOM: the exact number of
+  // months this plan covers (e.g. 5, 7, 10) for the "N months paid"
+  // bulk-activation flow — see src/lib/billing/months.ts. Null for
+  // every plan on one of the fixed enum cycles.
+  customMonths  Int?
   gracePeriodDays Int          @default(2)
   isActive      Boolean        @default(true)
   createdAt     DateTime       @default(now())

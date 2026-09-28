@@ -212,6 +212,9 @@ export interface PlanRecord {
   amount: number; // minor units (kobo)
   currency: string;
   billingCycle: BillingCycle;
+  /** Only meaningful when billingCycle === 'CUSTOM' — the exact number
+   * of months this plan covers. Null on every fixed-cycle plan. */
+  customMonths: number | null;
   gracePeriodDays: number;
 }
 

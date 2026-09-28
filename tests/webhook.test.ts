@@ -52,6 +52,7 @@ function basePlan(overrides: Partial<PlanRecord> = {}): PlanRecord {
     amount: 2_500_000, // ₦25,000 in kobo
     currency: 'NGN',
     billingCycle: 'MONTHLY',
+    customMonths: null,
     gracePeriodDays: 2,
     ...overrides,
   };

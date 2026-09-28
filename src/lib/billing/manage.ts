@@ -1,5 +1,6 @@
 import { BillingSetupDeps } from '../db/ports';
 import { addBillingCycle } from './cycle';
+import { resolveBillingCycleForMonths } from './months';
 import { PlanRecord, SubscriptionRecord, BillingCycle } from '@/types/domain';
 
 // ---------- createPlan ----------
@@ -9,6 +10,10 @@ export interface CreatePlanInput {
   amount: number; // minor units (kobo)
   currency?: string;
   billingCycle: BillingCycle;
+  /** Required when billingCycle is 'CUSTOM' — the exact number of
+   * months this plan covers. Ignored (stored as null) for every other
+   * cycle, which already has a fixed month count of its own. */
+  customMonths?: number | null;
   gracePeriodDays?: number;
 }
 
@@ -48,12 +53,16 @@ export async function createPlan(
   if (!Number.isInteger(gracePeriodDays) || gracePeriodDays < 0) {
     return { outcome: 'INVALID_INPUT', message: 'gracePeriodDays must be a non-negative integer' };
   }
+  if (input.billingCycle === 'CUSTOM' && (!Number.isInteger(input.customMonths) || (input.customMonths as number) < 1)) {
+    return { outcome: 'INVALID_INPUT', message: 'customMonths must be a positive integer when billingCycle is CUSTOM' };
+  }
 
   const plan = await deps.plans.create({
     name,
     amount: input.amount,
     currency: input.currency ?? 'NGN',
     billingCycle: input.billingCycle,
+    customMonths: input.billingCycle === 'CUSTOM' ? (input.customMonths as number) : null,
     gracePeriodDays,
   });
 
@@ -136,7 +145,7 @@ export async function createSubscription(
     startDate = new Date();
   }
 
-  const periodEnd = addBillingCycle(startDate, plan.billingCycle);
+  const periodEnd = addBillingCycle(startDate, plan);
 
   const subscription = await deps.subscriptions.create({
     customerId: customer.id,
@@ -229,4 +238,156 @@ export async function updateSubscription(
 
   const updated = await deps.subscriptions.findById(subscriptionId);
   return { outcome: 'UPDATED', message: 'Subscription updated', subscription: updated ?? undefined };
+}
+
+// ---------- activateCustomerBilling ----------
+
+/**
+ * Flat per-month rate used by the "N months paid" bulk-activation flow
+ * (activateCustomerBilling below) to compute a plan's amount from
+ * however many months the admin says were paid for — $20/month, stored
+ * in minor units (cents) since Plan.amount is minor-units throughout.
+ * Change this one constant if the flat rate ever changes; it has no
+ * other effect on plans created any other way (the Plans page still
+ * lets an admin set any amount directly).
+ */
+export const DEFAULT_MONTHLY_RATE_MINOR_UNITS = 2000; // $20.00
+export const DEFAULT_MONTHLY_RATE_CURRENCY = 'USD';
+
+/**
+ * findOrCreatePlanForMonths — resolves "N months paid, at $20/month" to
+ * a concrete Plan, reusing an existing one with the same cycle/amount/
+ * currency instead of creating a duplicate every time an admin enters
+ * the same N again (e.g. every customer who paid for 1 month shares one
+ * "1 Month — $20.00" plan, not one row each).
+ */
+export async function findOrCreatePlanForMonths(
+  deps: BillingSetupDeps,
+  requestingAdminId: string,
+  months: number,
+  ratePerMonthMinorUnits: number = DEFAULT_MONTHLY_RATE_MINOR_UNITS,
+  currency: string = DEFAULT_MONTHLY_RATE_CURRENCY
+): Promise<PlanRecord> {
+  const { billingCycle, customMonths } = resolveBillingCycleForMonths(months);
+  const amount = ratePerMonthMinorUnits * months;
+
+  const existingPlans = await deps.plans.listAll();
+  const existing = existingPlans.find(
+    (p) =>
+      p.billingCycle === billingCycle &&
+      p.customMonths === customMonths &&
+      p.amount === amount &&
+      p.currency === currency
+  );
+  if (existing) {
+    return existing;
+  }
+
+  const label = months === 1 ? '1 Month' : `${months} Months`;
+  const displayAmount = (amount / 100).toFixed(2);
+  const created = await createPlan(deps, requestingAdminId, {
+    name: `${label} — ${displayAmount} ${currency}`,
+    amount,
+    currency,
+    billingCycle,
+    customMonths,
+    gracePeriodDays: 2,
+  });
+
+  // createPlan only fails here on FORBIDDEN (bad requestingAdminId) or an
+  // INVALID_INPUT the validation above already ruled out — surfaced as a
+  // thrown error rather than threaded through another result type, since
+  // every caller of this helper already validated requestingAdminId via
+  // its own createPlan/createSubscription call in the same flow.
+  if (created.outcome !== 'CREATED' || !created.plan) {
+    throw new Error(`Failed to create plan for ${months} month(s): ${created.message}`);
+  }
+  return created.plan;
+}
+
+export type ActivateCustomerBillingOutcome =
+  | 'ACTIVATED'
+  | 'FORBIDDEN'
+  | 'NOT_FOUND'
+  | 'INVALID_INPUT'
+  | 'ALREADY_HAS_SUBSCRIPTION';
+
+export interface ActivateCustomerBillingResult {
+  outcome: ActivateCustomerBillingOutcome;
+  message: string;
+  subscription?: SubscriptionRecord;
+  plan?: PlanRecord;
+}
+
+/**
+ * activateCustomerBilling — the "admin enters how many months this
+ * customer already paid for" action. Used both by the per-customer
+ * Activate control on the Customers page (for one-off future imports)
+ * and by scripts/activate-imported-customers.mjs (for a batch of
+ * already-imported customers with no subscription yet).
+ *
+ * Deliberately refuses a customer that already has ANY subscription
+ * (even a cancelled/terminated one) rather than guessing which one to
+ * touch — activating billing is a one-time "onboard this customer"
+ * action, not a plan change (that's updateSubscription).
+ */
+export async function activateCustomerBilling(
+  deps: BillingSetupDeps,
+  requestingAdminId: string,
+  customerId: string,
+  monthsPaid: number,
+  opts: { startDate?: string } = {}
+): Promise<ActivateCustomerBillingResult> {
+  const requester = await deps.admins.findById(requestingAdminId);
+  if (!requester) {
+    return { outcome: 'FORBIDDEN', message: 'Requesting admin not found' };
+  }
+
+  const customer = await deps.customers.findById(customerId);
+  if (!customer) {
+    return { outcome: 'NOT_FOUND', message: 'Customer not found' };
+  }
+
+  if (!Number.isInteger(monthsPaid) || monthsPaid < 1) {
+    return { outcome: 'INVALID_INPUT', message: 'monthsPaid must be a positive whole number of months' };
+  }
+
+  const existingSubscriptions = await deps.subscriptions.findByCustomerId(customerId);
+  if (existingSubscriptions.length > 0) {
+    return {
+      outcome: 'ALREADY_HAS_SUBSCRIPTION',
+      message: 'This customer already has a subscription — change their plan from the Subscriptions page instead of activating again.',
+    };
+  }
+
+  const plan = await findOrCreatePlanForMonths(deps, requestingAdminId, monthsPaid);
+
+  const created = await createSubscription(deps, requestingAdminId, {
+    customerId,
+    planId: plan.id,
+    status: 'ACTIVE',
+    startDate: opts.startDate,
+  });
+
+  if (created.outcome !== 'CREATED' || !created.subscription) {
+    return {
+      outcome: created.outcome === 'FORBIDDEN' ? 'FORBIDDEN' : 'INVALID_INPUT',
+      message: created.message,
+    };
+  }
+
+  await deps.auditLog.create({
+    actor: requestingAdminId,
+    action: 'CUSTOMER_BILLING_ACTIVATED',
+    target: customerId,
+    metadata: { monthsPaid, planId: plan.id, subscriptionId: created.subscription.id },
+    result: 'SUCCESS',
+  });
+
+  return {
+    outcome: 'ACTIVATED',
+    message: `Activated on a ${monthsPaid}-month plan (${(plan.amount / 100).toFixed(2)} ${plan.currency})`,
+    subscription: created.subscription,
+    plan,
+  };
 }

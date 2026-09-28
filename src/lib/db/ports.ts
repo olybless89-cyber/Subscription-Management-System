@@ -114,6 +114,8 @@ export interface PlanRepository {
     amount: number;
     currency: string;
     billingCycle: PlanRecord['billingCycle'];
+    /** Required (and only meaningful) when billingCycle is 'CUSTOM'. */
+    customMonths?: number | null;
     gracePeriodDays: number;
   }): Promise<PlanRecord>;
 }

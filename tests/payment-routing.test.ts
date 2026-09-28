@@ -59,7 +59,7 @@ describe('initiateCheckout — provider routing by customer group', () => {
   }
 
   function plan(): PlanRecord {
-    return { id: 'plan_1', name: 'Standard Hosting', amount: 1_000_000, currency: 'NGN', billingCycle: 'MONTHLY', gracePeriodDays: 2 };
+    return { id: 'plan_1', name: 'Standard Hosting', amount: 1_000_000, currency: 'NGN', billingCycle: 'MONTHLY', customMonths: null, gracePeriodDays: 2 };
   }
 
   it('routes a PAYSTACK-grouped customer to the Paystack provider', async () => {

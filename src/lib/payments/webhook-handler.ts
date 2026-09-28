@@ -153,7 +153,7 @@ export async function handlePaymentWebhook(
   // existing period end (covers early renewal without losing paid-for time).
   const currentPeriodEnd = new Date(subscription.currentPeriodEnd);
   const base = currentPeriodEnd.getTime() > now.getTime() ? currentPeriodEnd : now;
-  const newPeriodEnd = addBillingCycle(base, plan.billingCycle);
+  const newPeriodEnd = addBillingCycle(base, plan);
 
   await deps.subscriptions.extendPeriod(subscription.id, {
     currentPeriodStart: base.toISOString(),

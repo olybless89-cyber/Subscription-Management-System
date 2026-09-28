@@ -37,7 +37,7 @@ function customer(): CustomerRecord {
 }
 
 function plan(): PlanRecord {
-  return { id: 'plan_1', name: 'Test Plan', amount: 1000, currency: 'NGN', billingCycle: 'MONTHLY', gracePeriodDays: 2 };
+  return { id: 'plan_1', name: 'Test Plan', amount: 1000, currency: 'NGN', billingCycle: 'MONTHLY', customMonths: null, gracePeriodDays: 2 };
 }
 
 function sub() {

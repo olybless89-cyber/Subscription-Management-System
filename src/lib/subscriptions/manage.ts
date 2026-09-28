@@ -52,7 +52,7 @@ export async function createSubscription(
     return { outcome: 'INVALID_INPUT', message: 'startDate is not a valid date' };
   }
 
-  const periodEnd = addBillingCycle(start, plan.billingCycle);
+  const periodEnd = addBillingCycle(start, plan);
 
   const subscription = await deps.subscriptions.create({
     customerId: input.customerId,

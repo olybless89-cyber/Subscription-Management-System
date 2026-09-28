@@ -52,7 +52,7 @@ function customer(overrides: Partial<CustomerRecord> = {}): CustomerRecord {
 }
 
 function plan(overrides: Partial<PlanRecord> = {}): PlanRecord {
-  return { id: 'plan_1', name: 'Standard', amount: 1000, currency: 'NGN', billingCycle: 'MONTHLY', gracePeriodDays: 2, ...overrides };
+  return { id: 'plan_1', name: 'Standard', amount: 1000, currency: 'NGN', billingCycle: 'MONTHLY', customMonths: null, gracePeriodDays: 2, ...overrides };
 }
 
 function sub(overrides: Partial<ReturnType<typeof baseSub>> = {}) {

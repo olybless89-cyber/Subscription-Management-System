@@ -1,18 +1,33 @@
 import { BillingCycle } from '@/types/domain';
 
+/** The minimum shape addBillingCycle needs — a full PlanRecord always
+ * satisfies this, but callers that only have the two relevant fields
+ * (e.g. a plan being constructed, not yet persisted) can pass those
+ * directly too. */
+export interface CyclePlan {
+  billingCycle: BillingCycle;
+  /** Only read when billingCycle === 'CUSTOM'. See resolveBillingCycleForMonths. */
+  customMonths?: number | null;
+}
+
 /**
- * Advances a date by one billing cycle. CUSTOM is treated as MONTHLY here
- * as a safe default — plans using CUSTOM billing should extend this with
- * their own interval field before going live; this function deliberately
- * does not guess at an arbitrary custom interval.
+ * Advances a date by one billing cycle. For CUSTOM, advances by
+ * plan.customMonths (set by resolveBillingCycleForMonths for the "N
+ * months paid" activation flow — see src/lib/billing/months.ts); a
+ * CUSTOM plan with no customMonths set falls back to one month, the
+ * same safe default this always used before customMonths existed.
  */
-export function addBillingCycle(from: Date, cycle: BillingCycle): Date {
+export function addBillingCycle(from: Date, plan: CyclePlan): Date {
   const next = new Date(from);
-  switch (cycle) {
+  switch (plan.billingCycle) {
     case 'MONTHLY':
-    case 'CUSTOM':
       next.setUTCMonth(next.getUTCMonth() + 1);
       return next;
+    case 'CUSTOM': {
+      const months = plan.customMonths && plan.customMonths > 0 ? plan.customMonths : 1;
+      next.setUTCMonth(next.getUTCMonth() + months);
+      return next;
+    }
     case 'QUARTERLY':
       next.setUTCMonth(next.getUTCMonth() + 3);
       return next;

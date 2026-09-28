@@ -34,6 +34,7 @@ function plan(overrides: Partial<PlanRecord> = {}): PlanRecord {
     amount: 2_500_000,
     currency: 'NGN',
     billingCycle: 'MONTHLY',
+    customMonths: null,
     gracePeriodDays: 2,
     ...overrides,
   };

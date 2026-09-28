@@ -877,6 +877,7 @@ export class PrismaPlanRepository implements PlanRepository {
       amount: p.amount,
       currency: p.currency,
       billingCycle: p.billingCycle,
+      customMonths: p.customMonths,
       gracePeriodDays: p.gracePeriodDays,
     };
   }
@@ -889,6 +890,7 @@ export class PrismaPlanRepository implements PlanRepository {
       amount: p.amount,
       currency: p.currency,
       billingCycle: p.billingCycle,
+      customMonths: p.customMonths,
       gracePeriodDays: p.gracePeriodDays,
     }));
   }
@@ -898,6 +900,7 @@ export class PrismaPlanRepository implements PlanRepository {
     amount: number;
     currency: string;
     billingCycle: PlanRecord['billingCycle'];
+    customMonths?: number | null;
     gracePeriodDays: number;
   }): Promise<PlanRecord> {
     const p = await this.prisma.plan.create({
@@ -906,6 +909,7 @@ export class PrismaPlanRepository implements PlanRepository {
         amount: input.amount,
         currency: input.currency,
         billingCycle: input.billingCycle as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        customMonths: input.customMonths ?? null,
         gracePeriodDays: input.gracePeriodDays,
       },
     });
@@ -915,6 +919,7 @@ export class PrismaPlanRepository implements PlanRepository {
       amount: p.amount,
       currency: p.currency,
       billingCycle: p.billingCycle,
+      customMonths: p.customMonths,
       gracePeriodDays: p.gracePeriodDays,
     };
   }
