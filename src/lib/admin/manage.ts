@@ -3,6 +3,8 @@ import { canManageOtherAdmins } from '../auth/authorize';
 import { hashPassword } from '../auth/password';
 import { AdminRecord, AdminRole } from '@/types/domain';
 
+const MIN_ADMIN_PASSWORD_LENGTH = 7;
+
 export interface CreateAdminInput {
   name: string;
   email: string;
@@ -57,8 +59,8 @@ export async function createAdmin(
   if (!email.includes('@')) {
     return { outcome: 'INVALID_INPUT', message: 'Invalid email address' };
   }
-  if (input.password.length < 12) {
-    return { outcome: 'INVALID_INPUT', message: 'Password must be at least 12 characters' };
+  if (input.password.length < MIN_ADMIN_PASSWORD_LENGTH) {
+    return { outcome: 'INVALID_INPUT', message: `Password must be at least ${MIN_ADMIN_PASSWORD_LENGTH} characters` };
   }
 
   const existing = await deps.admins.findByEmail(email);

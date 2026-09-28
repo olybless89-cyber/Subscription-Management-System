@@ -36,8 +36,8 @@ export default function RegisterPage() {
       setError("Passwords don't match");
       return;
     }
-    if (password.length < 12) {
-      setError('Password must be at least 12 characters');
+    if (password.length < 7) {
+      setError('Password must be at least 7 characters');
       return;
     }
     if (websiteType === 'OTHER' && !websiteTypeOther.trim()) {
@@ -129,7 +129,7 @@ export default function RegisterPage() {
                   type="password"
                   autoComplete="new-password"
                   required
-                  minLength={12}
+                  minLength={7}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
@@ -141,7 +141,7 @@ export default function RegisterPage() {
                   type="password"
                   autoComplete="new-password"
                   required
-                  minLength={12}
+                  minLength={7}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                 />

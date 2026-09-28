@@ -262,8 +262,8 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     if (!session) return;
     setResetError(null);
     setResetNotice(null);
-    if (resetPasswordValue.length < 12) {
-      setResetError('New password must be at least 12 characters');
+    if (resetPasswordValue.length < 7) {
+      setResetError('New password must be at least 7 characters');
       return;
     }
     setResettingPassword(true);
@@ -696,7 +696,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             <input
               id="reset-password"
               type="password"
-              minLength={12}
+              minLength={7}
               value={resetPasswordValue}
               onChange={(e) => setResetPasswordValue(e.target.value)}
             />

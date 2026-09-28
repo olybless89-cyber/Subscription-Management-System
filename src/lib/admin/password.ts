@@ -1,7 +1,7 @@
 import { AdminManagementDeps } from '../db/ports';
 import { hashPassword, verifyPassword } from '../auth/password';
 
-const MIN_PASSWORD_LENGTH = 12;
+const MIN_PASSWORD_LENGTH = 7;
 
 export type PasswordOutcome = 'CHANGED' | 'FORBIDDEN' | 'NOT_FOUND' | 'INVALID_INPUT' | 'WRONG_CURRENT_PASSWORD';
 

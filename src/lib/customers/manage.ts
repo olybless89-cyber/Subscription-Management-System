@@ -313,7 +313,7 @@ export interface RegisterCustomerResult {
   domainMessage?: string;
 }
 
-const MIN_REGISTRATION_PASSWORD_LENGTH = 12;
+const MIN_REGISTRATION_PASSWORD_LENGTH = 7;
 
 /**
  * registerCustomer — public, self-service signup (spec: "customer can

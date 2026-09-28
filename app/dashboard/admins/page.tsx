@@ -101,8 +101,8 @@ export default function AdminsPage() {
     if (!session) return;
     setResetError(null);
     setResetNotice(null);
-    if (resetPasswordValue.length < 12) {
-      setResetError('New password must be at least 12 characters');
+    if (resetPasswordValue.length < 7) {
+      setResetError('New password must be at least 7 characters');
       return;
     }
     setResetSubmitting(true);
@@ -191,7 +191,7 @@ export default function AdminsPage() {
                 <input
                   id="reset-password-value"
                   type="password"
-                  minLength={12}
+                  minLength={7}
                   value={resetPasswordValue}
                   onChange={(e) => setResetPasswordValue(e.target.value)}
                   autoFocus
@@ -230,7 +230,7 @@ export default function AdminsPage() {
                 id="admin-password"
                 type="password"
                 required
-                minLength={12}
+                minLength={7}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
