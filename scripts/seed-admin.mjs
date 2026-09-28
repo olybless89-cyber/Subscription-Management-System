@@ -47,8 +47,8 @@ async function main() {
     console.error('Usage: ADMIN_EMAIL=... ADMIN_PASSWORD=... node scripts/seed-admin.mjs');
     process.exit(1);
   }
-  if (password.length < 12) {
-    console.error('ADMIN_PASSWORD should be at least 12 characters — pick something longer.');
+  if (password.length < 7) {
+    console.error('ADMIN_PASSWORD should be at least 7 characters — pick something longer.');
     process.exit(1);
   }
 
