@@ -13,6 +13,10 @@ interface Customer {
   status: string;
   automaticSuspension: boolean;
   paymentProvider: 'PAYSTACK' | 'FLUTTERWAVE';
+  /** Null for a customer with no subscription yet — e.g. one created
+   * via CSV import, which only ever creates the Customer + Domain rows.
+   * See the "Months paid" activation control below. */
+  subscriptionId: string | null;
 }
 
 // Curated service categories. The select's value IS the string that
@@ -73,6 +77,11 @@ export default function CustomersPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formNotice, setFormNotice] = useState<string | null>(null);
+
+  const [monthsPaidInput, setMonthsPaidInput] = useState<Record<string, string>>({});
+  const [activatingId, setActivatingId] = useState<string | null>(null);
+  const [activateError, setActivateError] = useState<string | null>(null);
+  const [activateNotice, setActivateNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!session) return;
@@ -140,6 +149,40 @@ export default function CustomersPage() {
     }
   }
 
+  /**
+   * handleActivate — the "Months paid" control for a customer that has
+   * no subscription yet (subscriptionId === null), most commonly one
+   * created via CSV import. Creates (or reuses) a plan for that many
+   * months at the flat per-month rate and an ACTIVE subscription
+   * starting now, so the automated suspend/restore engine has
+   * something to act on for this customer going forward.
+   */
+  async function handleActivate(customerId: string) {
+    if (!session) return;
+    const raw = monthsPaidInput[customerId] ?? '1';
+    const monthsPaid = Number.parseInt(raw, 10);
+    setActivateError(null);
+    setActivateNotice(null);
+    if (!Number.isInteger(monthsPaid) || monthsPaid < 1) {
+      setActivateError('Months paid must be a positive whole number');
+      return;
+    }
+    setActivatingId(customerId);
+    try {
+      const result = await authFetch<{ outcome: string; message: string }>(
+        session.token,
+        `/api/admin/customers/${customerId}/activate-billing`,
+        { method: 'POST', body: JSON.stringify({ monthsPaid }) }
+      );
+      setActivateNotice(result.message);
+      await load();
+    } catch (err) {
+      setActivateError(err instanceof ApiError ? err.message : 'Failed to activate billing');
+    } finally {
+      setActivatingId(null);
+    }
+  }
+
   return (
     <div>
       <h1 style={{ fontSize: '1.5em', fontWeight: 700, marginBottom: '1em' }}>Customers</h1>
@@ -151,6 +194,8 @@ export default function CustomersPage() {
           {customers && customers.length === 0 && (
             <p style={{ color: 'var(--ink-soft)' }}>No customers yet — create one on the right.</p>
           )}
+          {activateError && <p className="error-text">{activateError}</p>}
+          {activateNotice && <p style={{ color: 'var(--forest-bright)', fontSize: '0.9em' }}>{activateNotice}</p>}
           {customers && customers.length > 0 && (
             <div className="table-scroll">
             <table className="data-table">
@@ -161,6 +206,7 @@ export default function CustomersPage() {
                   <th>Type</th>
                   <th>Status</th>
                   <th>Provider</th>
+                  <th>Billing</th>
                 </tr>
               </thead>
               <tbody>
@@ -181,6 +227,39 @@ export default function CustomersPage() {
                       {c.status}
                     </td>
                     <td className="mono">{c.paymentProvider}</td>
+                    <td>
+                      {c.subscriptionId ? (
+                        <a
+                          href={`/dashboard/subscriptions/${c.subscriptionId}`}
+                          style={{ color: 'var(--forest-bright)', textDecoration: 'none', fontSize: '0.85em' }}
+                        >
+                          View subscription
+                        </a>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4em' }}>
+                          <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            aria-label={`Months paid for ${c.name}`}
+                            value={monthsPaidInput[c.id] ?? '1'}
+                            onChange={(e) =>
+                              setMonthsPaidInput((prev) => ({ ...prev, [c.id]: e.target.value }))
+                            }
+                            style={{ width: '4em', padding: '0.3em' }}
+                          />
+                          <button
+                            type="button"
+                            className="btn"
+                            disabled={activatingId === c.id}
+                            onClick={() => handleActivate(c.id)}
+                            style={{ fontSize: '0.85em', padding: '0.3em 0.7em' }}
+                          >
+                            {activatingId === c.id ? 'Activating…' : 'Activate'}
+                          </button>
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

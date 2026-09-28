@@ -24,8 +24,18 @@ export async function GET(request: Request): Promise<Response> {
 
   const customers = visible === 'ALL' ? await deps.customers.listAll() : await deps.customers.findByIds(visible);
 
+  // Every subscription for every visible customer, in one query, so we
+  // can flag which customers have none yet (imported customers never
+  // get one automatically — see activateCustomerBilling) without an
+  // N+1 lookup per row.
+  const allSubscriptions = await deps.subscriptions.listAll();
+  const subscriptionByCustomerId = new Map(allSubscriptions.map((s) => [s.customerId, s]));
+
   // Never expose passwordHash over the API.
-  const safe = customers.map(({ passwordHash, ...rest }) => rest);
+  const safe = customers.map(({ passwordHash, ...rest }) => {
+    const subscription = subscriptionByCustomerId.get(rest.id);
+    return { ...rest, subscriptionId: subscription?.id ?? null };
+  });
   return json(200, { customers: safe });
 }
 
