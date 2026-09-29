@@ -20,6 +20,14 @@ interface Customer {
   email: string;
 }
 
+interface Domain {
+  id: string;
+  customerId: string;
+  subscriptionId: string | null;
+  domainName: string;
+  isPrimary: boolean;
+}
+
 interface Plan {
   id: string;
   name: string;
@@ -66,6 +74,7 @@ export default function SubscriptionsPage() {
   const [subscriptions, setSubscriptions] = useState<Subscription[] | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [domains, setDomains] = useState<Domain[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [customerId, setCustomerId] = useState('');
@@ -78,14 +87,16 @@ export default function SubscriptionsPage() {
   const load = useCallback(async () => {
     if (!session) return;
     try {
-      const [subsData, custData, planData] = await Promise.all([
+      const [subsData, custData, planData, domainData] = await Promise.all([
         authFetch<{ subscriptions: Subscription[] }>(session.token, '/api/admin/subscriptions'),
         authFetch<{ customers: Customer[] }>(session.token, '/api/admin/customers'),
         authFetch<{ plans: Plan[] }>(session.token, '/api/admin/plans'),
+        authFetch<{ domains: Domain[] }>(session.token, '/api/admin/domains'),
       ]);
       setSubscriptions(subsData.subscriptions);
       setCustomers(custData.customers);
       setPlans(planData.plans);
+      setDomains(domainData.domains);
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : 'Failed to load subscriptions');
     }
@@ -129,6 +140,21 @@ export default function SubscriptionsPage() {
   function customerLabel(id: string): string {
     const c = customers.find((c) => c.id === id);
     return c ? `${c.customerCode} — ${c.email}` : id;
+  }
+
+  // Prefer a domain explicitly linked to this subscription; otherwise
+  // fall back to the customer's primary domain, otherwise whichever
+  // domain of theirs comes first — same fallback order the customer/
+  // subscription detail pages already use for "which domain represents
+  // this customer's live site."
+  function liveDomainFor(s: Subscription): Domain | null {
+    const forCustomer = domains.filter((d) => d.customerId === s.customerId);
+    if (forCustomer.length === 0) return null;
+    return (
+      forCustomer.find((d) => d.subscriptionId === s.id) ??
+      forCustomer.find((d) => d.isPrimary) ??
+      forCustomer[0]
+    );
   }
 
   function planLabel(id: string): string {
@@ -175,12 +201,28 @@ export default function SubscriptionsPage() {
                 </tr>
               </thead>
               <tbody>
-                {subscriptions.map((s) => (
+                {subscriptions.map((s) => {
+                  const liveDomain = liveDomainFor(s);
+                  return (
                   <tr key={s.id}>
                     <td>
                       <a href={`/dashboard/subscriptions/${s.id}`} style={{ color: 'var(--forest-bright)', textDecoration: 'none' }}>
                         {customerLabel(s.customerId)}
                       </a>
+                      {liveDomain && (
+                        <div>
+                          <a
+                            href={`https://${liveDomain.domainName}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mono"
+                            style={{ color: 'var(--ink-soft)', textDecoration: 'none', fontSize: '0.82em' }}
+                            title={`Open ${liveDomain.domainName} in a new tab`}
+                          >
+                            {liveDomain.domainName} ↗
+                          </a>
+                        </div>
+                      )}
                     </td>
                     <td>{planLabel(s.planId)}</td>
                     <td>
@@ -189,7 +231,8 @@ export default function SubscriptionsPage() {
                     </td>
                     <td className="mono">{new Date(s.nextBillingDate).toLocaleDateString()}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
             </div>
