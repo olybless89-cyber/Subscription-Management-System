@@ -142,6 +142,90 @@ textarea {
   margin-right: 0.5em;
 }
 
+/* ---------- admin dashboard: status badges + segmented mode control ----------
+   Used by the subscription detail page (dry-run mode badge, Railway
+   resource status) — a light/paper-themed counterpart to .w3-badge,
+   which is dark-themed for the customer portal only. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  padding: 0.32em 0.8em;
+  border-radius: 999px;
+  font-size: 0.78em;
+  font-weight: 600;
+  border: 1px solid var(--line-strong);
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.badge-success {
+  color: var(--forest-bright);
+  border-color: rgba(31, 92, 63, 0.35);
+  background: rgba(31, 92, 63, 0.08);
+}
+
+.badge-danger {
+  color: var(--danger);
+  border-color: rgba(164, 52, 43, 0.35);
+  background: rgba(164, 52, 43, 0.08);
+}
+
+.badge-warning {
+  color: var(--clay);
+  border-color: rgba(193, 96, 43, 0.35);
+  background: rgba(193, 96, 43, 0.08);
+}
+
+.badge-neutral {
+  color: var(--ink-soft);
+}
+
+/* A row of mutually-exclusive choices in one pill-shaped control,
+   replacing pairs of separate buttons + explanatory prose (e.g. the
+   dry-run mode picker) with one glanceable, one-click widget. */
+.seg-control {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--paper-raised);
+  padding: 3px;
+  gap: 2px;
+}
+
+.seg-control button {
+  border: none;
+  background: transparent;
+  padding: 0.4em 0.9em;
+  border-radius: 999px;
+  font-size: 0.82em;
+  font-weight: 500;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.seg-control button:hover:not(:disabled):not(.active) {
+  color: var(--ink);
+}
+
+.seg-control button.active {
+  background: var(--forest);
+  color: #fff;
+}
+
+.seg-control button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.section-divider {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 1.6em 0;
+}
+
 table.data-table {
   width: 100%;
   border-collapse: collapse;
