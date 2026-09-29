@@ -58,6 +58,49 @@ describe('stopDeployment — deploymentStopped is the authoritative signal', () 
     const result = await stopDeployment(railway, 'dep_1');
     expect(result.success).toBe(true);
   });
+
+  it('polls past a stale read instead of reporting failure — reproduces the 2026-09-29 incident', async () => {
+    // deploymentStop is fire-and-forget on Railway's side: the mutation
+    // can return before the deployment has actually transitioned, so
+    // the very next read can still show the pre-stop state. This is
+    // exactly what happened to a real customer's service: the stop DID
+    // take effect a moment later, but a single immediate check reported
+    // FAILED, so the subscription never got marked SUSPENDED and every
+    // later restore attempt was skipped as "not SUSPENDED."
+    vi.useFakeTimers();
+    try {
+      let getDeploymentCalls = 0;
+      const railway: RailwayClient = {
+        request: vi.fn(async (query: string): Promise<any> => {
+          if (query.includes('mutation StopDeployment')) return { deploymentStop: true };
+          if (query.includes('query GetDeployment')) {
+            getDeploymentCalls += 1;
+            if (getDeploymentCalls === 1) {
+              // First read: stale — still looks like it's running.
+              return {
+                deployment: { id: 'dep_1', status: 'SUCCESS', serviceId: 's', environmentId: 'e', createdAt: '2026-01-01T00:00:00.000Z', deploymentStopped: false },
+              };
+            }
+            // Second read: Railway has caught up — genuinely stopped now.
+            return {
+              deployment: { id: 'dep_1', status: 'CRASHED', serviceId: 's', environmentId: 'e', createdAt: '2026-01-01T00:00:00.000Z', deploymentStopped: true },
+            };
+          }
+          throw new Error('unexpected query');
+        }),
+      };
+
+      const resultPromise = stopDeployment(railway, 'dep_1');
+      await vi.advanceTimersByTimeAsync(3000);
+      const result = await resultPromise;
+
+      expect(result.success).toBe(true);
+      expect(result.status).toBe('CRASHED');
+      expect(getDeploymentCalls).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('getServiceStatus — real DeploymentStatus enum coverage', () => {

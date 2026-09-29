@@ -138,31 +138,46 @@ describe('suspendCustomer — DEDICATED / STOP_DEPLOYMENT', () => {
   });
 
   it('does NOT mark SUSPENDED if Railway never confirms the deployment stopped', async () => {
-    const deps = makeFakeDeps({
-      customers: [baseCustomer()],
-      subscriptions: [baseSubscription()],
-      railwayResources: [dedicatedResource()],
-    });
+    // stopDeployment polls for up to ~30s of real time before giving up
+    // (see its comment — deploymentStop is fire-and-forget on Railway's
+    // side, so a single immediate check is unreliable). Use fake timers
+    // so this test exercises that full poll-and-give-up path without
+    // the suite actually waiting 30 seconds.
+    vi.useFakeTimers();
+    try {
+      const deps = makeFakeDeps({
+        customers: [baseCustomer()],
+        subscriptions: [baseSubscription()],
+        railwayResources: [dedicatedResource()],
+      });
 
-    const railway: RailwayClient = {
-      request: vi.fn(async (query: string): Promise<any> => {
-        if (query.includes('mutation StopDeployment')) return { deploymentStop: true };
-        if (query.includes('query GetDeployment')) {
-          // Railway still reports it running — stop was not effective.
-          return { deployment: { id: 'dep_1', status: 'SUCCESS', serviceId: 'svc_1', environmentId: 'env_1', createdAt: new Date().toISOString() } };
-        }
-        throw new Error('unexpected query');
-      }),
-    };
+      const railway: RailwayClient = {
+        request: vi.fn(async (query: string): Promise<any> => {
+          if (query.includes('mutation StopDeployment')) return { deploymentStop: true };
+          if (query.includes('query GetDeployment')) {
+            // Railway still reports it running — stop was never effective,
+            // on every single poll attempt.
+            return { deployment: { id: 'dep_1', status: 'SUCCESS', serviceId: 'svc_1', environmentId: 'env_1', createdAt: new Date().toISOString() } };
+          }
+          throw new Error('unexpected query');
+        }),
+      };
 
-    deps.resolveRailwayClient = async () => railway;
+      deps.resolveRailwayClient = async () => railway;
 
-    const result = await suspendCustomer(deps, 'sub_1', 'NON_PAYMENT');
+      const resultPromise = suspendCustomer(deps, 'sub_1', 'NON_PAYMENT');
+      // 10 attempts * 3000ms between them — flush every timer so the
+      // polling loop actually runs to exhaustion under fake time.
+      await vi.advanceTimersByTimeAsync(10 * 3000);
+      const result = await resultPromise;
 
-    expect(result.outcome).toBe('FAILED');
-    expect((await deps.subscriptions.findById('sub_1'))!.status).toBe('GRACE_PERIOD');
-    expect((await deps.customers.findById('cust_1'))!.status).toBe('ACTIVE');
-    expect(deps.events[0].result).toBe('FAILED');
+      expect(result.outcome).toBe('FAILED');
+      expect((await deps.subscriptions.findById('sub_1'))!.status).toBe('GRACE_PERIOD');
+      expect((await deps.customers.findById('cust_1'))!.status).toBe('ACTIVE');
+      expect(deps.events[0].result).toBe('FAILED');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('never calls Railway when SUSPENSION_DRY_RUN is set, and never flips status', async () => {

@@ -103,10 +103,26 @@ export async function getDeployments(
  * strategy). This must NEVER delete the service — only halt the running
  * deployment. Verifies via `deploymentStopped` (a real, authoritative
  * boolean field) before returning — not a guess from `status` text.
+ *
+ * POLLS rather than checking once immediately after the mutation.
+ * `deploymentStop` is fire-and-forget on Railway's side: it queues the
+ * stop and returns before the deployment has actually transitioned, so
+ * a single read right after firing it can still see the pre-stop state
+ * (status still SUCCESS, deploymentStopped still false/undefined) even
+ * though the deployment genuinely does stop moments later. That race
+ * was reproduced in production on 2026-09-29: `stopDeployment` returned
+ * success:false so suspendCustomer never flipped the subscription to
+ * SUSPENDED, but Railway's own stop had already taken effect for real —
+ * leaving the customer's service down with a subscription record that
+ * looked untouched, so restoreCustomer's very first guard ("not
+ * SUSPENDED, nothing to restore") skipped every restore attempt. Poll
+ * the same way verifyDeploymentReachesStatus already does for restores,
+ * so a slightly-delayed stop is still verified correctly.
  */
 export async function stopDeployment(
   client: RailwayClient,
-  deploymentId: string
+  deploymentId: string,
+  opts: { maxAttempts?: number; intervalMs?: number } = {}
 ): Promise<{ success: boolean; status: string }> {
   const mutation = `
     mutation StopDeployment($id: String!) {
@@ -120,16 +136,40 @@ export async function stopDeployment(
     throw new RailwayApiError('Failed to stop deployment', 'GRAPHQL_ERROR', err);
   }
 
-  const after = await getDeployment(client, deploymentId);
-  const status = after?.status ?? 'UNKNOWN';
-  // deploymentStopped is the authoritative signal. Fall back to the
-  // status-string heuristic only if the field is somehow absent (e.g. an
-  // older/mocked response) — never let an absent field silently read as
-  // "stopped".
-  const success =
-    after?.deploymentStopped === true ||
-    (after?.deploymentStopped === undefined && DEPLOYMENT_STOPPED_STATUSES.includes(status));
-  return { success, status };
+  const maxAttempts = opts.maxAttempts ?? 10;
+  const intervalMs = opts.intervalMs ?? 3000;
+
+  let status = 'UNKNOWN';
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const after = await getDeployment(client, deploymentId);
+    status = after?.status ?? 'UNKNOWN';
+
+    // deploymentStopped is the authoritative signal — trust it the
+    // moment it's true, regardless of what status text says.
+    if (after?.deploymentStopped === true) {
+      return { success: true, status };
+    }
+
+    // Once the deployment has settled into a terminal status, there is
+    // nothing more to wait for: fall back to the status-text heuristic
+    // (deploymentStopped undefined) or honor an explicit false (which
+    // overrides the heuristic even if status happens to look terminal —
+    // see the "deploymentStopped: false wins" test case).
+    if (DEPLOYMENT_STOPPED_STATUSES.includes(status)) {
+      return { success: after?.deploymentStopped !== false, status };
+    }
+
+    // Still running (status hasn't moved yet) or mid-transition
+    // (REMOVING etc.) — the stop may simply not have landed yet. Keep
+    // polling instead of reporting a false failure.
+    if (attempt < maxAttempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  }
+
+  // Exhausted every attempt without ever seeing deploymentStopped or a
+  // terminal stopped status — genuinely didn't stop in time.
+  return { success: false, status };
 }
 
 /**
