@@ -27,7 +27,7 @@
 
 import { buildBillingSetupDeps } from '../../../../../src/lib/deps-factory';
 import { authenticateFromHeader, hasAdminRole } from '../../../../../src/lib/auth/authorize';
-import { listAccountProjects, RailwayAccountEnvironment } from '../../../../../src/lib/railway/projects';
+import { listAccountProjects, RailwayAccountEnvironment, isDatabaseServiceName } from '../../../../../src/lib/railway/projects';
 import { getDeployments } from '../../../../../src/lib/railway/deployments';
 import { RailwayApiError, RailwayClient } from '../../../../../src/lib/railway/client';
 import { resolveRailwayClientForAccount, HostingAccountResolutionError } from '../../../../../src/lib/hosting/account-client';
@@ -124,8 +124,14 @@ export async function GET(request: Request): Promise<Response> {
   // domainName -> customerId, normalized for loose substring matching.
   const domainIndex = domains.map((d) => ({ needle: normalize(d.domainName), customerId: d.customerId }));
 
+  // Database plugin services (Postgres, MySQL, Redis, ...) are never
+  // suspendable — see isDatabaseServiceName's own doc comment — so they
+  // never even reach the mapping UI in the first place, on this route
+  // or the per-subscription "map a resource" picker that also calls it.
   const flatServices = projects.flatMap((project) =>
-    project.services.map((service) => ({ project, service }))
+    project.services
+      .filter((service) => !isDatabaseServiceName(service.name))
+      .map((service) => ({ project, service }))
   );
 
   const deploymentIds = await mapWithConcurrency(flatServices, 5, ({ project, service }) => {

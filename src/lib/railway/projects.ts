@@ -23,6 +23,21 @@ export interface RailwayAccountService {
   name: string;
 }
 
+// Database-plugin services (Postgres, MySQL, Redis, ...) never get
+// suspended — the suspend/restore engine only ever stops a web/API
+// service's deployment (see src/lib/suspension/engine.ts), and a
+// database has no deployment to stop in the first place. Railway names
+// these consistently after the engine itself (optionally with a random
+// suffix when a project has more than one, e.g. "Postgres-Yjsz"), so a
+// name-prefix match is enough to keep them out of every "pick a Railway
+// service to map" list without needing extra Railway API fields.
+const DATABASE_SERVICE_NAME_PATTERN =
+  /^(postgres(ql)?|mysql|mariadb|redis|mongo(db)?|memcached|cassandra|elasticsearch|rabbitmq|clickhouse|cockroachdb|timescaledb|sqlserver|mssql)([-_].*)?$/i;
+
+export function isDatabaseServiceName(name: string): boolean {
+  return DATABASE_SERVICE_NAME_PATTERN.test(name.trim());
+}
+
 export interface RailwayAccountEnvironment {
   id: string;
   name: string;
