@@ -8,6 +8,7 @@ import { authFetch, ApiError } from '../_lib/api';
 
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard' },
+  { href: '/dashboard/notifications', label: 'Notifications' },
   { href: '/dashboard/customers', label: 'Customers' },
   { href: '/dashboard/plans', label: 'Plans' },
   { href: '/dashboard/subscriptions', label: 'Subscriptions' },

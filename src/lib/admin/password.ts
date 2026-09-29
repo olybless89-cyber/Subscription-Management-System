@@ -1,5 +1,6 @@
 import { AdminManagementDeps } from '../db/ports';
 import { hashPassword, verifyPassword } from '../auth/password';
+import { notifyAdmins, notifyAdminsForCustomer } from '../notifications/admin-notify';
 
 const MIN_PASSWORD_LENGTH = 7;
 
@@ -46,6 +47,11 @@ export async function changeOwnPassword(
     target: adminId,
     result: 'SUCCESS',
   });
+  try {
+    await notifyAdmins(deps, 'ADMIN_PASSWORD_CHANGED_SELF', `${admin.email} changed their own password.`);
+  } catch {
+    // Best-effort.
+  }
 
   return { outcome: 'CHANGED', message: 'Password changed' };
 }
@@ -89,6 +95,11 @@ export async function resetAdminPassword(
     target: targetAdminId,
     result: 'SUCCESS',
   });
+  try {
+    await notifyAdmins(deps, 'ADMIN_PASSWORD_RESET_BY_SUPER_ADMIN', `${target.email}'s password was reset by the super admin.`);
+  } catch {
+    // Best-effort.
+  }
 
   return { outcome: 'CHANGED', message: 'Password reset' };
 }
@@ -131,6 +142,11 @@ export async function resetCustomerPassword(
     target: customerId,
     result: 'SUCCESS',
   });
+  try {
+    await notifyAdminsForCustomer(deps, customerId, 'CUSTOMER_PASSWORD_RESET', `${customer.customerCode}'s password was reset by an admin.`);
+  } catch {
+    // Best-effort.
+  }
 
   return { outcome: 'CHANGED', message: 'Password reset' };
 }

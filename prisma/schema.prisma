@@ -429,8 +429,13 @@ model AdminNotification {
   id         String    @id @default(cuid())
   adminId    String
   admin      AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  customerId String
-  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  // Nullable — customer-scoped events (a customer's own subscription,
+  // domain, billing) set this; admin/account-level events with no
+  // single customer to point at (a new plan, a new admin, a campaign
+  // sent to many customers at once) leave it null. See
+  // src/lib/notifications/admin-notify.ts#notifyAdmins.
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
   event      String
   message    String
   sentAt     DateTime?

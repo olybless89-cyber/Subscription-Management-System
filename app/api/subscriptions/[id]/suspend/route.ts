@@ -15,6 +15,7 @@ import { suspendCustomer } from '../../../../../src/lib/suspension/engine';
 import { buildWebhookDeps, buildAuditLogRepository } from '../../../../../src/lib/deps-factory';
 import { authenticateFromHeader, hasAdminRole } from '../../../../../src/lib/auth/authorize';
 import { recordAuditLog } from '../../../../../src/lib/audit/log';
+import { notifyAdminsForCustomer } from '../../../../../src/lib/notifications/admin-notify';
 
 export async function POST(
   request: Request,
@@ -52,6 +53,24 @@ export async function POST(
     metadata: { reason, outcome: result.outcome },
     result: result.outcome === 'SUSPENDED' ? 'SUCCESS' : 'FAILED',
   });
+  // The super admin hears about this EITHER way — a suspend that
+  // silently didn't take is exactly the 2026-09-29 incident this app
+  // already shipped a fix for (see stopDeployment's doc comment in
+  // src/lib/railway/deployments.ts); notifying on failure too means
+  // nobody has to notice a customer is still up by accident.
+  try {
+    const isFailure = result.outcome !== 'SUSPENDED' && result.outcome !== 'SKIPPED' && result.outcome !== 'DRY_RUN';
+    await notifyAdminsForCustomer(
+      deps,
+      subscription.customerId,
+      isFailure ? 'SUBSCRIPTION_SUSPEND_FAILED' : 'SUBSCRIPTION_SUSPENDED',
+      isFailure
+        ? `Manual suspend FAILED for this subscription (reason: ${reason}) — ${result.reason}.`
+        : `This subscription was manually suspended by an admin (reason: ${reason}).`
+    );
+  } catch {
+    // Best-effort.
+  }
 
   // DRY_RUN is an intentional no-op (the engine logged what it *would*
   // have done and stopped there) — it is not a failure, so it must not

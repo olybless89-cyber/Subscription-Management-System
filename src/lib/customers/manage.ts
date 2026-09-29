@@ -177,6 +177,16 @@ export async function createCustomer(
     metadata: { email: customer.email, customerCode: customer.customerCode },
     result: 'SUCCESS',
   });
+  try {
+    await notifyAdminsForCustomer(
+      deps,
+      customer.id,
+      'CUSTOMER_CREATED',
+      `${customer.customerCode} (${customer.name}) was created by an admin.`
+    );
+  } catch {
+    // Best-effort — see registerCustomer's identical pattern above.
+  }
 
   const result: CreateCustomerResult = { outcome: 'CREATED', message: 'Customer created', customer };
 
@@ -281,6 +291,17 @@ export async function updateCustomer(
     metadata: { fields: Object.keys(patch).filter((k) => (patch as Record<string, unknown>)[k] !== undefined) },
     result: 'SUCCESS',
   });
+  try {
+    const changedFields = Object.keys(patch).filter((k) => (patch as Record<string, unknown>)[k] !== undefined);
+    await notifyAdminsForCustomer(
+      deps,
+      customerId,
+      'CUSTOMER_UPDATED',
+      `${customer.customerCode} was updated by an admin (${changedFields.join(', ') || 'no fields'}).`
+    );
+  } catch {
+    // Best-effort — see registerCustomer's identical pattern above.
+  }
 
   return { outcome: 'UPDATED', message: 'Customer updated', customer: updated };
 }

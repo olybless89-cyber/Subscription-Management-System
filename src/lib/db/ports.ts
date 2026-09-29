@@ -270,7 +270,8 @@ export interface AdminAssignmentRepository {
 export interface AdminNotificationRepository {
   create(input: {
     adminId: string;
-    customerId: string;
+    /** Null for an account-level event not tied to one customer. */
+    customerId: string | null;
     event: string;
     message: string;
   }): Promise<void>;
@@ -524,6 +525,7 @@ export interface AdminManagementDeps {
   admins: AdminRepository;
   customers: CustomerRepository;
   adminAssignments: AdminAssignmentRepository;
+  adminNotifications: AdminNotificationRepository;
   domains: DomainRepository;
   auditLog: AuditLogRepository;
 }
@@ -542,6 +544,8 @@ export interface BillingSetupDeps {
   hostingAccounts: HostingAccountRepository;
   domains: DomainRepository;
   auditLog: AuditLogRepository;
+  adminAssignments: AdminAssignmentRepository;
+  adminNotifications: AdminNotificationRepository;
 }
 
 /** Dependencies for the admin-composed custom-email feature and the
@@ -552,6 +556,8 @@ export interface CustomEmailDeps {
   customers: CustomerRepository;
   notifications: NotificationSender;
   auditLog: AuditLogRepository;
+  adminAssignments: AdminAssignmentRepository;
+  adminNotifications: AdminNotificationRepository;
 }
 
 /** WhatsApp equivalent of NotificationSender — deliberately simpler
@@ -581,6 +587,7 @@ export interface CampaignDeps {
   admins: AdminRepository;
   customers: CustomerRepository;
   adminAssignments: AdminAssignmentRepository;
+  adminNotifications: AdminNotificationRepository;
   campaigns: CampaignRepository;
   notifications: NotificationSender;
   whatsapp: WhatsAppSender;
@@ -649,6 +656,7 @@ export interface AdminWorkflowDeps {
   plans: PlanRepository;
   domains: DomainRepository;
   adminAssignments: AdminAssignmentRepository;
+  adminNotifications: AdminNotificationRepository;
   notifications: NotificationSender;
   notificationHistory: NotificationRepository;
   auditLog: AuditLogRepository;

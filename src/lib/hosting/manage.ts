@@ -2,6 +2,7 @@ import { BillingSetupDeps } from '../db/ports';
 import { HostingAccountRecord } from '@/types/domain';
 import { createRailwayClient } from '../railway/client';
 import { testRailwayAccountConnection } from './account-client';
+import { notifyAdmins } from '../notifications/admin-notify';
 
 export type CreateHostingAccountOutcome = 'CREATED' | 'FORBIDDEN' | 'INVALID_INPUT';
 
@@ -65,6 +66,11 @@ export async function createHostingAccount(
     metadata: { provider: account.provider, label: account.label },
     result: 'SUCCESS',
   });
+  try {
+    await notifyAdmins(deps, 'HOSTING_ACCOUNT_CONNECTED', `Hosting account "${account.label}" (${account.provider}) was connected by an admin.`);
+  } catch {
+    // Best-effort.
+  }
 
   return { outcome: 'CREATED', message: 'Hosting account connected', account };
 }
@@ -112,6 +118,11 @@ export async function updateHostingAccount(
     metadata: { label: account.label, isActive: account.isActive, tokenRotated: !!patch.apiToken },
     result: 'SUCCESS',
   });
+  try {
+    await notifyAdmins(deps, 'HOSTING_ACCOUNT_UPDATED', `Hosting account "${account.label}" was updated by an admin${patch.apiToken ? ' (token rotated)' : ''}.`);
+  } catch {
+    // Best-effort.
+  }
 
   return { outcome: 'UPDATED', message: 'Hosting account updated', account };
 }
@@ -166,6 +177,11 @@ export async function deleteHostingAccount(
     metadata: { label: existing.label, provider: existing.provider },
     result: 'SUCCESS',
   });
+  try {
+    await notifyAdmins(deps, 'HOSTING_ACCOUNT_DISCONNECTED', `Hosting account "${existing.label}" (${existing.provider}) was disconnected by an admin.`);
+  } catch {
+    // Best-effort.
+  }
 
   return { outcome: 'DELETED', message: `"${existing.label}" disconnected` };
 }

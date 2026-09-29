@@ -158,6 +158,69 @@ export function subjectForEvent(event: string): string {
       return 'Happy Birthday!';
     case 'SYSTEM_ERROR':
       return 'System notice';
+
+    // --- Admin-alert events (recipient is an admin, not the customer)
+    // — see notifyAdmins/notifyAdminsForCustomer in admin-notify.ts.
+    // Every one of these is written once, right where the audit-log
+    // entry for the same action already gets written, using the exact
+    // same event name as that audit log's `action` field.
+    case 'CUSTOMER_REGISTERED':
+      return 'New customer self-registered';
+    case 'CUSTOMER_CREATED':
+      return 'Customer created';
+    case 'CUSTOMER_UPDATED':
+      return 'Customer updated';
+    case 'CUSTOMER_DELETED':
+      return 'Customer deleted';
+    case 'CUSTOMER_PASSWORD_RESET':
+      return "Customer's password was reset";
+    case 'CUSTOMER_BILLING_ACTIVATED':
+      return 'Billing activated for customer';
+    case 'DOMAIN_CREATED':
+      return 'Domain attached';
+    case 'DOMAIN_UPDATED':
+      return 'Domain updated';
+    case 'DOMAIN_DELETED':
+      return 'Domain removed';
+    case 'SUBSCRIPTION_CREATED':
+      return 'Subscription created';
+    case 'SUBSCRIPTION_UPDATED':
+      return 'Subscription billing dates corrected';
+    case 'SUBSCRIPTION_SUSPENDED':
+      return 'Subscription suspended';
+    case 'SUBSCRIPTION_SUSPEND_FAILED':
+      return 'ACTION NEEDED: subscription suspend failed';
+    case 'SUBSCRIPTION_RESTORED':
+      return 'Subscription restored';
+    case 'SUBSCRIPTION_RESTORE_FAILED':
+      return 'ACTION NEEDED: subscription restore failed';
+    case 'SUBSCRIPTION_DRY_RUN_OVERRIDE_SET':
+      return 'Dry-run override changed';
+    case 'PLAN_CREATED':
+      return 'Plan created';
+    case 'ADMIN_CREATED':
+      return 'New admin created';
+    case 'ADMIN_ASSIGNMENTS_UPDATED':
+      return "Admin's customer assignments changed";
+    case 'ADMIN_PASSWORD_CHANGED_SELF':
+      return 'An admin changed their own password';
+    case 'ADMIN_PASSWORD_RESET_BY_SUPER_ADMIN':
+      return "Admin's password was reset";
+    case 'HOSTING_ACCOUNT_CONNECTED':
+      return 'Hosting account connected';
+    case 'HOSTING_ACCOUNT_UPDATED':
+      return 'Hosting account updated';
+    case 'HOSTING_ACCOUNT_DISCONNECTED':
+      return 'Hosting account disconnected';
+    case 'CAMPAIGN_CREATED':
+      return 'Campaign created';
+    case 'CAMPAIGN_SENT':
+      return 'Campaign sent';
+    case 'CUSTOM_EMAIL_SENT':
+      return 'Custom email sent to a customer';
+    case 'BIRTHDAY_GREETING_SENT_MANUALLY':
+      return 'Birthday greeting sent manually';
+
     default:
       return 'Notification';
   }

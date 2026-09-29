@@ -1,4 +1,5 @@
 import { AdminManagementDeps } from '../db/ports';
+import { notifyAdmins } from '../notifications/admin-notify';
 
 export type DeleteCustomerOutcome = 'DELETED' | 'FORBIDDEN' | 'NOT_FOUND';
 
@@ -52,6 +53,19 @@ export async function deleteCustomer(
     metadata: { customerCode: customer.customerCode, name: customer.name, email: customer.email },
     result: 'SUCCESS',
   });
+  try {
+    // customerId: null — the customer row is already gone by now
+    // (deleteCascade above), so there's nothing left to point the
+    // notification's foreign key at; the identifying details go in the
+    // message text instead.
+    await notifyAdmins(
+      deps,
+      'CUSTOMER_DELETED',
+      `${customer.customerCode} (${customer.name}, ${customer.email}) was permanently deleted by an admin.`
+    );
+  } catch {
+    // Best-effort — see registerCustomer's identical pattern in customers/manage.ts.
+  }
 
   return { outcome: 'DELETED', message: `${customer.customerCode} permanently deleted` };
 }

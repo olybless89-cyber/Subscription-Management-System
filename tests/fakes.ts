@@ -197,9 +197,9 @@ function makeAssignmentRepo(seed: Array<{ adminId: string; customerId: string }>
 }
 
 function makeAdminNotificationRepo() {
-  const log: Array<{ id: string; adminId: string; customerId: string; event: string; message: string; sentAt: string | null; createdAt: string }> = [];
+  const log: Array<{ id: string; adminId: string; customerId: string | null; event: string; message: string; sentAt: string | null; createdAt: string }> = [];
   const repo = {
-    async create(input: { adminId: string; customerId: string; event: string; message: string }) {
+    async create(input: { adminId: string; customerId: string | null; event: string; message: string }) {
       // Fake never actually sends email (no network in tests) — sentAt
       // stays null, matching the honest "not sent" signal the real
       // repository uses when Resend is unconfigured or fails.
@@ -662,7 +662,7 @@ export function makeFakeWebhookDeps(seed: {
   events: SuspensionEventInput[];
   notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }>;
   paymentRows: Map<string, PaymentRecord>;
-  adminNotificationLog: Array<{ adminId: string; customerId: string; event: string; message: string }>;
+  adminNotificationLog: Array<{ id: string; adminId: string; customerId: string | null; event: string; message: string; sentAt: string | null; createdAt: string }>;
 } {
   const base = makeFakeDeps(seed);
   const { repo: plansRepo } = makePlanRepo(seed.plans);
@@ -725,12 +725,14 @@ export function makeFakeAdminManagementDeps(seed: {
   auditLogEntries: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }>;
   assignmentStore: Map<string, Set<string>>;
   domainStore: Map<string, DomainRecord>;
+  adminNotificationLog: Array<{ id: string; adminId: string; customerId: string | null; event: string; message: string; sentAt: string | null; createdAt: string }>;
 } {
   const { repo: adminsRepo } = makeAdminRepo(seed.admins);
   const { repo: customersRepo } = makeCustomerRepo(seed.customers);
   const { repo: assignmentsRepo, byAdmin } = makeAssignmentRepo(seed.assignments ?? []);
   const { repo: domainsRepo, byId: domainStore } = makeDomainRepo(seed.domains ?? []);
   const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
+  const { repo: adminNotificationsRepo, log: adminNotificationLog } = makeAdminNotificationRepo();
 
   // Widen deleteCascade beyond the plain customers store: this
   // deps-builder also has domains and assignments in scope, so mirror
@@ -751,11 +753,13 @@ export function makeFakeAdminManagementDeps(seed: {
     admins: adminsRepo,
     customers: customersRepoWithCascade,
     adminAssignments: assignmentsRepo,
+    adminNotifications: adminNotificationsRepo,
     domains: domainsRepo,
     auditLog: auditLogRepo,
     auditLogEntries,
     assignmentStore: byAdmin,
     domainStore,
+    adminNotificationLog,
   };
 }
 
@@ -766,6 +770,7 @@ export function makeFakeBillingSetupDeps(seed: {
   subscriptions: SubscriptionRecord[];
   railwayResources: RailwayResourceRecord[];
   domains?: DomainRecord[];
+  assignments?: Array<{ adminId: string; customerId: string }>;
   hostingAccounts?: Array<{
     id?: string;
     provider: HostingAccountRecord['provider'];
@@ -781,6 +786,7 @@ export function makeFakeBillingSetupDeps(seed: {
   railwayResourceStore: RailwayResourceRecord[];
   domainStore: Map<string, DomainRecord>;
   hostingAccountStore: Map<string, HostingAccountRecord & { apiToken: string }>;
+  adminNotificationLog: Array<{ id: string; adminId: string; customerId: string | null; event: string; message: string; sentAt: string | null; createdAt: string }>;
 } {
   const { repo: adminsRepo } = makeAdminRepo(seed.admins);
   const { repo: customersRepo } = makeCustomerRepo(seed.customers);
@@ -790,6 +796,8 @@ export function makeFakeBillingSetupDeps(seed: {
   const { repo: domainsRepo, byId: domainStore } = makeDomainRepo(seed.domains ?? []);
   const { repo: hostingAccountsRepo, byId: hostingAccountStore } = makeHostingAccountRepo(seed.hostingAccounts ?? []);
   const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
+  const { repo: assignmentsRepo } = makeAssignmentRepo(seed.assignments ?? []);
+  const { repo: adminNotificationsRepo, log: adminNotificationLog } = makeAdminNotificationRepo();
 
   return {
     admins: adminsRepo,
@@ -832,33 +840,43 @@ export function makeFakeBillingSetupDeps(seed: {
       },
     },
     auditLog: auditLogRepo,
+    adminAssignments: assignmentsRepo,
+    adminNotifications: adminNotificationsRepo,
     auditLogEntries,
     planStore,
     subscriptionStore,
     railwayResourceStore,
     domainStore,
     hostingAccountStore,
+    adminNotificationLog,
   };
 }
 
 export function makeFakeCustomEmailDeps(seed: {
   admins: AdminRecord[];
   customers: CustomerRecord[];
+  assignments?: Array<{ adminId: string; customerId: string }>;
 }): CustomEmailDeps & {
   auditLogEntries: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }>;
   notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }>;
+  adminNotificationLog: Array<{ id: string; adminId: string; customerId: string | null; event: string; message: string; sentAt: string | null; createdAt: string }>;
 } {
   const { repo: adminsRepo } = makeAdminRepo(seed.admins);
   const { repo: customersRepo } = makeCustomerRepo(seed.customers);
   const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
+  const { repo: assignmentsRepo } = makeAssignmentRepo(seed.assignments ?? []);
+  const { repo: adminNotificationsRepo, log: adminNotificationLog } = makeAdminNotificationRepo();
   const notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }> = [];
 
   return {
     admins: adminsRepo,
     customers: customersRepo,
     auditLog: auditLogRepo,
+    adminAssignments: assignmentsRepo,
+    adminNotifications: adminNotificationsRepo,
     auditLogEntries,
     notificationLog,
+    adminNotificationLog,
     notifications: {
       async send(customerId, event, message, subject) {
         notificationLog.push({ customerId, event, message, subject });
@@ -947,12 +965,14 @@ export function makeFakeCampaignDeps(seed: {
   whatsappLog: Array<{ customerId: string; message: string }>;
   campaignStore: Map<string, CampaignRecord>;
   recipientStore: Map<string, CampaignRecipientRecord>;
+  adminNotificationLog: Array<{ id: string; adminId: string; customerId: string | null; event: string; message: string; sentAt: string | null; createdAt: string }>;
 } {
   const { repo: adminsRepo } = makeAdminRepo(seed.admins);
   const { repo: customersRepo } = makeCustomerRepo(seed.customers);
   const { repo: assignmentsRepo } = makeAssignmentRepo(seed.assignments ?? []);
   const { repo: campaignsRepo, campaigns: campaignStore, recipients: recipientStore } = makeCampaignRepo();
   const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
+  const { repo: adminNotificationsRepo, log: adminNotificationLog } = makeAdminNotificationRepo();
   const notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }> = [];
   const whatsappLog: Array<{ customerId: string; message: string }> = [];
 
@@ -960,6 +980,7 @@ export function makeFakeCampaignDeps(seed: {
     admins: adminsRepo,
     customers: customersRepo,
     adminAssignments: assignmentsRepo,
+    adminNotifications: adminNotificationsRepo,
     campaigns: campaignsRepo,
     auditLog: auditLogRepo,
     auditLogEntries,
@@ -967,6 +988,7 @@ export function makeFakeCampaignDeps(seed: {
     whatsappLog,
     campaignStore,
     recipientStore,
+    adminNotificationLog,
     notifications: {
       async send(customerId, event, message, subject) {
         notificationLog.push({ customerId, event, message, subject });
@@ -988,7 +1010,7 @@ export function makeFakeRegisterCustomerDeps(seed: {
   auditLogEntries: Array<{ actor: string; action: string; target?: string; metadata?: unknown; result: string }>;
   domainStore: Map<string, DomainRecord>;
   notificationLog: Array<{ customerId: string; event: string; message: string; subject?: string }>;
-  adminNotificationLog: Array<{ adminId: string; customerId: string; event: string; message: string }>;
+  adminNotificationLog: Array<{ id: string; adminId: string; customerId: string | null; event: string; message: string; sentAt: string | null; createdAt: string }>;
 } {
   const { repo: customersRepo } = makeCustomerRepo(seed.customers);
   const { repo: domainsRepo, byId: domainStore } = makeDomainRepo(seed.domains ?? []);
@@ -1184,6 +1206,7 @@ export function makeFakeAdminWorkflowDeps(seed: {
   assignmentStore: Map<string, Set<string>>;
   customerStore: Map<string, CustomerRecord>;
   subscriptionStore: Map<string, SubscriptionRecord>;
+  adminNotificationLog: Array<{ id: string; adminId: string; customerId: string | null; event: string; message: string; sentAt: string | null; createdAt: string }>;
 } {
   const { repo: adminsRepo } = makeAdminRepo(seed.admins);
   const { repo: customersRepo, byId: customerStore } = makeCustomerRepo(seed.customers);
@@ -1192,6 +1215,7 @@ export function makeFakeAdminWorkflowDeps(seed: {
   const { repo: domainsRepo } = makeDomainRepo(seed.domains ?? []);
   const { repo: assignmentsRepo, byAdmin: assignmentStore } = makeAssignmentRepo(seed.assignments ?? []);
   const { repo: auditLogRepo, log: auditLogEntries } = makeAuditLogRepo();
+  const { repo: adminNotificationsRepo, log: adminNotificationLog } = makeAdminNotificationRepo();
   const notificationLog: NotificationRecord[] = seed.notifications ?? [];
   const { repo: notificationHistoryRepo } = makeNotificationRepo(notificationLog);
 
@@ -1202,6 +1226,7 @@ export function makeFakeAdminWorkflowDeps(seed: {
     plans: plansRepo,
     domains: domainsRepo,
     adminAssignments: assignmentsRepo,
+    adminNotifications: adminNotificationsRepo,
     notifications: makeNotificationSenderRecordingTo(notificationLog),
     notificationHistory: notificationHistoryRepo,
     auditLog: auditLogRepo,
@@ -1210,5 +1235,6 @@ export function makeFakeAdminWorkflowDeps(seed: {
     assignmentStore,
     customerStore,
     subscriptionStore,
+    adminNotificationLog,
   };
 }

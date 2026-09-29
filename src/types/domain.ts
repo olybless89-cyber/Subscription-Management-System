@@ -153,7 +153,10 @@ export interface DomainRecord {
 export interface AdminNotificationRecord {
   id: string;
   adminId: string;
-  customerId: string;
+  /** Null for an account-level event with no single customer to point
+   * at (a new plan, a new admin, a campaign sent to many customers at
+   * once) — see notifyAdmins in src/lib/notifications/admin-notify.ts. */
+  customerId: string | null;
   event: string;
   message: string;
   sentAt: string | null;

@@ -10,6 +10,7 @@ import { restoreCustomer } from '../../../../../src/lib/suspension/restoration';
 import { buildWebhookDeps, buildAuditLogRepository } from '../../../../../src/lib/deps-factory';
 import { authenticateFromHeader, hasAdminRole } from '../../../../../src/lib/auth/authorize';
 import { recordAuditLog } from '../../../../../src/lib/audit/log';
+import { notifyAdminsForCustomer } from '../../../../../src/lib/notifications/admin-notify';
 
 export async function POST(
   request: Request,
@@ -40,6 +41,23 @@ export async function POST(
     metadata: { outcome: result.outcome },
     result: result.outcome === 'RESTORED' ? 'SUCCESS' : 'FAILED',
   });
+  // Notify either way — see the identical comment in the suspend route.
+  // This is exactly the scenario from the 2026-09-29 incident: an admin
+  // clicked Restore, believed it worked, and the super admin had no way
+  // to find out otherwise that it hadn't.
+  try {
+    const isFailure = result.outcome !== 'RESTORED' && result.outcome !== 'SKIPPED';
+    await notifyAdminsForCustomer(
+      deps,
+      subscription.customerId,
+      isFailure ? 'SUBSCRIPTION_RESTORE_FAILED' : 'SUBSCRIPTION_RESTORED',
+      isFailure
+        ? `Manual restore FAILED for this subscription — ${result.reason}.`
+        : `This subscription was manually restored by an admin.`
+    );
+  } catch {
+    // Best-effort.
+  }
 
   const httpStatus = result.outcome === 'RESTORED' ? 200 : result.outcome === 'SKIPPED' ? 200 : 500;
   return json(httpStatus, httpStatus >= 400 ? { ...result, error: buildFailureMessage(result) } : result);

@@ -2,6 +2,7 @@ import { AdminManagementDeps } from '../db/ports';
 import { canManageOtherAdmins } from '../auth/authorize';
 import { hashPassword } from '../auth/password';
 import { AdminRecord, AdminRole } from '@/types/domain';
+import { notifyAdmins } from '../notifications/admin-notify';
 
 const MIN_ADMIN_PASSWORD_LENGTH = 7;
 
@@ -84,6 +85,11 @@ export async function createAdmin(
     metadata: { email: admin.email, role: admin.role, canManageAdmins: admin.canManageAdmins },
     result: 'SUCCESS',
   });
+  try {
+    await notifyAdmins(deps, 'ADMIN_CREATED', `A new ${admin.role.toLowerCase()} admin (${admin.email}) was created.`);
+  } catch {
+    // Best-effort.
+  }
 
   return { outcome: 'CREATED', message: 'Admin created', admin };
 }
@@ -170,6 +176,11 @@ export async function setCustomerAssignments(
     metadata: { customerCount: uniqueIds.length },
     result: 'SUCCESS',
   });
+  try {
+    await notifyAdmins(deps, 'ADMIN_ASSIGNMENTS_UPDATED', `${target.email}'s customer assignments were changed — now assigned to ${uniqueIds.length} customer(s).`);
+  } catch {
+    // Best-effort.
+  }
 
   return { outcome: 'UPDATED', message: `${target.email} now sees ${uniqueIds.length} customer(s)` };
 }

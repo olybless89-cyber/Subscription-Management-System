@@ -1,4 +1,5 @@
 import { CustomEmailDeps } from '../db/ports';
+import { notifyAdminsForCustomer } from '../notifications/admin-notify';
 
 export type SendBirthdayGreetingNowOutcome = 'SENT' | 'FORBIDDEN' | 'NOT_FOUND';
 
@@ -109,6 +110,11 @@ export async function sendBirthdayGreetingNow(
     metadata: {},
     result: 'SUCCESS',
   });
+  try {
+    await notifyAdminsForCustomer(deps, customer.id, 'BIRTHDAY_GREETING_SENT_MANUALLY', `A birthday greeting was sent to ${customer.customerCode} by an admin.`);
+  } catch {
+    // Best-effort.
+  }
 
   return { outcome: 'SENT', message: 'Greeting sent' };
 }

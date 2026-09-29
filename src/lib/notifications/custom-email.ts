@@ -1,4 +1,5 @@
 import { CustomEmailDeps } from '../db/ports';
+import { notifyAdminsForCustomer } from './admin-notify';
 
 export interface SendCustomEmailInput {
   customerId: string;
@@ -60,6 +61,11 @@ export async function sendCustomEmail(
     metadata: { subject },
     result: 'SUCCESS',
   });
+  try {
+    await notifyAdminsForCustomer(deps, input.customerId, 'CUSTOM_EMAIL_SENT', `A custom email ("${subject}") was sent to ${customer.customerCode} by an admin.`);
+  } catch {
+    // Best-effort.
+  }
 
   return { outcome: 'SENT', message: 'Email sent' };
 }

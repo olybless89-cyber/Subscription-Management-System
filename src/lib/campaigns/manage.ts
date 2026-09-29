@@ -1,5 +1,6 @@
 import { CampaignDeps } from '../db/ports';
 import { CampaignRecord, CampaignChannel } from '@/types/domain';
+import { notifyAdmins } from '../notifications/admin-notify';
 
 export interface CreateCampaignInput {
   name: string;
@@ -98,6 +99,11 @@ export async function createCampaign(
     metadata: { name, channels: input.channels, recipientCount: customerIds.length },
     result: 'SUCCESS',
   });
+  try {
+    await notifyAdmins(deps, 'CAMPAIGN_CREATED', `Campaign "${name}" was created, targeting ${customerIds.length} customer(s).`);
+  } catch {
+    // Best-effort.
+  }
 
   return { outcome: 'CREATED', message: 'Campaign created', campaign };
 }
@@ -177,6 +183,11 @@ export async function sendCampaign(
     metadata: { sent, failed },
     result: 'SUCCESS',
   });
+  try {
+    await notifyAdmins(deps, 'CAMPAIGN_SENT', `Campaign "${campaign.name}" was sent — ${sent} delivered, ${failed} failed.`);
+  } catch {
+    // Best-effort.
+  }
 
   return { outcome: 'SENT', message: `Sent to ${sent} recipient(s), ${failed} failed`, sent, failed };
 }

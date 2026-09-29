@@ -647,7 +647,7 @@ export class PrismaAdminNotificationRepository implements AdminNotificationRepos
 
   async create(input: {
     adminId: string;
-    customerId: string;
+    customerId: string | null;
     event: string;
     message: string;
   }): Promise<void> {

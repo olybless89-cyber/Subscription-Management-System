@@ -6,6 +6,7 @@
 import { buildBillingSetupDeps, buildWebhookDeps } from '../../../../../../src/lib/deps-factory';
 import { authenticateFromHeader, hasAdminRole, canAccessCustomer } from '../../../../../../src/lib/auth/authorize';
 import { setSubscriptionDryRunOverride } from '../../../../../../src/lib/suspension/dry-run-override';
+import { notifyAdminsForCustomer } from '../../../../../../src/lib/notifications/admin-notify';
 
 export async function POST(
   request: Request,
@@ -41,6 +42,19 @@ export async function POST(
     context.params.id,
     body.override
   );
+
+  if (result.outcome === 'UPDATED') {
+    try {
+      await notifyAdminsForCustomer(
+        scopeDeps,
+        subscription.customerId,
+        'SUBSCRIPTION_DRY_RUN_OVERRIDE_SET',
+        `An admin changed the dry-run override on this subscription: ${body.override === null ? 'cleared (follows global setting)' : body.override ? 'forced ON (suspend/restore will never be real)' : 'forced OFF (suspend/restore will be real)'}.`
+      );
+    } catch {
+      // Best-effort.
+    }
+  }
 
   const httpStatus = result.outcome === 'UPDATED' ? 200 : result.outcome === 'FORBIDDEN' ? 403 : 404;
   return json(httpStatus, result);

@@ -86,6 +86,7 @@ export function buildAdminManagementDeps(): AdminManagementDeps {
     admins: new PrismaAdminRepository(client),
     customers: new PrismaCustomerRepository(client),
     adminAssignments: new PrismaAdminAssignmentRepository(client),
+    adminNotifications: new PrismaAdminNotificationRepository(client),
     domains: new PrismaDomainRepository(client),
     auditLog: new PrismaAuditLogRepository(client),
   };
@@ -102,6 +103,8 @@ export function buildBillingSetupDeps(): BillingSetupDeps {
     hostingAccounts: new PrismaHostingAccountRepository(client),
     domains: new PrismaDomainRepository(client),
     auditLog: new PrismaAuditLogRepository(client),
+    adminAssignments: new PrismaAdminAssignmentRepository(client),
+    adminNotifications: new PrismaAdminNotificationRepository(client),
   };
 }
 
@@ -124,6 +127,8 @@ export function buildCustomEmailDeps(): CustomEmailDeps {
     customers: new PrismaCustomerRepository(client),
     notifications: new EmailNotificationSender(client),
     auditLog: new PrismaAuditLogRepository(client),
+    adminAssignments: new PrismaAdminAssignmentRepository(client),
+    adminNotifications: new PrismaAdminNotificationRepository(client),
   };
 }
 
@@ -133,6 +138,7 @@ export function buildCampaignDeps(): CampaignDeps {
     admins: new PrismaAdminRepository(client),
     customers: new PrismaCustomerRepository(client),
     adminAssignments: new PrismaAdminAssignmentRepository(client),
+    adminNotifications: new PrismaAdminNotificationRepository(client),
     campaigns: new PrismaCampaignRepository(client),
     notifications: new EmailNotificationSender(client),
     whatsapp: new WhatsAppNotificationSender(client),
@@ -207,6 +213,7 @@ export function buildAdminWorkflowDeps(): AdminWorkflowDeps {
     plans: new PrismaPlanRepository(client),
     domains: new PrismaDomainRepository(client),
     adminAssignments: new PrismaAdminAssignmentRepository(client),
+    adminNotifications: new PrismaAdminNotificationRepository(client),
     notifications: new EmailNotificationSender(client),
     notificationHistory: new PrismaNotificationRepository(client),
     auditLog: new PrismaAuditLogRepository(client),

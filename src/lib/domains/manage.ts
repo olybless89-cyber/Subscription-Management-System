@@ -1,5 +1,6 @@
 import { BillingSetupDeps } from '../db/ports';
 import { DomainRecord } from '@/types/domain';
+import { notifyAdminsForCustomer } from '../notifications/admin-notify';
 
 export interface CreateDomainInput {
   customerId: string;
@@ -95,6 +96,11 @@ export async function createDomain(
     metadata: { customerId: input.customerId, domainName },
     result: 'SUCCESS',
   });
+  try {
+    await notifyAdminsForCustomer(deps, input.customerId, 'DOMAIN_CREATED', `${domainName} was attached to a customer by an admin.`);
+  } catch {
+    // Best-effort.
+  }
 
   return { outcome: 'CREATED', message: 'Domain attached', domain };
 }
@@ -186,6 +192,11 @@ export async function updateDomain(
     metadata: { customerId: domain.customerId, ...patch },
     result: 'SUCCESS',
   });
+  try {
+    await notifyAdminsForCustomer(deps, domain.customerId, 'DOMAIN_UPDATED', `${domain.domainName} was updated by an admin.`);
+  } catch {
+    // Best-effort.
+  }
 
   return { outcome: 'UPDATED', message: 'Domain updated', domain: updated };
 }
@@ -235,6 +246,11 @@ export async function deleteDomain(
     metadata: { customerId: domain.customerId, domainName: domain.domainName },
     result: 'SUCCESS',
   });
+  try {
+    await notifyAdminsForCustomer(deps, domain.customerId, 'DOMAIN_DELETED', `${domain.domainName} was permanently removed by an admin.`);
+  } catch {
+    // Best-effort.
+  }
 
   return { outcome: 'DELETED', message: `${domain.domainName} permanently removed` };
 }

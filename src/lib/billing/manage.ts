@@ -2,6 +2,7 @@ import { BillingSetupDeps } from '../db/ports';
 import { addBillingCycle } from './cycle';
 import { resolveBillingCycleForMonths } from './months';
 import { PlanRecord, SubscriptionRecord, BillingCycle } from '@/types/domain';
+import { notifyAdmins, notifyAdminsForCustomer } from '../notifications/admin-notify';
 
 // ---------- createPlan ----------
 
@@ -73,6 +74,11 @@ export async function createPlan(
     metadata: { name: plan.name, amount: plan.amount, billingCycle: plan.billingCycle },
     result: 'SUCCESS',
   });
+  try {
+    await notifyAdmins(deps, 'PLAN_CREATED', `Plan "${plan.name}" was created by an admin.`);
+  } catch {
+    // Best-effort.
+  }
 
   return { outcome: 'CREATED', message: 'Plan created', plan };
 }
@@ -163,6 +169,11 @@ export async function createSubscription(
     metadata: { customerId: customer.id, planId: plan.id, status },
     result: 'SUCCESS',
   });
+  try {
+    await notifyAdminsForCustomer(deps, customer.id, 'SUBSCRIPTION_CREATED', `A ${status.toLowerCase()} subscription on "${plan.name}" was created for ${customer.customerCode} by an admin.`);
+  } catch {
+    // Best-effort.
+  }
 
   return { outcome: 'CREATED', message: 'Subscription created', subscription };
 }
@@ -295,6 +306,11 @@ export async function updateSubscription(
     metadata: { ...patch },
     result: 'SUCCESS',
   });
+  try {
+    await notifyAdminsForCustomer(deps, subscription.customerId, 'SUBSCRIPTION_UPDATED', `A subscription's billing details were corrected by an admin (${Object.keys(patch).join(', ')}).`);
+  } catch {
+    // Best-effort.
+  }
 
   const updated = await deps.subscriptions.findById(subscriptionId);
   return { outcome: 'UPDATED', message: 'Subscription updated', subscription: updated ?? undefined };
@@ -443,6 +459,11 @@ export async function activateCustomerBilling(
     metadata: { monthsPaid, planId: plan.id, subscriptionId: created.subscription.id },
     result: 'SUCCESS',
   });
+  try {
+    await notifyAdminsForCustomer(deps, customerId, 'CUSTOMER_BILLING_ACTIVATED', `Billing was activated for this customer on a ${monthsPaid}-month plan by an admin.`);
+  } catch {
+    // Best-effort.
+  }
 
   return {
     outcome: 'ACTIVATED',
