@@ -3,6 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
+interface SupportContact {
+  email: string | null;
+  whatsappUrl: string | null;
+}
+
 interface RenewalInfo {
   found: boolean;
   customerName?: string;
@@ -12,12 +17,42 @@ interface RenewalInfo {
   planName?: string;
   amount?: number;
   currency?: string;
+  support?: SupportContact;
 }
 
 function formatAmount(minorUnits: number, currency: string): string {
   return `${currency} ${(minorUnits / 100).toLocaleString()}`;
 }
 
+function ContactSupport({ support }: { support?: SupportContact }) {
+  if (!support || (!support.email && !support.whatsappUrl)) return null;
+  return (
+    <p style={{ fontSize: '0.85em', color: 'var(--ink-soft)', marginTop: '1.4em', marginBottom: 0 }}>
+      Need help? Contact support
+      {support.email && (
+        <>
+          {' '}via <a href={`mailto:${support.email}`} style={{ color: 'var(--forest-bright)' }}>{support.email}</a>
+        </>
+      )}
+      {support.email && support.whatsappUrl && ' or '}
+      {support.whatsappUrl && (
+        <a href={support.whatsappUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--forest-bright)' }}>
+          WhatsApp
+        </a>
+      )}
+      .
+    </p>
+  );
+}
+
+/**
+ * The link sent directly to a customer (email/WhatsApp) the moment
+ * they're suspended — see buildRenewalUrl() in
+ * src/lib/customers/renewal-link.ts and the SUSPENDED notification in
+ * src/lib/suspension/engine.ts. This is the primary way customers reach
+ * the renewal flow; app/suspended/page.tsx is the fallback for anyone
+ * who instead visits their own (still-suspended) domain directly.
+ */
 export default function RenewPage({ params }: { params: { customerCode: string } }) {
   const searchParams = useSearchParams();
   const justPaid = searchParams.get('paid') === '1';
@@ -88,8 +123,10 @@ export default function RenewPage({ params }: { params: { customerCode: string }
             <h1 style={{ fontSize: '1.3em', fontWeight: 700, margin: '0 0 0.5em' }}>Payment received</h1>
             <p style={{ color: 'var(--ink-soft)', margin: 0 }}>
               Thank you — your service is being restored. This usually takes just a few seconds; if
-              your site isn't back within a few minutes, contact us and we'll check it right away.
+              your site isn't back within a few minutes, contact support below and we'll check it
+              right away.
             </p>
+            <ContactSupport support={info.support} />
           </>
         )}
 
@@ -100,6 +137,7 @@ export default function RenewPage({ params }: { params: { customerCode: string }
             <p style={{ color: 'var(--ink-soft)', margin: 0 }}>
               {info.customerName}, your subscription is active — nothing to pay right now.
             </p>
+            <ContactSupport support={info.support} />
           </>
         )}
 
@@ -109,8 +147,8 @@ export default function RenewPage({ params }: { params: { customerCode: string }
               Your subscription has expired
             </h1>
             <p style={{ color: 'var(--ink-soft)', margin: '0 0 1.4em' }}>
-              {info.customerName}, your hosting service has been suspended. Renew now to restore it
-              automatically.
+              {info.customerName}, kindly renew to continue enjoying our cloud hosting services.
+              Your site comes back online automatically as soon as payment is confirmed.
             </p>
 
             {info.planName && info.amount !== undefined && info.currency && (
@@ -145,9 +183,9 @@ export default function RenewPage({ params }: { params: { customerCode: string }
               {paying ? 'Redirecting to Paystack…' : 'Renew now with Paystack'}
             </button>
             <p style={{ fontSize: '0.78em', color: 'var(--ink-soft)', marginTop: '1em', marginBottom: 0 }}>
-              Your service unlocks automatically the moment payment is confirmed — no need to
-              contact anyone.
+              Your service unlocks automatically the moment payment is confirmed.
             </p>
+            <ContactSupport support={info.support} />
           </>
         )}
       </div>

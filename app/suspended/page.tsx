@@ -2,6 +2,11 @@
 
 import { useEffect, useState } from 'react';
 
+interface SupportContact {
+  email: string | null;
+  whatsappUrl: string | null;
+}
+
 interface SuspendedInfo {
   found: boolean;
   customerCode?: string;
@@ -10,10 +15,32 @@ interface SuspendedInfo {
   planName?: string;
   amount?: number;
   currency?: string;
+  support?: SupportContact;
 }
 
 function formatAmount(minorUnits: number, currency: string): string {
   return `${currency} ${(minorUnits / 100).toLocaleString()}`;
+}
+
+function ContactSupport({ support }: { support?: SupportContact }) {
+  if (!support || (!support.email && !support.whatsappUrl)) return null;
+  return (
+    <p style={{ fontSize: '0.85em', color: 'var(--ink-soft)', marginTop: '1.4em', marginBottom: 0 }}>
+      Need help? Contact support
+      {support.email && (
+        <>
+          {' '}via <a href={`mailto:${support.email}`} style={{ color: 'var(--forest-bright)' }}>{support.email}</a>
+        </>
+      )}
+      {support.email && support.whatsappUrl && ' or '}
+      {support.whatsappUrl && (
+        <a href={support.whatsappUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--forest-bright)' }}>
+          WhatsApp
+        </a>
+      )}
+      .
+    </p>
+  );
 }
 
 /**
@@ -22,6 +49,12 @@ function formatAmount(minorUnits: number, currency: string): string {
  * (in Railway) at this app instead of their stopped one. middleware.ts
  * rewrites every path on an unrecognized domain to this route, so it
  * doesn't matter what page they were trying to load.
+ *
+ * Most suspended customers actually reach this same content a different
+ * way: the suspension engine (src/lib/suspension/engine.ts) proactively
+ * messages them a working /renew/[customerCode] link (same info, same
+ * payment button) the moment they're suspended — this page is the
+ * fallback for anyone who instead just visits their own domain directly.
  *
  * Who's asking is resolved server-side from the request's Host header
  * (see /api/public/suspended-lookup) — nothing here is passed in via
@@ -84,17 +117,18 @@ export default function SuspendedPage() {
               {info.customerName}, we don&apos;t see anything unpaid on this account. If this domain is
               still showing this page, it may just need to be pointed back to your live service.
             </p>
+            <ContactSupport support={info.support} />
           </>
         )}
 
         {info && info.found && info.needsPayment && (
           <>
             <h1 style={{ fontSize: '1.5em', fontWeight: 700, margin: '0 0 0.4em', color: 'var(--clay)' }}>
-              Your monthly cloud hosting subscription is overdue
+              Your subscription has expired
             </h1>
             <p style={{ color: 'var(--ink-soft)', margin: '0 0 1.4em' }}>
-              {info.customerName}, kindly make payment to reactivate your services. Your site comes back
-              online automatically as soon as payment is confirmed.
+              {info.customerName}, kindly renew to continue enjoying our cloud hosting services. Your
+              site comes back online automatically as soon as payment is confirmed.
             </p>
 
             {info.planName && info.amount !== undefined && info.currency && (
@@ -126,12 +160,12 @@ export default function SuspendedPage() {
               className="btn btn-primary"
               style={{ width: '100%', justifyContent: 'center', fontSize: '1.05em', padding: '0.75em' }}
             >
-              {paying ? 'Redirecting to Paystack…' : 'Make payment to reactivate'}
+              {paying ? 'Redirecting to Paystack…' : 'Renew now to reactivate'}
             </button>
             <p style={{ fontSize: '0.78em', color: 'var(--ink-soft)', marginTop: '1em', marginBottom: 0 }}>
-              Your service unlocks automatically the moment payment is confirmed — no need to
-              contact anyone.
+              Your service unlocks automatically the moment payment is confirmed.
             </p>
+            <ContactSupport support={info.support} />
           </>
         )}
 
@@ -141,10 +175,10 @@ export default function SuspendedPage() {
               This service is temporarily unavailable
             </h1>
             <p style={{ color: 'var(--ink-soft)', margin: 0 }}>
-              Your monthly cloud hosting subscription is overdue. Kindly make payment to reactivate your
-              services — contact your account manager for a payment link if you don&apos;t have one on
-              hand.
+              Your subscription has expired. Kindly renew to continue enjoying our cloud hosting
+              services.
             </p>
+            <ContactSupport support={info.support} />
           </>
         )}
       </div>

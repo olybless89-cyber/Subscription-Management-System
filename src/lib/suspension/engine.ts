@@ -178,7 +178,7 @@ export async function suspendCustomer(
     await deps.notifications.send(
       customer.id,
       'SUSPENDED',
-      `Your hosting service has been temporarily suspended due to non-payment. Renew here to restore it immediately: ${buildRenewalUrl(customer.customerCode)}`
+      `Your subscription has expired — kindly renew to continue enjoying our cloud hosting services. Renew here to restore it immediately: ${buildRenewalUrl(customer.customerCode)}`
     );
   } catch {
     // Deliberately swallowed — see comment above. The suspension itself

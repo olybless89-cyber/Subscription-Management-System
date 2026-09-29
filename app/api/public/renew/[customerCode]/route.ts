@@ -7,6 +7,7 @@
 
 import { buildWebhookDeps } from '../../../../../src/lib/deps-factory';
 import { getRenewalInfo } from '../../../../../src/lib/customers/public-renewal';
+import { getSupportContact } from '../../../../../src/lib/support-contact';
 
 export async function GET(
   request: Request,
@@ -21,7 +22,7 @@ export async function GET(
     });
   }
 
-  return new Response(JSON.stringify(info), {
+  return new Response(JSON.stringify({ ...info, support: getSupportContact() }), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
   });

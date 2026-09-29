@@ -9,11 +9,12 @@
 
 import { buildBillingSetupDeps } from '../../../../src/lib/deps-factory';
 import { getSuspendedLandingInfo } from '../../../../src/lib/customers/public-suspended';
+import { getSupportContact } from '../../../../src/lib/support-contact';
 
 export async function GET(request: Request): Promise<Response> {
   const info = await getSuspendedLandingInfo(buildBillingSetupDeps(), request.headers.get('host'));
 
-  return new Response(JSON.stringify(info), {
+  return new Response(JSON.stringify({ ...info, support: getSupportContact() }), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
   });
