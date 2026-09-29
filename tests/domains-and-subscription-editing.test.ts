@@ -207,6 +207,58 @@ describe('updateSubscription', () => {
     expect(result.outcome).toBe('NOT_FOUND');
   });
 
+  it('corrects a bulk-imported subscription\'s start and end dates, and mirrors nextBillingDate to the new end date', async () => {
+    const deps = makeFakeBillingSetupDeps({ admins: [admin()], customers: [customer()], plans: [plan()], subscriptions: [sub()], railwayResources: [] });
+
+    const result = await updateSubscription(deps, 'admin_1', 'sub_1', {
+      currentPeriodStart: '2026-03-01T00:00:00.000Z',
+      currentPeriodEnd: '2026-04-01T00:00:00.000Z',
+    });
+
+    expect(result.outcome).toBe('UPDATED');
+    expect(result.subscription?.currentPeriodStart).toBe('2026-03-01T00:00:00.000Z');
+    expect(result.subscription?.currentPeriodEnd).toBe('2026-04-01T00:00:00.000Z');
+    // nextBillingDate is never a separately editable field — it always
+    // tracks currentPeriodEnd, same as createSubscription/extendPeriod.
+    expect(result.subscription?.nextBillingDate).toBe('2026-04-01T00:00:00.000Z');
+  });
+
+  it('allows moving just the end date, checked against the existing stored start date', async () => {
+    const deps = makeFakeBillingSetupDeps({ admins: [admin()], customers: [customer()], plans: [plan()], subscriptions: [sub()], railwayResources: [] });
+
+    // baseSub()'s currentPeriodStart is 2026-01-01 — a new end date well
+    // after that should be accepted without also touching the start.
+    const result = await updateSubscription(deps, 'admin_1', 'sub_1', {
+      currentPeriodEnd: '2026-05-01T00:00:00.000Z',
+    });
+
+    expect(result.outcome).toBe('UPDATED');
+    expect(result.subscription?.currentPeriodStart).toBe('2026-01-01T00:00:00.000Z'); // unchanged
+    expect(result.subscription?.currentPeriodEnd).toBe('2026-05-01T00:00:00.000Z');
+    expect(result.subscription?.nextBillingDate).toBe('2026-05-01T00:00:00.000Z');
+  });
+
+  it('rejects an unparseable date, without applying a partial update', async () => {
+    const deps = makeFakeBillingSetupDeps({ admins: [admin()], customers: [customer()], plans: [plan()], subscriptions: [sub()], railwayResources: [] });
+
+    const result = await updateSubscription(deps, 'admin_1', 'sub_1', { currentPeriodStart: 'not-a-date' });
+
+    expect(result.outcome).toBe('INVALID_INPUT');
+    const stored = await deps.subscriptions.findById('sub_1');
+    expect(stored?.currentPeriodStart).toBe('2026-01-01T00:00:00.000Z'); // unchanged
+  });
+
+  it('rejects a start date on or after the (new or existing) end date', async () => {
+    const deps = makeFakeBillingSetupDeps({ admins: [admin()], customers: [customer()], plans: [plan()], subscriptions: [sub()], railwayResources: [] });
+
+    // baseSub()'s currentPeriodEnd is 2026-02-01 — a start date after that is invalid.
+    const result = await updateSubscription(deps, 'admin_1', 'sub_1', {
+      currentPeriodStart: '2026-03-01T00:00:00.000Z',
+    });
+
+    expect(result.outcome).toBe('INVALID_INPUT');
+  });
+
   it('the UpdateSubscriptionInput type has no status field — this is a compile-time guarantee, not just a runtime check', () => {
     // If this line ever compiles with `status` added to the object,
     // the type itself has regressed. TS would error here today.

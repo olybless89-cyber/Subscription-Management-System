@@ -172,6 +172,16 @@ export async function createSubscription(
 export interface UpdateSubscriptionInput {
   planId?: string;
   suspensionEnabled?: boolean;
+  /** Corrects the billing period's start date — most commonly used on
+   * a bulk-imported subscription whose real start predates when it
+   * was entered here (see scripts/activate-imported-customers.mjs,
+   * which has no way to know the customer's actual original date and
+   * just uses "now"). ISO 8601 string. */
+  currentPeriodStart?: string;
+  /** Corrects the billing period's end date. ISO 8601 string.
+   * nextBillingDate is always moved to match — see the doc comment
+   * below on why those two fields are never allowed to diverge. */
+  currentPeriodEnd?: string;
 }
 
 export type UpdateSubscriptionOutcome = 'UPDATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'INVALID_INPUT' | 'NO_CHANGES';
@@ -184,9 +194,11 @@ export interface UpdateSubscriptionResult {
 
 /**
  * updateSubscription — spec section 39 (PATCH /api/subscriptions/:id),
- * deliberately narrow. Only `planId` (change which plan this
- * subscription bills against) and `suspensionEnabled` (the per-
- * subscription automatic-suspension toggle) are editable here.
+ * deliberately narrow. `planId` (change which plan this subscription
+ * bills against), `suspensionEnabled` (the per-subscription automatic-
+ * suspension toggle), and currentPeriodStart/currentPeriodEnd (correct
+ * the billing dates, e.g. after a bulk import guessed them) are the
+ * only fields editable here.
  *
  * `status` is NOT part of this input type, on purpose — status
  * transitions only ever happen through suspendCustomer/restoreCustomer
@@ -198,6 +210,13 @@ export interface UpdateSubscriptionResult {
  * invariant the rest of this codebase is built around. If you need to
  * force a status, use the suspend/restore routes (manual: true) or the
  * dry-run-override route, not this one.
+ *
+ * currentPeriodEnd and nextBillingDate are treated as one concept
+ * everywhere else in this codebase (createSubscription sets them equal;
+ * the payment webhook's extendPeriod always moves them together) — so
+ * editing currentPeriodEnd here always carries nextBillingDate along
+ * with it, rather than exposing nextBillingDate as a separately
+ * editable field that could quietly drift out of sync.
  */
 export async function updateSubscription(
   deps: BillingSetupDeps,
@@ -215,8 +234,16 @@ export async function updateSubscription(
     return { outcome: 'NOT_FOUND', message: 'Subscription not found' };
   }
 
-  if (patch.planId === undefined && patch.suspensionEnabled === undefined) {
-    return { outcome: 'NO_CHANGES', message: 'Nothing to update — provide planId and/or suspensionEnabled' };
+  if (
+    patch.planId === undefined &&
+    patch.suspensionEnabled === undefined &&
+    patch.currentPeriodStart === undefined &&
+    patch.currentPeriodEnd === undefined
+  ) {
+    return {
+      outcome: 'NO_CHANGES',
+      message: 'Nothing to update — provide planId, suspensionEnabled, currentPeriodStart, and/or currentPeriodEnd',
+    };
   }
 
   if (patch.planId !== undefined) {
@@ -226,7 +253,40 @@ export async function updateSubscription(
     }
   }
 
-  await deps.subscriptions.update(subscriptionId, patch);
+  let periodStart: Date | undefined;
+  if (patch.currentPeriodStart !== undefined) {
+    periodStart = new Date(patch.currentPeriodStart);
+    if (Number.isNaN(periodStart.getTime())) {
+      return { outcome: 'INVALID_INPUT', message: 'currentPeriodStart is not a valid date' };
+    }
+  }
+
+  let periodEnd: Date | undefined;
+  if (patch.currentPeriodEnd !== undefined) {
+    periodEnd = new Date(patch.currentPeriodEnd);
+    if (Number.isNaN(periodEnd.getTime())) {
+      return { outcome: 'INVALID_INPUT', message: 'currentPeriodEnd is not a valid date' };
+    }
+  }
+
+  // Whichever of the two wasn't just supplied still has to make sense
+  // against the OTHER one's new value (if it changed) or its existing
+  // stored value (if it didn't) — never let start end up on or after end.
+  const effectiveStart = periodStart ?? new Date(subscription.currentPeriodStart);
+  const effectiveEnd = periodEnd ?? new Date(subscription.currentPeriodEnd);
+  if ((periodStart || periodEnd) && effectiveStart.getTime() >= effectiveEnd.getTime()) {
+    return { outcome: 'INVALID_INPUT', message: 'currentPeriodStart must be before currentPeriodEnd' };
+  }
+
+  const dbPatch: Parameters<typeof deps.subscriptions.update>[1] = {
+    planId: patch.planId,
+    suspensionEnabled: patch.suspensionEnabled,
+    ...(periodStart ? { currentPeriodStart: periodStart.toISOString() } : {}),
+    // nextBillingDate always mirrors currentPeriodEnd — see doc comment above.
+    ...(periodEnd ? { currentPeriodEnd: periodEnd.toISOString(), nextBillingDate: periodEnd.toISOString() } : {}),
+  };
+
+  await deps.subscriptions.update(subscriptionId, dbPatch);
 
   await deps.auditLog.create({
     actor: requestingAdminId,

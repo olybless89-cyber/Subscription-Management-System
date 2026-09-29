@@ -125,12 +125,24 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
     }));
   }
 
-  async update(id: string, patch: { planId?: string; suspensionEnabled?: boolean }): Promise<void> {
+  async update(
+    id: string,
+    patch: {
+      planId?: string;
+      suspensionEnabled?: boolean;
+      currentPeriodStart?: string;
+      currentPeriodEnd?: string;
+      nextBillingDate?: string;
+    }
+  ): Promise<void> {
     await this.prisma.subscription.update({
       where: { id },
       data: {
         ...(patch.planId !== undefined ? { planId: patch.planId } : {}),
         ...(patch.suspensionEnabled !== undefined ? { suspensionEnabled: patch.suspensionEnabled } : {}),
+        ...(patch.currentPeriodStart !== undefined ? { currentPeriodStart: new Date(patch.currentPeriodStart) } : {}),
+        ...(patch.currentPeriodEnd !== undefined ? { currentPeriodEnd: new Date(patch.currentPeriodEnd) } : {}),
+        ...(patch.nextBillingDate !== undefined ? { nextBillingDate: new Date(patch.nextBillingDate) } : {}),
       },
     });
   }

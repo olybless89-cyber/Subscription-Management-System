@@ -78,15 +78,33 @@ export interface SubscriptionRepository {
    * at the route layer for scoping, same pattern as CustomerRepository. */
   listAll(): Promise<SubscriptionRecord[]>;
   /**
-   * Edits a subscription's plan assignment or suspensionEnabled flag —
-   * the two fields safe to change without going through a verified
-   * engine. Deliberately does NOT accept `status`: status transitions
-   * must go through suspendCustomer/restoreCustomer (which verify
-   * against Railway before changing it) or the cron state machine —
-   * never a raw field write that could desync the database from what's
-   * actually running.
+   * Edits a subscription's plan assignment, suspensionEnabled flag, or
+   * billing period dates — fields safe to change without going through
+   * a verified engine. Deliberately does NOT accept `status`: status
+   * transitions must go through suspendCustomer/restoreCustomer (which
+   * verify against Railway before changing it) or the cron state
+   * machine — never a raw field write that could desync the database
+   * from what's actually running.
+   *
+   * currentPeriodStart/currentPeriodEnd exist here so an admin can
+   * correct a subscription's billing dates — most commonly one that
+   * was bulk-imported with a guessed "now + 1 month" period instead of
+   * the customer's real original dates (see
+   * scripts/activate-imported-customers.mjs). updateSubscription()
+   * (src/lib/billing/manage.ts) is the only caller and always keeps
+   * nextBillingDate mirrored to currentPeriodEnd when the latter
+   * changes — this method itself just writes whatever fields it's given.
    */
-  update(id: string, patch: { planId?: string; suspensionEnabled?: boolean }): Promise<void>;
+  update(
+    id: string,
+    patch: {
+      planId?: string;
+      suspensionEnabled?: boolean;
+      currentPeriodStart?: string;
+      currentPeriodEnd?: string;
+      nextBillingDate?: string;
+    }
+  ): Promise<void>;
   /** Sets/clears the opt-in per-subscription renewal-reminder lead
    * time (see prisma/schema.prisma) — a plain-admin-only workflow
    * action, kept as its own narrow method rather than folded into

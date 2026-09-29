@@ -311,11 +311,23 @@ function makeSubscriptionRepo(seed: SubscriptionRecord[]) {
     async listAll() {
       return [...byId.values()];
     },
-    async update(id: string, patch: { planId?: string; suspensionEnabled?: boolean }) {
+    async update(
+      id: string,
+      patch: {
+        planId?: string;
+        suspensionEnabled?: boolean;
+        currentPeriodStart?: string;
+        currentPeriodEnd?: string;
+        nextBillingDate?: string;
+      }
+    ) {
       const s = byId.get(id);
       if (!s) throw new Error('not found');
       if (patch.planId !== undefined) s.planId = patch.planId;
       if (patch.suspensionEnabled !== undefined) s.suspensionEnabled = patch.suspensionEnabled;
+      if (patch.currentPeriodStart !== undefined) s.currentPeriodStart = patch.currentPeriodStart;
+      if (patch.currentPeriodEnd !== undefined) s.currentPeriodEnd = patch.currentPeriodEnd;
+      if (patch.nextBillingDate !== undefined) s.nextBillingDate = patch.nextBillingDate;
     },
     async setReminderDays(id: string, days: number | null) {
       const s = byId.get(id);

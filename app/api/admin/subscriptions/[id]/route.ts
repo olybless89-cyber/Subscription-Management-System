@@ -1,5 +1,6 @@
 // GET /api/admin/subscriptions/:id — view one subscription, scoped to assignment
-// PATCH /api/admin/subscriptions/:id — edit planId and/or suspensionEnabled ONLY.
+// PATCH /api/admin/subscriptions/:id — edit planId, suspensionEnabled, and/or
+// the billing period dates (currentPeriodStart/currentPeriodEnd) ONLY.
 // `status` is deliberately not editable here — see updateSubscription()
 // in src/lib/billing/manage.ts for why. Use the suspend/restore routes
 // (or the dry-run-override route) for anything status-related.
@@ -38,7 +39,13 @@ export async function PATCH(
     return json(403, { error: 'Admin access required' });
   }
 
-  let body: { planId?: string; suspensionEnabled?: boolean; status?: unknown };
+  let body: {
+    planId?: string;
+    suspensionEnabled?: boolean;
+    currentPeriodStart?: string;
+    currentPeriodEnd?: string;
+    status?: unknown;
+  };
   try {
     body = await request.json();
   } catch {
@@ -64,6 +71,8 @@ export async function PATCH(
   const result = await updateSubscription(buildBillingSetupDeps(), auth.session.sub, context.params.id, {
     planId: body.planId,
     suspensionEnabled: body.suspensionEnabled,
+    currentPeriodStart: body.currentPeriodStart,
+    currentPeriodEnd: body.currentPeriodEnd,
   });
 
   const httpStatus =

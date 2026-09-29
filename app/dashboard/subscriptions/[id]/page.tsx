@@ -10,10 +10,23 @@ interface Subscription {
   planId: string;
   status: string;
   suspensionEnabled: boolean;
+  currentPeriodStart: string;
   currentPeriodEnd: string;
   nextBillingDate: string;
   gracePeriodEnd: string | null;
   dryRunOverride: boolean | null;
+}
+
+interface CustomerSummary {
+  id: string;
+  customerCode: string;
+  email: string;
+}
+
+/** date-only, matching the convention already used on the customer
+ * detail page's dateOfBirth/serviceStartDate/serviceEndDate fields. */
+function toDateInputValue(iso: string): string {
+  return iso ? iso.slice(0, 10) : '';
 }
 
 interface Plan {
@@ -95,9 +108,16 @@ export default function SubscriptionDetailPage({ params }: { params: { id: strin
 
   const [planId, setPlanId] = useState('');
   const [suspensionEnabled, setSuspensionEnabled] = useState(true);
+  const [periodStart, setPeriodStart] = useState('');
+  const [periodEnd, setPeriodEnd] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
+
+  // Just enough to link to the customer's own page (where the email
+  // composer, birthday greeting, and other customer-level tools live)
+  // — not the full customer record.
+  const [customer, setCustomer] = useState<CustomerSummary | null>(null);
 
   const [actionPending, setActionPending] = useState<'suspend' | 'restore' | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
@@ -140,7 +160,20 @@ export default function SubscriptionDetailPage({ params }: { params: { id: strin
       setSubscription(subData.subscription);
       setPlanId(subData.subscription.planId);
       setSuspensionEnabled(subData.subscription.suspensionEnabled);
+      setPeriodStart(toDateInputValue(subData.subscription.currentPeriodStart));
+      setPeriodEnd(toDateInputValue(subData.subscription.currentPeriodEnd));
       setPlans(planData.plans);
+
+      try {
+        const custData = await authFetch<{ customer: CustomerSummary }>(
+          session.token,
+          `/api/admin/customers/${subData.subscription.customerId}`
+        );
+        setCustomer(custData.customer);
+      } catch {
+        // Non-critical — the page still works without the customer link.
+        setCustomer(null);
+      }
 
       // Railway resources are SUPER_ADMIN-only — don't even attempt this
       // call for a plain admin, since it would 403 and (if bundled into
@@ -248,7 +281,12 @@ export default function SubscriptionDetailPage({ params }: { params: { id: strin
     try {
       await authFetch(session.token, `/api/admin/subscriptions/${params.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ planId, suspensionEnabled }),
+        body: JSON.stringify({
+          planId,
+          suspensionEnabled,
+          currentPeriodStart: periodStart ? new Date(periodStart).toISOString() : undefined,
+          currentPeriodEnd: periodEnd ? new Date(periodEnd).toISOString() : undefined,
+        }),
       });
       setSaveNotice('Saved');
       await load();
@@ -387,6 +425,14 @@ export default function SubscriptionDetailPage({ params }: { params: { id: strin
     <div>
       <h1 style={{ fontSize: '1.5em', fontWeight: 700, marginBottom: '0.2em' }}>Subscription</h1>
       <p className="mono" style={{ color: 'var(--ink-soft)', marginTop: 0 }}>{subscription.id}</p>
+      {customer && (
+        <p style={{ marginTop: 0 }}>
+          <a href={`/dashboard/customers/${customer.id}`} style={{ color: 'var(--forest-bright)', textDecoration: 'none' }}>
+            {customer.customerCode} — {customer.email}
+          </a>
+          <span style={{ color: 'var(--ink-soft)', fontSize: '0.85em' }}> — view customer to send an email or birthday greeting</span>
+        </p>
+      )}
 
       <div className="layout-main-side" style={{ marginTop: '1.5em' }}>
         <div className="card">
@@ -395,6 +441,7 @@ export default function SubscriptionDetailPage({ params }: { params: { id: strin
             <table className="data-table">
               <tbody>
                 <tr><th>Status</th><td>{subscription.status}</td></tr>
+                <tr><th>Current period starts</th><td className="mono">{new Date(subscription.currentPeriodStart).toLocaleString()}</td></tr>
                 <tr><th>Next billing</th><td className="mono">{new Date(subscription.nextBillingDate).toLocaleString()}</td></tr>
                 <tr><th>Current period ends</th><td className="mono">{new Date(subscription.currentPeriodEnd).toLocaleString()}</td></tr>
                 <tr><th>Grace period ends</th><td className="mono">{subscription.gracePeriodEnd ? new Date(subscription.gracePeriodEnd).toLocaleString() : '—'}</td></tr>
@@ -719,6 +766,18 @@ export default function SubscriptionDetailPage({ params }: { params: { id: strin
                 style={{ width: 'auto' }}
               />
               <label htmlFor="edit-suspension-enabled" style={{ margin: 0 }}>Automatic suspension enabled</label>
+            </div>
+            <div className="field">
+              <label htmlFor="edit-period-start">Billing period — start date</label>
+              <input id="edit-period-start" type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="edit-period-end">Billing period — end date (= next billing date)</label>
+              <input id="edit-period-end" type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
+              <p style={{ fontSize: '0.78em', color: 'var(--ink-soft)', marginTop: '0.3em', marginBottom: 0 }}>
+                Useful for a bulk-imported subscription whose dates were guessed — set the real
+                start/end here instead.
+              </p>
             </div>
 
             {saveError && <p className="error-text">{saveError}</p>}
