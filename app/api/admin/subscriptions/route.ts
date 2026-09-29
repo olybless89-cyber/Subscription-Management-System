@@ -9,7 +9,7 @@
 
 import { buildBillingSetupDeps, buildWebhookDeps } from '../../../../src/lib/deps-factory';
 import { authenticateFromHeader, hasAdminRole, canAccessCustomer, listVisibleCustomerIds } from '../../../../src/lib/auth/authorize';
-import { createSubscription } from '../../../../src/lib/billing/manage';
+import { createSubscription, findOrCreatePlanForMonths } from '../../../../src/lib/billing/manage';
 
 export async function GET(request: Request): Promise<Response> {
   const auth = authenticateFromHeader(request.headers.get('authorization'));
@@ -34,6 +34,12 @@ export async function POST(request: Request): Promise<Response> {
   let body: {
     customerId?: string;
     planId?: string;
+    /** Alternative to planId — "N months at the standard $20/month
+     * rate," resolved via findOrCreatePlanForMonths (same helper the
+     * per-customer "Months paid" activation flow uses) instead of
+     * requiring a Plan row to already exist. Ignored if planId is
+     * also present. */
+    monthsPaid?: number;
     status?: 'TRIAL' | 'ACTIVE';
     startDate?: string;
   };
@@ -43,8 +49,8 @@ export async function POST(request: Request): Promise<Response> {
     return json(400, { error: 'Malformed JSON body' });
   }
 
-  if (!body.customerId || !body.planId) {
-    return json(400, { error: 'customerId and planId are required' });
+  if (!body.customerId || !(body.planId || body.monthsPaid)) {
+    return json(400, { error: 'customerId and either planId or monthsPaid are required' });
   }
 
   // Scoped-visibility check happens here (route layer), same pattern as
@@ -55,9 +61,20 @@ export async function POST(request: Request): Promise<Response> {
     return json(403, { error: 'This customer is not assigned to you' });
   }
 
-  const result = await createSubscription(buildBillingSetupDeps(), auth.session.sub, {
+  const billingDeps = buildBillingSetupDeps();
+
+  let planId = body.planId;
+  if (!planId) {
+    if (!Number.isInteger(body.monthsPaid) || (body.monthsPaid as number) < 1) {
+      return json(400, { error: 'monthsPaid must be a positive whole number of months' });
+    }
+    const plan = await findOrCreatePlanForMonths(billingDeps, auth.session.sub, body.monthsPaid as number);
+    planId = plan.id;
+  }
+
+  const result = await createSubscription(billingDeps, auth.session.sub, {
     customerId: body.customerId,
-    planId: body.planId,
+    planId,
     status: body.status,
     startDate: body.startDate,
   });

@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from '../../_components/AuthProvider';
 import { authFetch, ApiError } from '../../_lib/api';
+import { resolveBillingCycleForMonths } from '../../../src/lib/billing/months';
 
 interface Subscription {
   id: string;
@@ -22,7 +23,33 @@ interface Customer {
 interface Plan {
   id: string;
   name: string;
+  amount: number;
+  currency: string;
+  billingCycle: string;
+  customMonths: number | null;
 }
+
+/** Mirrors DEFAULT_MONTHLY_RATE_MINOR_UNITS / DEFAULT_MONTHLY_RATE_CURRENCY
+ * in src/lib/billing/manage.ts — the flat rate findOrCreatePlanForMonths
+ * uses. Keep both in sync if that rate ever changes. */
+const MONTH_TIER_RATE_MINOR_UNITS = 2000; // $20.00
+const MONTH_TIER_CURRENCY = 'USD';
+
+/** The 12 standard "N months at the flat rate" tiers, always offered
+ * regardless of which Plan rows happen to exist yet — selecting one
+ * sends monthsPaid to the API, which resolves or creates the matching
+ * plan via findOrCreatePlanForMonths (same helper the per-customer
+ * "Months paid" activation control uses). Encoded as `months:N` in the
+ * <select> so real plan ids (opaque cuids) never collide with these. */
+const MONTH_TIERS = Array.from({ length: 12 }, (_, i) => {
+  const months = i + 1;
+  const amount = MONTH_TIER_RATE_MINOR_UNITS * months;
+  return {
+    months,
+    value: `months:${months}`,
+    label: `${months === 1 ? '1 Month' : `${months} Months`} — ${(amount / 100).toFixed(2)} ${MONTH_TIER_CURRENCY}`,
+  };
+});
 
 const STATUS_COLOR: Record<string, string> = {
   TRIAL: 'var(--ink-soft)',
@@ -79,9 +106,13 @@ export default function SubscriptionsPage() {
     }
     setSubmitting(true);
     try {
+      const monthsMatch = /^months:(\d+)$/.exec(planId);
+      const payload = monthsMatch
+        ? { customerId, monthsPaid: Number.parseInt(monthsMatch[1], 10), status }
+        : { customerId, planId, status };
       await authFetch(session.token, '/api/admin/subscriptions', {
         method: 'POST',
-        body: JSON.stringify({ customerId, planId, status }),
+        body: JSON.stringify(payload),
       });
       setFormNotice('Subscription created');
       setCustomerId('');
@@ -103,6 +134,23 @@ export default function SubscriptionsPage() {
   function planLabel(id: string): string {
     return plans.find((p) => p.id === id)?.name ?? id;
   }
+
+  const isStandardTierPlan = useMemo(() => {
+    const shapes = MONTH_TIERS.map((tier) => ({
+      ...resolveBillingCycleForMonths(tier.months),
+      amount: MONTH_TIER_RATE_MINOR_UNITS * tier.months,
+    }));
+    return (p: Plan) =>
+      shapes.some(
+        (shape) =>
+          shape.billingCycle === p.billingCycle &&
+          shape.customMonths === p.customMonths &&
+          shape.amount === p.amount &&
+          p.currency === MONTH_TIER_CURRENCY
+      );
+  }, []);
+
+  const customPlans = plans.filter((p) => !isStandardTierPlan(p));
 
   return (
     <div>
@@ -150,9 +198,9 @@ export default function SubscriptionsPage() {
 
         <div className="card">
           <h2 style={{ fontSize: '1.05em', fontWeight: 600, marginTop: 0, marginBottom: '1em' }}>New subscription</h2>
-          {customers.length === 0 || plans.length === 0 ? (
+          {customers.length === 0 ? (
             <p style={{ color: 'var(--ink-soft)', fontSize: '0.9em' }}>
-              You need at least one customer and one plan before you can create a subscription.
+              You need at least one customer before you can create a subscription.
             </p>
           ) : (
             <form onSubmit={handleCreate}>
@@ -171,11 +219,22 @@ export default function SubscriptionsPage() {
                 <label htmlFor="sub-plan">Plan</label>
                 <select id="sub-plan" value={planId} onChange={(e) => setPlanId(e.target.value)} required>
                   <option value="">Select a plan…</option>
-                  {plans.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
+                  <optgroup label="Standard (months)">
+                    {MONTH_TIERS.map((tier) => (
+                      <option key={tier.value} value={tier.value}>
+                        {tier.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {customPlans.length > 0 && (
+                    <optgroup label="Other plans">
+                      {customPlans.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </div>
               <div className="field">
