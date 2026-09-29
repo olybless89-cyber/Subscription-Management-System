@@ -1,4 +1,4 @@
-import { stopDeployment } from '../railway/deployments';
+import { stopDeployment, getLatestDeploymentId } from '../railway/deployments';
 import { EngineDeps } from '../db/ports';
 import { assertStrategyAutomatable, ForbiddenSuspensionActionError } from './safety';
 import { RailwayResourceRecord, SuspensionResult, SubscriptionRecord } from '@/types/domain';
@@ -116,10 +116,17 @@ export async function suspendCustomer(
     resourceResults.push(outcome);
 
     // 11. Reflect verified Railway state locally — never assume success.
+    // Also self-heals a stale stored deploymentId when the resolver
+    // above found the service had moved on to a newer deployment —
+    // same principle restoreCustomer already applies after every
+    // redeploy, just applied here on the suspend side too.
     await deps.railwayResources.updateStatus(
       resource.id,
       outcome.result === 'SUCCESS' ? 'STOPPED' : 'ERROR',
-      { lastError: outcome.result === 'SUCCESS' ? null : outcome.detail }
+      {
+        lastError: outcome.result === 'SUCCESS' ? null : outcome.detail,
+        ...(outcome.newDeploymentId ? { deploymentId: outcome.newDeploymentId } : {}),
+      }
     );
   }
 
@@ -196,7 +203,7 @@ export async function suspendCustomer(
 async function executeSuspensionForResource(
   deps: EngineDeps,
   resource: RailwayResourceRecord
-): Promise<{ resourceId: string; result: SuspensionResult; detail: string }> {
+): Promise<{ resourceId: string; result: SuspensionResult; detail: string; newDeploymentId?: string }> {
   switch (resource.hostingMode) {
     case 'MULTI_TENANT':
       // Section 16: never call Railway. Subscription-status-only suspension;
@@ -219,11 +226,34 @@ async function executeSuspensionForResource(
         // call — a customer's resources can live in different connected
         // hosting accounts (see src/lib/hosting/account-client.ts).
         const railway = await deps.resolveRailwayClient(resource.hostingAccountId);
-        const { success, status } = await stopDeployment(railway, resource.deploymentId);
+
+        // resource.deploymentId is a snapshot that goes stale the moment
+        // the service redeploys outside this app's own restore flow —
+        // Railway rejects deploymentStop on anything but the CURRENT
+        // deployment ("Deployment is not stoppable"), not a normal
+        // already-stopped result. Re-resolve the current deployment id
+        // first and self-heal the stored value when it's drifted, the
+        // same way restoreCustomer already does after every redeploy.
+        // A failure here (e.g. the lookup itself errors) falls back to
+        // the stored id rather than failing the whole suspend attempt.
+        let deploymentIdToStop = resource.deploymentId;
+        let newDeploymentId: string | undefined;
+        try {
+          const latest = await getLatestDeploymentId(railway, resource.serviceId, resource.environmentId);
+          if (latest && latest !== resource.deploymentId) {
+            deploymentIdToStop = latest;
+            newDeploymentId = latest;
+          }
+        } catch {
+          // Best-effort refresh only — fall through and try the stored id.
+        }
+
+        const { success, status } = await stopDeployment(railway, deploymentIdToStop);
         return {
           resourceId: resource.id,
           result: success ? 'SUCCESS' : 'FAILED',
           detail: `stopDeployment -> Railway status ${status}`,
+          newDeploymentId,
         };
       } catch (err) {
         return {

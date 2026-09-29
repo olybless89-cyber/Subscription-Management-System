@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { suspendCustomer } from '@/lib/suspension/engine';
 import { restoreCustomer } from '@/lib/suspension/restoration';
-import { RailwayClient } from '@/lib/railway/client';
+import { RailwayClient, RailwayApiError } from '@/lib/railway/client';
 import { makeFakeDeps } from './fakes';
 import { CustomerRecord, SubscriptionRecord, RailwayResourceRecord } from '@/types/domain';
 
@@ -135,6 +135,76 @@ describe('suspendCustomer — DEDICATED / STOP_DEPLOYMENT', () => {
     expect(deps.events).toHaveLength(1);
     expect(deps.events[0].result).toBe('SUCCESS');
     expect(deps.notificationLog).toHaveLength(1);
+  });
+
+  it('resolves the CURRENT deployment before stopping, instead of trusting a stale stored id (reproduces the "Deployment is not stoppable" production error)', async () => {
+    // resource.deploymentId ('dep_1', from dedicatedResource()) is a
+    // stale snapshot here — the service has since redeployed to
+    // 'dep_2' outside this app (a manual Railway dashboard redeploy,
+    // for instance). Railway would reject a stop on the old id with a
+    // GraphQL error ("Deployment is not stoppable"); this asserts the
+    // engine resolves the current deployment first and stops that one
+    // instead of ever attempting the stale one.
+    const deps = makeFakeDeps({
+      customers: [baseCustomer()],
+      subscriptions: [baseSubscription()],
+      railwayResources: [dedicatedResource({ deploymentId: 'dep_1' })],
+    });
+
+    const railway: RailwayClient = {
+      request: vi.fn(async (query: string, variables?: any): Promise<any> => {
+        if (query.includes('query GetDeployments')) {
+          return { deployments: { edges: [{ node: { id: 'dep_2', status: 'SUCCESS', serviceId: 'svc_1', environmentId: 'env_1', createdAt: new Date().toISOString() } }] } };
+        }
+        if (query.includes('mutation StopDeployment')) {
+          if (variables?.id === 'dep_1') {
+            throw new RailwayApiError('Railway GraphQL error: Deployment is not stoppable', 'GRAPHQL_ERROR');
+          }
+          expect(variables?.id).toBe('dep_2');
+          return { deploymentStop: true };
+        }
+        if (query.includes('query GetDeployment(')) {
+          return { deployment: { id: 'dep_2', status: 'REMOVED', serviceId: 'svc_1', environmentId: 'env_1', createdAt: new Date().toISOString() } };
+        }
+        throw new Error('unexpected query: ' + query);
+      }),
+    };
+    deps.resolveRailwayClient = async () => railway;
+
+    const result = await suspendCustomer(deps, 'sub_1', 'NON_PAYMENT');
+
+    expect(result.outcome).toBe('SUSPENDED');
+    const [resource] = await deps.railwayResources.findBySubscriptionId('sub_1');
+    // Self-healed: the stored id now matches what's actually current.
+    expect(resource.deploymentId).toBe('dep_2');
+  });
+
+  it('falls back to the stored deploymentId if resolving the current deployment fails, rather than failing the whole suspend attempt', async () => {
+    const deps = makeFakeDeps({
+      customers: [baseCustomer()],
+      subscriptions: [baseSubscription()],
+      railwayResources: [dedicatedResource({ deploymentId: 'dep_1' })],
+    });
+
+    const railway: RailwayClient = {
+      request: vi.fn(async (query: string): Promise<any> => {
+        if (query.includes('query GetDeployments')) {
+          throw new Error('Railway API unreachable');
+        }
+        if (query.includes('mutation StopDeployment')) return { deploymentStop: true };
+        if (query.includes('query GetDeployment(')) {
+          return { deployment: { id: 'dep_1', status: 'REMOVED', serviceId: 'svc_1', environmentId: 'env_1', createdAt: new Date().toISOString() } };
+        }
+        throw new Error('unexpected query: ' + query);
+      }),
+    };
+    deps.resolveRailwayClient = async () => railway;
+
+    const result = await suspendCustomer(deps, 'sub_1', 'NON_PAYMENT');
+
+    expect(result.outcome).toBe('SUSPENDED');
+    const [resource] = await deps.railwayResources.findBySubscriptionId('sub_1');
+    expect(resource.deploymentId).toBe('dep_1');
   });
 
   it('does NOT mark SUSPENDED if Railway never confirms the deployment stopped', async () => {

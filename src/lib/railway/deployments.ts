@@ -99,6 +99,32 @@ export async function getDeployments(
 }
 
 /**
+ * Resolves the CURRENT deployment id for a service — the one Railway
+ * will actually let you stop. `RailwayResource.deploymentId` is a
+ * snapshot taken at resource-creation/import time (or after a prior
+ * restore's `redeployService` call); it goes stale the moment the
+ * service redeploys again for any reason outside this app (a manual
+ * Railway dashboard redeploy, a git push, Railway's own restart) —
+ * Railway only allows `deploymentStop` on a service's current
+ * deployment, and rejects an older one with a GraphQL error ("Deployment
+ * is not stoppable"), not a normal "already stopped" result. Sorts
+ * client-side by createdAt (mirrors redeployService below) rather than
+ * trusting Relay edge order. Returns null if the service has no
+ * deployments at all yet.
+ */
+export async function getLatestDeploymentId(
+  client: RailwayClient,
+  serviceId: string,
+  environmentId: string
+): Promise<string | null> {
+  const deployments = await getDeployments(client, serviceId, environmentId, 5);
+  const latest = deployments.sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  )[0];
+  return latest?.id ?? null;
+}
+
+/**
  * Stops the current deployment for a service (DEDICATED / STOP_DEPLOYMENT
  * strategy). This must NEVER delete the service — only halt the running
  * deployment. Verifies via `deploymentStopped` (a real, authoritative
