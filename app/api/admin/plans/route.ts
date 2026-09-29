@@ -28,7 +28,13 @@ export async function POST(request: Request): Promise<Response> {
     name?: string;
     amount?: number;
     currency?: string;
-    billingCycle?: 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'CUSTOM';
+    billingCycle?: 'MONTHLY' | 'QUARTERLY' | 'FOUR_MONTHS' | 'SEMI_ANNUAL' | 'YEARLY' | 'CUSTOM';
+    // Required when billingCycle is 'CUSTOM' — see CreatePlanInput.customMonths
+    // in src/lib/billing/manage.ts. Previously dropped on the floor here,
+    // which silently created CUSTOM plans with customMonths stuck at null
+    // (addBillingCycle has nothing to read for those, so their billing
+    // period math was wrong from the moment they were created).
+    customMonths?: number;
     gracePeriodDays?: number;
   };
   try {
@@ -46,6 +52,7 @@ export async function POST(request: Request): Promise<Response> {
     amount: body.amount,
     currency: body.currency,
     billingCycle: body.billingCycle,
+    customMonths: body.customMonths,
     gracePeriodDays: body.gracePeriodDays,
   });
 

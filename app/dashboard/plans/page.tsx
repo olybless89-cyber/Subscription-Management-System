@@ -10,6 +10,7 @@ interface Plan {
   amount: number;
   currency: string;
   billingCycle: string;
+  customMonths: number | null;
   gracePeriodDays: number;
 }
 
@@ -40,6 +41,7 @@ export default function PlansPage() {
   const [currency, setCurrency] = useState('NGN');
   const [amount, setAmount] = useState('');
   const [billingCycle, setBillingCycle] = useState<'MONTHLY' | 'QUARTERLY' | 'FOUR_MONTHS' | 'SEMI_ANNUAL' | 'YEARLY' | 'CUSTOM'>('MONTHLY');
+  const [customMonths, setCustomMonths] = useState('2');
   const [gracePeriodDays, setGracePeriodDays] = useState('2');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -72,6 +74,11 @@ export default function PlansPage() {
       setFormError(`Enter a valid amount in ${currency}`);
       return;
     }
+    const parsedCustomMonths = Number(customMonths);
+    if (billingCycle === 'CUSTOM' && (!Number.isInteger(parsedCustomMonths) || parsedCustomMonths < 1)) {
+      setFormError('Enter a valid number of months for a Custom plan');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -82,6 +89,7 @@ export default function PlansPage() {
           amount: Math.round(majorUnits * 100), // major units -> minor units (kobo/cents)
           currency,
           billingCycle,
+          customMonths: billingCycle === 'CUSTOM' ? parsedCustomMonths : undefined,
           gracePeriodDays: Number(gracePeriodDays) || 2,
         }),
       });
@@ -124,7 +132,11 @@ export default function PlansPage() {
                   <tr key={p.id}>
                     <td>{p.name}</td>
                     <td className="mono">{formatAmount(p.amount, p.currency)}</td>
-                    <td>{BILLING_CYCLES.find((c) => c.value === p.billingCycle)?.label ?? p.billingCycle}</td>
+                    <td>
+                      {p.billingCycle === 'CUSTOM'
+                        ? `Custom (${p.customMonths ?? '?'} month${p.customMonths === 1 ? '' : 's'})`
+                        : BILLING_CYCLES.find((c) => c.value === p.billingCycle)?.label ?? p.billingCycle}
+                    </td>
                     <td>{p.gracePeriodDays} day{p.gracePeriodDays === 1 ? '' : 's'}</td>
                   </tr>
                 ))}
@@ -174,6 +186,20 @@ export default function PlansPage() {
                 ))}
               </select>
             </div>
+            {billingCycle === 'CUSTOM' && (
+              <div className="field">
+                <label htmlFor="custom-months">Number of months</label>
+                <input
+                  id="custom-months"
+                  type="number"
+                  min="1"
+                  step="1"
+                  required
+                  value={customMonths}
+                  onChange={(e) => setCustomMonths(e.target.value)}
+                />
+              </div>
+            )}
             <div className="field">
               <label htmlFor="grace">Grace period (days)</label>
               <input
