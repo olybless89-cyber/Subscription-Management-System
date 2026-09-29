@@ -203,6 +203,24 @@ export default function SubscriptionDetailPage({ params }: { params: { id: strin
 
   const unmappedServices = useMemo(() => (discovered ?? []).filter((s) => !s.mapped), [discovered]);
 
+  // Grouped by project (preserving first-seen order) so the picker shows
+  // "Project A: serviceX, serviceY" as one visual group instead of a flat
+  // list that repeats the project name on every row — several real
+  // customers' services (a frontend + its own API, say) commonly live
+  // side by side in one Railway project.
+  const groupedUnmappedServices = useMemo(() => {
+    const order: string[] = [];
+    const groups = new Map<string, { projectName: string; services: DiscoveredService[] }>();
+    for (const svc of unmappedServices) {
+      if (!groups.has(svc.projectId)) {
+        groups.set(svc.projectId, { projectName: svc.projectName, services: [] });
+        order.push(svc.projectId);
+      }
+      groups.get(svc.projectId)!.services.push(svc);
+    }
+    return order.map((projectId) => ({ projectId, ...groups.get(projectId)! }));
+  }, [unmappedServices]);
+
   // Pre-select whichever unmapped service looks like it belongs to this
   // subscription's own customer — the same domain-name heuristic the
   // bulk import screen uses — so the common case is "confirm and click
@@ -552,15 +570,19 @@ export default function SubscriptionDetailPage({ params }: { params: { id: strin
                         }}
                       >
                         <option value="">Choose a service…</option>
-                        {unmappedServices.map((svc) => {
-                          const key = `${svc.projectId}:${svc.serviceId}`;
-                          const suggested = subscription && svc.suggestedCustomerId === subscription.customerId;
-                          return (
-                            <option key={key} value={key}>
-                              {svc.projectName} → {svc.serviceName}{suggested ? ' · suggested match' : ''}
-                            </option>
-                          );
-                        })}
+                        {groupedUnmappedServices.map((group) => (
+                          <optgroup key={group.projectId} label={group.projectName}>
+                            {group.services.map((svc) => {
+                              const key = `${svc.projectId}:${svc.serviceId}`;
+                              const suggested = subscription && svc.suggestedCustomerId === subscription.customerId;
+                              return (
+                                <option key={key} value={key}>
+                                  {svc.serviceName}{suggested ? ' · suggested match' : ''}
+                                </option>
+                              );
+                            })}
+                          </optgroup>
+                        ))}
                       </select>
                     </div>
 
